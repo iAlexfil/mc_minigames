@@ -32,6 +32,10 @@ final class SurvivalStandings {
     void holdResults(boolean hold) { resultsHeld = hold; }
     boolean resultsHeld() { return resultsHeld; }
     long survived(UUID id, long now) { return outAt.getOrDefault(id, now); }
+    PartyRoundResult result(Collection<UUID> eligible, long now) {
+        return PartyRoundResult.ordered(eligible, Comparator.<UUID, Boolean>comparing(alive::contains).reversed()
+                .thenComparing(Comparator.<UUID>comparingLong(id -> survived(id, now)).reversed()));
+    }
     List<UUID> ranking(Collection<UUID> roster, long now) {
         List<UUID> result = new ArrayList<>(roster);
         result.sort(Comparator.<UUID>comparingLong(id -> survived(id, now)).reversed());

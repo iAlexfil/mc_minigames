@@ -169,3 +169,22 @@ val checkPartyFfa by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.games.party.PartyFfaCheck")
 }
 tasks.check { dependsOn(checkPartyFfa) }
+
+val checkPartyGames by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyGamesCheck")
+}
+tasks.check { dependsOn(checkPartyGames) }
+val checkPartyArenas by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyArenaCheck")
+}
+tasks.check { dependsOn(checkPartyArenas) }
+val checkPartyRouting by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyRoutingCheck")
+}
+tasks.check { dependsOn(checkPartyRouting) }

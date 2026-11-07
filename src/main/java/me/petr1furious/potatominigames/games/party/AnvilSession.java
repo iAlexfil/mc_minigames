@@ -6,7 +6,7 @@ import me.petr1furious.potatominigames.core.game.SessionServices;
 final class AnvilSession extends PartySurvivalSession {
     private final int waveSeconds, moveSeconds, waves, pvpWave;private AnvilArena arena;private AnvilRain rain;private AnvilRound round;private final SumoCombat combat=new SumoCombat();
     AnvilSession(SessionServices s,PartyConfig c,PartyRoundContext context){super(s,c,"anvils","Наковальни",context);waveSeconds=c.anvilWaveSeconds.get();moveSeconds=c.anvilMoveSeconds.get();waves=c.anvilWaves.get();pvpWave=c.anvilPvpWave.get();}
-    void buildArena(){arena=new AnvilArena(world);arena.build();round=new AnvilRound(names.size(),waveSeconds*20,moveSeconds*20,waves,pvpWave);arena.relocateShelters(round.shelters(),random);rain=new AnvilRain(world,arena,random,this::eliminate);}
+    void buildArena(){world.setGameRule(GameRules.PVP,true);arena=new AnvilArena(world);arena.build();round=new AnvilRound(names.size(),waveSeconds*20,moveSeconds*20,waves,pvpWave);arena.relocateShelters(round.shelters(),random);rain=new AnvilRain(world,arena,random,this::eliminate);}
     Location spawn(int i,int n){return arena.spawn(i,n);}Location viewpoint(){return new Location(world,.5,91,.5,0,80);}
     double outHeight(){return 77;}int durationSeconds(){return waves*(waveSeconds+moveSeconds)+5;}boolean podiumAwards(){return true;}
     String instructions(){return "Прячься под полублоками или уклоняйся! Между волнами укрытия меняются. С "+pvpWave+"-й волны можно толкаться.";}

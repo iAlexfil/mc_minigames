@@ -147,6 +147,16 @@ public final class GameCommands {
                                     messages.success("Points for " + game.id() + " reset."));
                         }))));
 
+        if (game.id().equals("party")) {
+            root.then(Commands.literal("points").then(Commands.literal("party_games")
+                    .executes(ctx -> run(ctx, c -> sendPoints(c, game, "party_games")))
+                    .then(Commands.literal("reset").requires(GameCommands::isAdmin)
+                            .executes(ctx -> run(ctx, c -> {
+                                points.reset("party_games");
+                                c.getSource().getSender().sendMessage(messages.success("Party Games points reset."));
+                            })))));
+        }
+
         if (game.usesTeams()) {
             root.then(buildTeamSubtree(game));
         }
@@ -413,15 +423,18 @@ public final class GameCommands {
     }
 
     private void sendPoints(CommandContext<CommandSourceStack> ctx, Minigame game) {
+        sendPoints(ctx,game,game.id());
+    }
+    private void sendPoints(CommandContext<CommandSourceStack> ctx, Minigame game, String scoreKey) {
         var sender = ctx.getSource().getSender();
-        List<PointsService.Entry> standings = points.standings(game.id());
+        List<PointsService.Entry> standings = points.standings(scoreKey);
         if (standings.isEmpty()) {
-            sender.sendMessage(messages.info("No points recorded for " + game.id() + " yet."));
+            sender.sendMessage(messages.info("No points recorded for " + scoreKey + " yet."));
             return;
         }
         sender.sendMessage(Component.text()
                 .append(game.displayName())
-                .append(Component.text(" standings:", NamedTextColor.GRAY))
+                .append(Component.text(scoreKey.equals("party_games") ? " • Party Games:" : " standings:", NamedTextColor.GRAY))
                 .build());
         int place = 1;
         for (PointsService.Entry entry : standings) {

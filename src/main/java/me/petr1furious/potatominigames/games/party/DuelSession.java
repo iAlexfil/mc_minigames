@@ -164,7 +164,7 @@ final class DuelSession implements PartyRoundSession {
         else if (!training) tournament = new DuelTournament(roster);
         // Read once so config reload cannot change the rules halfway through a duel.
         roundLength = Math.clamp((sumo ? config.sumoRoundSeconds : config.roundSeconds).get(), 20, 300);
-        countdown = Math.clamp((sumo ? config.sumoCountdownSeconds : config.countdownSeconds).get(), 3, 15);
+        countdown = Math.clamp(ffa ? context.options().countdownSeconds() : (sumo ? config.sumoCountdownSeconds : config.countdownSeconds).get(), 3, 15);
         intermission = Math.clamp((sumo ? config.sumoIntermissionSeconds : config.intermissionSeconds).get(), 2, 30);
         world = context.createVoid(sumo ? "party_sumo" : "party_pvp");
         services.arena().applyStandardGameRules(world);

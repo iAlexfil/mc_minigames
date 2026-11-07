@@ -104,7 +104,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         }
         if (names.isEmpty()) throw new CommandFailure("Нужны участники.");
         standings = new SurvivalStandings(names.keySet());
-        countdownEnd = Math.clamp(config.survivalCountdownSeconds.get(), 3, 15) * 20L;
+        countdownEnd = Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.survivalCountdownSeconds.get(), 3, 15) * 20L;
         durationTicks = Math.max(20, durationSeconds()) * 20L;
         world = context.createVoid(id);
         services.arena().applyStandardGameRules(world);
@@ -134,7 +134,13 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         say(instructions());
         if (services.isTest()) say("Тестовая игра: без очков. /party stop — закончить.");
         hud();
-        ticker = Bukkit.getScheduler().runTaskTimer(services.plugin(), this::tickGame, 1L, 1L);
+        ticker = Bukkit.getScheduler().runTaskTimer(services.plugin(), () -> {
+            try { tickGame(); }
+            catch (RuntimeException failure) {
+                services.plugin().getLogger().log(java.util.logging.Level.SEVERE, "Party round failed: " + id, failure);
+                context.finish(EndReason.ABORTED, PartyRoundResult.empty());
+            }
+        }, 1L, 1L);
     }
 
     static Component text(String value) { return Component.text(value, NamedTextColor.GOLD); }
@@ -178,7 +184,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         }
         if (playing) {
             playTick(elapsed());
-            if (done) return;
+            if (done || context.ended()) return;
             for (Player player : alivePlayers()) {
                 if (!player.getWorld().equals(world) || player.getLocation().getY() < outHeight()) eliminate(player);
             }

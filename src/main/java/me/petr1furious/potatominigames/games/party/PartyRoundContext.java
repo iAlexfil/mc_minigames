@@ -43,7 +43,10 @@ final class PartyRoundContext {
     World createVoid(String mode) {
         String id=worldId(mode); worlds.add(id); return services.worlds().createVoid(id);
     }
-    void withdraw(UUID id) { withdrawn.add(id); }
+    void withdraw(UUID id) {
+        withdrawn.add(id);
+        if (embedded() && services != null) services.participants().remove(id);
+    }
     Set<UUID> eligible() {
         Set<UUID> ids=new LinkedHashSet<>();
         for (Participant p:roster()) if(!withdrawn.contains(p.id()) && p.player()!=null) ids.add(p.id());

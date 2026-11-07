@@ -19,6 +19,53 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
 | **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | Random-class PvP and sumo use round-robin BO3 tournaments. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random loot and underground PvP. |
 
+### Party Games and new party games
+
+Join **Вечеринка → Party Games**, or run `/play party party_games`.
+The default match plays all eleven party games once in shuffled order, with
+2–12 players. PvP and Sumo become simultaneous, one-life free-for-alls inside
+this match; their standalone modes retain the existing round-robin BO3 rules.
+Eliminated players spectate until the next game. Each completed game awards
+**3 / 2 / 1 points** to first / second / third place, with no extra kill points.
+
+Equal results share a place and skip occupied positions: `1, 2, 2, 4` awards
+`3, 2, 2, 0`. Simultaneous eliminations use server ticks; a failed color or
+building check is one shared elimination group. The final ranking compares
+points, then first places, then second places; exact ties share the title.
+Round results are followed by an eight-second break and a five-second start
+countdown after the next arena is ready. Arms Race uses a three-minute limit;
+Miners uses 60 seconds preparation, 90 seconds combat and a 30-second finale.
+
+Four games are also independently available:
+
+| Mode | Command | Rules |
+| --- | --- | --- |
+| Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, falling to two seconds; twelve stages. Each local neighborhood contains the target color. |
+| Наковальни | `/play party anvils` | Dodge staggered anvil rain or shelter under slabs. Each 12-second wave is followed by a four-second rain-free relocation period: old anvils disappear and a new random shelter layout appears. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves by default. |
+| Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize your model, then rebuild with exactly the required blocks. Models grow from 5 to 19 blocks over eight stages; memorization drops from 12 to 5 seconds and construction from 40 to 19 seconds. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying during construction. |
+| Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
+
+The new standalone modes award the same podium points to `/party points`.
+Completed mixed matches have a separate leaderboard:
+`/party points party_games`. Administrators can reset it using
+`/party points party_games reset`. Test games and interrupted mixed matches
+save no points. Disconnecting disqualifies a player from the current game's
+awards, even if they reconnect before it ends; they can play the next game.
+Explicitly leaving is permanent for that match. New arrivals can spectate.
+Between rounds, fewer than two connected participants triggers a 15-second
+reconnect grace period before an unscored early finish.
+
+Configure the game pool and number of rounds using `partyGames.modes` (a
+comma-separated string of unique mode IDs) and `partyGames.rounds` in
+`games/party.yml`; the round count is capped by the selected pool size.
+The same file contains wave, stage and match timing settings. Changes apply
+to new games. Solo practice: `/party test <mode>`; admin launch:
+`/party start <mode> @a`; stop: `/party stop`.
+
+Automated checks cover standings, generators, arena geometry and event
+routing. **The new games still need live multiplayer balance testing**,
+especially anvil dodging/relocation and the later memory-building deadlines.
+
 ### Party PvP
 
 Open the compass → **Вечеринка** → **pvp**, or run `/play party pvp`.

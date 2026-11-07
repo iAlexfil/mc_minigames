@@ -114,7 +114,7 @@ final class ArmsRaceSession implements PartyRoundSession {
         }
         if (names.isEmpty()) throw new CommandFailure("Для гонки вооружений нужны участники.");
         state = new ArmsRaceState(names.keySet(), ArmsRaceWeapon.values().length);
-        countdownEnd = Math.clamp(config.armsRaceCountdownSeconds.get(), 3, 15) * 20L;
+        countdownEnd = Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.armsRaceCountdownSeconds.get(), 3, 15) * 20L;
         durationTicks = Math.clamp((context.embedded() ? context.options().armsRaceSeconds() : config.armsRaceSeconds.get()), 60, 1800) * 20;
         respawnTicks = Math.max(DeathPause.TICKS, Math.clamp(config.armsRaceRespawnSeconds.get(), 1, 10) * 20);
         protectionTicks = Math.clamp(config.armsRaceProtectionSeconds.get(), 1, 5) * 20;

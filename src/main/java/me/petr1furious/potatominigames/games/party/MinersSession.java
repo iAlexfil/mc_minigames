@@ -128,7 +128,7 @@ final class MinersSession implements PartyRoundSession {
         for (int i = 0; i < roster.size(); i++) cells.put(roster.get(i), i);
         standings = new SurvivalStandings(roster);
         finaleSeconds = Math.clamp((context.embedded() ? context.options().minersFinaleSeconds() : config.minersFinaleSeconds.get()), 15, 120);
-        round = new MinersRound(Math.clamp(config.survivalCountdownSeconds.get(), 3, 15),
+        round = new MinersRound(Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.survivalCountdownSeconds.get(), 3, 15),
                 Math.clamp((context.embedded() ? context.options().minersPreparationSeconds() : config.minersPreparationSeconds.get()), 10, 300), Math.clamp((context.embedded() ? context.options().minersCombatSeconds() : config.minersCombatSeconds.get()), 30, 600), finaleSeconds);
         world = context.createVoid("party_miners");
         services.arena().applyStandardGameRules(world);

@@ -16,6 +16,6 @@ final class BuildMemoryArena {
     void show(UUID id,BuildMemoryPattern p){clear(id);Location c=centers.get(id);p.blocks().forEach((cell,m)->world.getBlockAt(c.getBlockX()+cell.x(),81+cell.y(),c.getBlockZ()+cell.z()).setType(m,false));}
     void clear(UUID id){Location c=centers.get(id);for(int x=0;x<5;x++)for(int y=81;y<85;y++)for(int z=0;z<5;z++)world.getBlockAt(c.getBlockX()+x,y,c.getBlockZ()+z).setType(Material.AIR,false);}
     Map<BuildMemoryPattern.Cell,Material> capture(UUID id){Map<BuildMemoryPattern.Cell,Material> result=new HashMap<>();Location c=centers.get(id);
-        for(int x=0;x<5;x++)for(int y=0;y<4;y++)for(int z=0;z<5;z++){Material m=world.getBlockAt(c.getBlockX()+x,81+y,c.getBlockZ()+z).getType();if(!m.isAir())result.put(new BuildMemoryPattern.Cell(x,y,z),m);}return result;}
+        for(int x=0;x<5;x++)for(int y=0;y<4;y++)for(int z=0;z<5;z++){Material m=world.getBlockAt(c.getBlockX()+x,81+y,c.getBlockZ()+z).getType();if(m!=Material.AIR && m!=Material.CAVE_AIR && m!=Material.VOID_AIR)result.put(new BuildMemoryPattern.Cell(x,y,z),m);}return result;}
     void screens(boolean show){for(Location c:centers.values())for(int x=-4;x<=8;x++)for(int z=-4;z<=8;z++)if(x==-4||x==8||z==-4||z==8)for(int y=81;y<=88;y++)world.getBlockAt(c.getBlockX()+x,y,c.getBlockZ()+z).setType(show?Material.BLACK_CONCRETE:Material.BARRIER,false);}
 }

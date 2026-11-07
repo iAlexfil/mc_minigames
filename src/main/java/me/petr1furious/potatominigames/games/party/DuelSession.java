@@ -77,10 +77,14 @@ import me.petr1furious.potatominigames.core.game.GameSession;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
 
-final class DuelSession implements GameSession {
+final class DuelSession implements PartyRoundSession {
     private enum Phase { COUNTDOWN, FIGHT, RESULT, BREAK, DONE }
     private record Hit(UUID attacker, int tick) { }
     private final SessionServices services;
+    private final PartyRoundContext context;
+    private final boolean ffa;
+    private SurvivalStandings standings;
+    private final Set<BukkitTask> recoveries = new HashSet<>();
     private final PartyConfig config;
     private final boolean sumo;
     private final String title;
@@ -127,7 +131,11 @@ final class DuelSession implements GameSession {
     private List<Component> result = List.of();
 
     DuelSession(SessionServices services, PartyConfig config, boolean sumo) {
-        this.services = services; this.config = config;
+        this(services,config,sumo,PartyRoundContext.standalone(services));
+    }
+    DuelSession(SessionServices services, PartyConfig config, boolean sumo, PartyRoundContext context) {
+        this.context=context; this.ffa=context.embedded();
+        this.services = context.services(); this.config = config;
         this.sumo = sumo;
         title = sumo ? "Сумо" : "PvP";
         abilityKey = new NamespacedKey(services.plugin(), "party_pvp_ability");
@@ -152,12 +160,13 @@ final class DuelSession implements GameSession {
         if (roster.isEmpty()) throw new CommandFailure("Для турнира нужны участники.");
         training = roster.size() == 1;
         Collections.shuffle(roster, random);
-        if (!training) tournament = new DuelTournament(roster);
+        if (ffa) standings = new SurvivalStandings(roster);
+        else if (!training) tournament = new DuelTournament(roster);
         // Read once so config reload cannot change the rules halfway through a duel.
         roundLength = Math.clamp((sumo ? config.sumoRoundSeconds : config.roundSeconds).get(), 20, 300);
         countdown = Math.clamp((sumo ? config.sumoCountdownSeconds : config.countdownSeconds).get(), 3, 15);
         intermission = Math.clamp((sumo ? config.sumoIntermissionSeconds : config.intermissionSeconds).get(), 2, 30);
-        world = services.worlds().createVoid(sumo ? "party_sumo" : "party_pvp");
+        world = context.createVoid(sumo ? "party_sumo" : "party_pvp");
         services.arena().applyStandardGameRules(world);
         world.setDifficulty(Difficulty.NORMAL);
         world.setGameRule(GameRules.PVP, true);
@@ -170,12 +179,13 @@ final class DuelSession implements GameSession {
         world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         arena = sumo ? new SumoArena(world) : new PvpArena(world);
         arena.build();
-        bar = services.bossBars().create(text(title + " • BO3", NamedTextColor.GOLD), BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
-        services.messages().broadcast(text(title + ": каждый с каждым, матч до двух побед. Победа в матче — 3 очка.", NamedTextColor.GOLD));
+        bar = services.bossBars().create(text(title + (ffa ? " • Все против всех" : " • BO3"), NamedTextColor.GOLD), BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+        services.messages().broadcast(text(ffa ? title + ": все против всех, одна жизнь. Призовые места: 3 / 2 / 1 очко." : title + ": каждый с каждым, матч до двух побед. Победа в матче — 3 очка.", NamedTextColor.GOLD));
         services.messages().broadcast(text(sumo
                 ? "Столкни соперника с платформы! Удары отбрасывают без потери здоровья. Строить нельзя."
                 : "Раунд 1: случайные классы; раунд 2: обмен классами; раунд 3: одинаковый случайный класс.", NamedTextColor.GRAY));
-        if (training) {
+        if (ffa) prepareRound();
+        else if (training) {
             services.messages().broadcast(text("Тренировка: один игрок, без турнирных очков. /party stop — закончить.", NamedTextColor.YELLOW));
             prepareRound();
         } else nextMatch();
@@ -223,7 +233,7 @@ final class DuelSession implements GameSession {
             match = new DuelTournament.Match(tournament.schedule().get(scheduleIndex++));
         } else {
             List<UUID> eligible = tournament.standings().stream().filter(id -> !withdrawn.contains(id)).toList();
-            if (eligible.isEmpty()) { services.session().endGame(EndReason.ALL_PLAYERS_LEFT); return; }
+            if (eligible.isEmpty()) { context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty()); return; }
             List<UUID> tied = tournament.titleContenders(eligible);
             if (tied.size() > 1) {
                 playoff = true;
@@ -263,7 +273,10 @@ final class DuelSession implements GameSession {
         int borderSize = sumo ? 53 : PvpArena.BORDER_SIZE;
         services.arena().applyBorder(world, arena.center(), borderSize, borderSize, 0);
         for (Player p : services.participants().onlinePlayers()) spectator(p);
-        if (training) {
+        if (ffa) {
+            fighters.addAll(names.keySet());
+            if (!sumo) for (UUID id : fighters) kits.put(id,PvpClass.values()[random.nextInt(PvpClass.values().length)]);
+        } else if (training) {
             UUID id = names.keySet().iterator().next();
             fighters.add(id);
             if (!sumo) kits.put(id, PvpClass.values()[random.nextInt(PvpClass.values().length)]);
@@ -284,9 +297,9 @@ final class DuelSession implements GameSession {
             PvpClass kit = kits.get(id);
             if (kit != null) kit.equip(p, abilityKey);
             else if (sumo) SumoCombat.equip(p);
-            boolean east = !training && match.pair().second().equals(id);
-            if (!training && match.roundsWon() % 2 == 1) east = !east;
-            teleport(p, arena.spawn(east));
+            boolean east = !ffa && !training && match.pair().second().equals(id);
+            if (!ffa && !training && match.roundsWon() % 2 == 1) east = !east;
+            teleport(p, ffa ? arena.spawn(new ArrayList<>(fighters).indexOf(id),fighters.size()) : arena.spawn(east));
             if (kit != null) {
                 p.sendMessage(text("Класс: " + kit.title + " — " + kit.description, NamedTextColor.GREEN));
                 p.sendMessage(text(kit.passiveDescription(), NamedTextColor.AQUA));
@@ -304,9 +317,9 @@ final class DuelSession implements GameSession {
         now = secondsElapsed;
         if (phase == Phase.DONE) return;
         // Preserve the same-tick trade window before the result task locks combat.
-        if (phase == Phase.FIGHT && resolution != null && !eliminated.isEmpty()) { updateHud(); return; }
+        if (!ffa && phase == Phase.FIGHT && resolution != null && !eliminated.isEmpty()) { updateHud(); return; }
         if (names.keySet().stream().allMatch(withdrawn::contains)) {
-            services.session().endGame(EndReason.ALL_PLAYERS_LEFT); return;
+            context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty()); return;
         }
         if (!training && match != null && !match.isComplete()
                 && (player(match.pair().first()) == null || player(match.pair().second()) == null)) {
@@ -348,7 +361,8 @@ final class DuelSession implements GameSession {
                         : "Овертайм! Граница сужается, через 30 секунд сравним оставшееся здоровье.", NamedTextColor.RED));
             }
             if (elapsed >= roundLength + 30) {
-                if (training) { phase = Phase.BREAK; deadline = now + intermission; }
+                if (ffa) { finishFfa(); return; }
+                else if (training) { phase = Phase.BREAK; deadline = now + intermission; }
                 else if (sumo) finishRound(null);
                 else {
                     Player a = player(match.pair().first()), b = player(match.pair().second());
@@ -420,6 +434,8 @@ final class DuelSession implements GameSession {
         services.session().endGame(EndReason.FINISHED);
     }
     @Override public void onEnd(EndReason reason) {
+        context.hideBars();
+        recoveries.forEach(BukkitTask::cancel); recoveries.clear();
         phase = Phase.DONE;
         countdownFreeze.releaseAll();
         projectiles.clearAll();
@@ -430,7 +446,7 @@ final class DuelSession implements GameSession {
         combat.reset();
         deathPause.clear(); lastHit.clear();
         if (resolution != null) resolution.cancel();
-        if (reason == EndReason.FINISHED && tournament != null) {
+        if (!ffa && reason == EndReason.FINISHED && tournament != null) {
             for (UUID id : names.keySet()) services.award("party", id, tournament.points(id));
         }
         if (arena != null) arena.reset();
@@ -451,7 +467,8 @@ final class DuelSession implements GameSession {
         bar.name(text(barTitle, NamedTextColor.GOLD));
         bar.progress(Math.clamp((float) remaining / (phase == Phase.FIGHT ? suddenDeath ? 30 : roundLength : countdown), 0, 1));
         List<Component> lines = new ArrayList<>();
-        if (!training && match != null) {
+        if (ffa) lines.add(text("Осталось: " + standings.survivors().size() + "/" + names.size(), NamedTextColor.AQUA));
+        else if (!training && match != null) {
             lines.add(text((playoff ? "Тай-брейк" : "Матч " + scheduleIndex + "/" + tournament.schedule().size()) + " • BO3", NamedTextColor.AQUA));
             lines.add(text(name(match.pair().first()) + " " + match.wins(match.pair().first()) + ":"
                     + match.wins(match.pair().second()) + " " + name(match.pair().second()), NamedTextColor.WHITE));
@@ -482,6 +499,8 @@ final class DuelSession implements GameSession {
     @Override public void onParticipantQuit(Player p) { withdraw(p); }
     @Override public void onParticipantLeave(Player p) { withdraw(p); }
     private void withdraw(Player p) {
+        context.withdraw(p.getUniqueId());
+        if (ffa && standings != null) standings.eliminate(p.getUniqueId(),Bukkit.getCurrentTick());
         countdownFreeze.release(p.getUniqueId());
         projectiles.clear(p.getUniqueId());
         mounts.remove(p.getUniqueId());
@@ -492,6 +511,7 @@ final class DuelSession implements GameSession {
         lastHit.remove(p.getUniqueId()); deathPause.forget(p.getUniqueId());
         if (phase == Phase.DONE || !names.containsKey(p.getUniqueId())) return;
         withdrawn.add(p.getUniqueId());
+        if (ffa) { scheduleFfaResolution(); return; }
         services.messages().broadcast(text(p.getName() + " выбыл из турнира; оставшиеся матчи — технические поражения.", NamedTextColor.YELLOW));
     }
     @Override public void onParticipantRejoin(Player p) {
@@ -663,11 +683,22 @@ final class DuelSession implements GameSession {
     private void eliminate(Player p) {
         if (!eliminated.add(p.getUniqueId())) return;
         deathPause.begin(p.getUniqueId(), Bukkit.getCurrentTick());
+        if (ffa) standings.eliminate(p.getUniqueId(),Bukkit.getCurrentTick());
         mounts.remove(p.getUniqueId());
         harpoon.remove(p.getUniqueId());
         thunder.remove(p.getUniqueId());
         bombs.eliminate(p.getUniqueId());
         if (!p.isDead() && sumo) p.setGameMode(GameMode.SPECTATOR);
+        if (ffa) {
+            BukkitTask[] recovery = new BukkitTask[1];
+            recovery[0] = Bukkit.getScheduler().runTaskLater(services.plugin(), () -> {
+                recoveries.remove(recovery[0]);
+                if (phase != Phase.DONE && p.isOnline()) spectator(p);
+            }, DeathPause.TICKS);
+            recoveries.add(recovery[0]);
+            scheduleFfaResolution();
+            return;
+        }
         if (resolution == null) resolution = Bukkit.getScheduler().runTask(services.plugin(), () -> {
             if (phase != Phase.FIGHT || !services.session().isRunning()) { resolution = null; return; }
             // One tick for simultaneous deaths, then three seconds to read the outcome.
@@ -687,6 +718,27 @@ final class DuelSession implements GameSession {
                 } else finishRound(winner);
             }, Math.max(1, deathPause.remaining(Bukkit.getCurrentTick())));
         });
+    }
+    private void scheduleFfaResolution() {
+        if (resolution != null || phase == Phase.DONE || phase == Phase.RESULT) return;
+        resolution = Bukkit.getScheduler().runTask(services.plugin(), () -> {
+            resolution=null;
+            if (phase == Phase.DONE || context.ended() || standings.survivors().size()>1
+                    || services.isTest() && !standings.survivors().isEmpty()) return;
+            phase=Phase.RESULT;
+            harpoon.clear(); thunder.clear(); bombs.clear();
+            resolution=Bukkit.getScheduler().runTaskLater(services.plugin(), () -> { resolution=null; finishFfa(); },DeathPause.TICKS);
+        });
+    }
+    private void finishFfa() {
+        if(context.ended())return;
+        PartyRoundResult ranking=roundResult();
+        result=ranking.places().stream().flatMap(List::stream)
+                .map(id -> (Component) text(ranking.place(id)+". "+name(id)+" • +"+ranking.awards().get(id),NamedTextColor.GOLD)).toList();
+        context.finish(EndReason.FINISHED,ranking);
+    }
+    @Override public PartyRoundResult roundResult() {
+        return standings==null ? PartyRoundResult.empty() : standings.result(context.eligible(),Bukkit.getCurrentTick());
     }
     @Override public void onPlayerDeath(PlayerDeathEvent event) {
         Player p = event.getPlayer();
@@ -738,8 +790,10 @@ final class DuelSession implements GameSession {
         long remaining = readyAt.getOrDefault(p.getUniqueId(), 0L) - now;
         if (remaining > 0) { p.sendActionBar(text("Перезарядка: " + remaining + " с", NamedTextColor.RED)); return; }
         PvpClass kit = kits.get(p.getUniqueId());
-        Player opponent = fighters.stream().filter(id -> !id.equals(p.getUniqueId())).map(this::player)
-                .filter(other -> other != null && fighting(other)).findFirst().orElse(null);
+        List<Player> opponents = fighters.stream().filter(id -> !id.equals(p.getUniqueId())).map(this::player)
+                .filter(other -> other != null && fighting(other)).toList();
+        Player opponent = ffa ? PartyTargeting.select(p,opponents,kit == PvpClass.CRYOMANCER ? 6 : 8)
+                : opponents.stream().findFirst().orElse(null);
         if (kit == PvpClass.THUNDERER) {
             PvpThunder.Aim aim = PvpThunder.aim(p);
             if (aim == null || !arena.contains(aim.point())) {

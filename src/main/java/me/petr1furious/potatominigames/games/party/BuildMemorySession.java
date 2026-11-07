@@ -46,7 +46,12 @@ final class BuildMemorySession extends PartySurvivalSession {
         if(!building(p)||arena.localCell(p.getUniqueId(),e.getBlock())==null||e.getBlock().getType().isAir())return;
         Material material=e.getBlock().getType();e.getBlock().setType(Material.AIR,false);p.getInventory().addItem(new ItemStack(material));e.setDropItems(false);e.setExpToDrop(0);
     }
-    @Override public void onPlayerInteract(PlayerInteractEvent e){if(!building(e.getPlayer())||!e.getAction().isRightClick())e.setCancelled(true);}
+    @Override public void onPlayerInteract(PlayerInteractEvent e){
+        if(!building(e.getPlayer())){e.setCancelled(true);return;}
+        if(e.getAction()==Action.LEFT_CLICK_BLOCK){
+            if(e.getClickedBlock()==null||arena.localCell(e.getPlayer().getUniqueId(),e.getClickedBlock())==null)e.setCancelled(true);
+        }else if(!e.getAction().isRightClick())e.setCancelled(true);
+    }
     @Override protected void handleInventoryClick(InventoryClickEvent e){
         if(!(e.getWhoClicked() instanceof Player p)||!building(p)||e.getSlotType()==InventoryType.SlotType.CRAFTING||e.getSlotType()==InventoryType.SlotType.RESULT
                 ||e.getAction().name().contains("DROP")||e.getAction()==InventoryAction.CLONE_STACK)e.setCancelled(true);

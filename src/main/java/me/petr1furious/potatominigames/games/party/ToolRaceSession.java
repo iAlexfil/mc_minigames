@@ -2,6 +2,8 @@ package me.petr1furious.potatominigames.games.party;
 import java.util.*;
 import org.bukkit.*;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEvent;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 final class ToolRaceSession extends PartySurvivalSession {
     private final int duration;private ToolRaceArena arena;private ToolRaceTrack track;
@@ -11,6 +13,11 @@ final class ToolRaceSession extends PartySurvivalSession {
     double outHeight(){return 25;}int durationSeconds(){return duration;}boolean podiumAwards(){return true;}boolean survivalAutoFinish(){return false;}
     String instructions(){return "Прокопай 50 блоков вниз! 1 — железный топор, 2 — лопата, 3 — кирка. Выбирай инструмент под блок.";}
     void beginPlay(){for(var p:alivePlayers()){p.getInventory().setItem(0,PvpClass.item(Material.IRON_AXE));p.getInventory().setItem(1,PvpClass.item(Material.IRON_SHOVEL));p.getInventory().setItem(2,PvpClass.item(Material.IRON_PICKAXE));}}
+    @Override public void onPlayerInteract(PlayerInteractEvent e){
+        UUID id=e.getPlayer().getUniqueId();
+        if(!playing()||!alive(e.getPlayer())||track.finished(id)||e.getAction()!=Action.LEFT_CLICK_BLOCK
+                ||e.getClickedBlock()==null||arena.depth(id,e.getClickedBlock())!=track.progress(id))e.setCancelled(true);
+    }
     @Override protected void handleBlockBreak(BlockBreakEvent e){var p=e.getPlayer();UUID id=p.getUniqueId();int depth=arena.depth(id,e.getBlock());
         if(!playing()||!alive(p)||!track.mine(id,depth,elapsed())){e.setCancelled(true);return;}
         e.setDropItems(false);e.setExpToDrop(0);

@@ -431,6 +431,8 @@ final class ArmsRaceSession implements PartyRoundSession {
         respawnAt.remove(id); protectedUntil.remove(id); lastHit.remove(id); needsWeapon.remove(id); clearShots(id);
     }
     @Override public void onParticipantRejoin(Player player) {
+        // The mixed match owns reconnects: a withdrawn player watches until its next round.
+        if (context.embedded()) return;
         if (phase == Phase.DONE || !names.containsKey(player.getUniqueId())) return;
         UUID id = player.getUniqueId();
         connected.add(id); state.setAlive(id, false);

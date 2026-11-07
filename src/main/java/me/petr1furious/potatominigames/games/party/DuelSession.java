@@ -84,7 +84,7 @@ final class DuelSession implements PartyRoundSession {
     private final PartyRoundContext context;
     private final boolean ffa;
     private SurvivalStandings standings;
-    private final Set<BukkitTask> recoveries = new HashSet<>();
+    private final Map<UUID, BukkitTask> recoveries = new HashMap<>();
     private final PartyConfig config;
     private final boolean sumo;
     private final String title;
@@ -435,7 +435,7 @@ final class DuelSession implements PartyRoundSession {
     }
     @Override public void onEnd(EndReason reason) {
         context.hideBars();
-        recoveries.forEach(BukkitTask::cancel); recoveries.clear();
+        recoveries.values().forEach(BukkitTask::cancel); recoveries.clear();
         phase = Phase.DONE;
         countdownFreeze.releaseAll();
         projectiles.clearAll();
@@ -499,6 +499,8 @@ final class DuelSession implements PartyRoundSession {
     @Override public void onParticipantQuit(Player p) { withdraw(p); }
     @Override public void onParticipantLeave(Player p) { withdraw(p); }
     private void withdraw(Player p) {
+        BukkitTask recovery = recoveries.remove(p.getUniqueId());
+        if (recovery != null) recovery.cancel();
         context.withdraw(p.getUniqueId());
         if (ffa && standings != null) standings.eliminate(p.getUniqueId(),Bukkit.getCurrentTick());
         countdownFreeze.release(p.getUniqueId());
@@ -690,12 +692,14 @@ final class DuelSession implements PartyRoundSession {
         bombs.eliminate(p.getUniqueId());
         if (!p.isDead() && sumo) p.setGameMode(GameMode.SPECTATOR);
         if (ffa) {
-            BukkitTask[] recovery = new BukkitTask[1];
-            recovery[0] = Bukkit.getScheduler().runTaskLater(services.plugin(), () -> {
-                recoveries.remove(recovery[0]);
-                if (phase != Phase.DONE && p.isOnline()) spectator(p);
-            }, DeathPause.TICKS);
-            recoveries.add(recovery[0]);
+            UUID id = p.getUniqueId();
+            BukkitTask previous = recoveries.remove(id);
+            if (previous != null) previous.cancel();
+            recoveries.put(id, Bukkit.getScheduler().runTaskLater(services.plugin(), () -> {
+                recoveries.remove(id);
+                if (phase != Phase.DONE && !context.ended() && services.session().isRunning()
+                        && p.isOnline() && context.eligible().contains(id)) spectator(p);
+            }, DeathPause.TICKS));
             scheduleFfaResolution();
             return;
         }

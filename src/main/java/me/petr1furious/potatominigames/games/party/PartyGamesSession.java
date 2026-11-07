@@ -97,14 +97,23 @@ final class PartyGamesSession extends PartyRoundForwarder {
     }
     @Override public void onEnd(EndReason reason){
         if(phase==Phase.DONE)return;phase=Phase.DONE;
-        if(ticker!=null)ticker.cancel();if(transition!=null)transition.cancel();
-        if(child!=null){child.onEnd(EndReason.ABORTED);child=null;}
-        if(state!=null){List<Component> lines=new ArrayList<>();lines.add(text(complete?"Итоги Party Games":"Промежуточный счёт • очки не сохранены"));int place=1;
+        if(ticker!=null)endStep(ticker::cancel);if(transition!=null)endStep(transition::cancel);
+        PartyRoundSession endingChild=child;child=null;
+        if(endingChild!=null)endStep(()->endingChild.onEnd(EndReason.ABORTED));
+        if(state!=null)endStep(()->{List<Component> lines=new ArrayList<>();lines.add(text(complete?"Итоги Party Games":"Промежуточный счёт • очки не сохранены"));int place=1;
             for(var group:state.score().standings()){for(UUID id:group)lines.add(text(place+". "+names.get(id)+" • "+state.score().points(id)));place+=group.size();}summary=List.copyOf(lines);
             if(complete&&reason==EndReason.FINISHED&&!awarded){awarded=true;for(UUID id:names.keySet())services.award("party_games",id,state.score().points(id));}
+        });
+        if(context!=null){endStep(context::hideBars);context=null;}
+        // ActiveSession restores everyone before destroying its worlds. In particular, a world
+        // whose transition-time unload failed remains owned there for this final retry.
+        // Never unload here: an exception must not prevent the core from scheduling restoration.
+    }
+    private void endStep(Runnable step){
+        try{step.run();}catch(RuntimeException failure){
+            java.util.logging.Logger.getLogger(PartyGamesSession.class.getName())
+                    .log(java.util.logging.Level.SEVERE,"Party Games teardown step failed; continuing core cleanup",failure);
         }
-        if(hub!=null)for(Player p:services.session().audiencePlayers())park(p);
-        if(context!=null){context.hideBars();context.disposeWorlds();context=null;}
     }
     @Override public List<Component> summary(){return summary;}
     @Override public Component globalResult(){return complete?text("Party Games завершён! Победители: "+String.join(", ",state.score().standings().getFirst().stream().map(names::get).toList())):text("Party Games остановлен");}

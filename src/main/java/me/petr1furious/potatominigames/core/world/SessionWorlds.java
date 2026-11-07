@@ -31,6 +31,16 @@ public final class SessionWorlds {
         return throwaway.createVoid(id);
     }
 
+    /** Selectively releases a round's empty void world, never another session's arena. */
+    public void destroyVoid(String id) {
+        if (!throwawayIds.contains(id)) return;
+        World world = org.bukkit.Bukkit.getWorld(throwaway.baseName(id));
+        if (world != null && !world.getPlayers().isEmpty()) throw new IllegalStateException("Round world still has players");
+        throwaway.destroy(id);
+        if (org.bukkit.Bukkit.getWorld(throwaway.baseName(id)) != null) throw new IllegalStateException("Round world failed to unload");
+        throwawayIds.remove(id);
+    }
+
     /** Seeds of the generated worlds; empty when the session only plays on templates or shared maps. */
     public List<Long> seeds() {
         List<Long> seeds = new ArrayList<>();

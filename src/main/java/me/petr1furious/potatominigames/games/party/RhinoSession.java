@@ -60,7 +60,10 @@ final class RhinoSession extends PartySurvivalSession {
     private final int duration, initialRhinos, fuseSeconds, mineSpawnSeconds;
 
     RhinoSession(SessionServices services, PartyConfig config) {
-        super(services, config, "rhino", "Носорожий переполох");
+        this(services, config, PartyRoundContext.standalone(services));
+    }
+    RhinoSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
+        super(services, config, "rhino", "Носорожий переполох", context);
         mineKey = new NamespacedKey(services.plugin(), "party_rhino_mine");
         duration = Math.clamp(config.rhinoSeconds.get(), 30, 600);
         initialRhinos = Math.clamp(config.rhinoCount.get(), 1, 6);

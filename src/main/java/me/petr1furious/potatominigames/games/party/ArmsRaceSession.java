@@ -56,10 +56,11 @@ import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
 
 /** One continuous free-for-all. A death pauses only that player, never the match. */
-final class ArmsRaceSession implements GameSession {
+final class ArmsRaceSession implements PartyRoundSession {
     private enum Phase { COUNTDOWN, FIGHT, RESULT, DONE }
     private record Hit(UUID attacker, int stage, long tick) { }
     private final SessionServices services;
+    private final PartyRoundContext context;
     private final PartyConfig config;
     private final NamespacedKey shotStageKey;
     private final Random random = new Random();
@@ -90,8 +91,10 @@ final class ArmsRaceSession implements GameSession {
     private UUID champion;
     private List<Component> result = List.of();
 
-    ArmsRaceSession(SessionServices services, PartyConfig config) {
-        this.services = services;
+    ArmsRaceSession(SessionServices services, PartyConfig config) { this(services, config, PartyRoundContext.standalone(services)); }
+    ArmsRaceSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
+        this.context=context;
+        this.services = context.services();
         this.config = config;
         shotStageKey = new NamespacedKey(services.plugin(), "arms_race_shot_stage");
     }
@@ -112,10 +115,10 @@ final class ArmsRaceSession implements GameSession {
         if (names.isEmpty()) throw new CommandFailure("Для гонки вооружений нужны участники.");
         state = new ArmsRaceState(names.keySet(), ArmsRaceWeapon.values().length);
         countdownEnd = Math.clamp(config.armsRaceCountdownSeconds.get(), 3, 15) * 20L;
-        durationTicks = Math.clamp(config.armsRaceSeconds.get(), 60, 1800) * 20;
+        durationTicks = Math.clamp((context.embedded() ? context.options().armsRaceSeconds() : config.armsRaceSeconds.get()), 60, 1800) * 20;
         respawnTicks = Math.max(DeathPause.TICKS, Math.clamp(config.armsRaceRespawnSeconds.get(), 1, 10) * 20);
         protectionTicks = Math.clamp(config.armsRaceProtectionSeconds.get(), 1, 5) * 20;
-        world = services.worlds().createVoid("party_arms_race");
+        world = context.createVoid("party_arms_race");
         services.arena().applyStandardGameRules(world);
         world.setDifficulty(Difficulty.NORMAL);
         world.setTime(6000);
@@ -194,7 +197,7 @@ final class ArmsRaceSession implements GameSession {
     private void tick() {
         if (phase == Phase.DONE || !services.session().isRunning()) return;
         tick++;
-        if (connected.isEmpty()) { services.session().endGame(EndReason.ALL_PLAYERS_LEFT); return; }
+        if (connected.isEmpty()) { context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty()); return; }
         if (phase == Phase.COUNTDOWN && tick >= countdownEnd) {
             countdownFreeze.releaseAll();
             phase = Phase.FIGHT;
@@ -276,7 +279,7 @@ final class ArmsRaceSession implements GameSession {
         UUID creditedAttacker = hit != null && tick - hit.tick() <= 8 * 20 ? hit.attacker() : null;
         Player killer = creditedAttacker == null ? null : player(creditedAttacker);
         UUID killerId = killer != null && fighting(killer) ? killer.getUniqueId() : null;
-        boolean advanced = state.death(victimId, killerId, hit == null ? -1 : hit.stage());
+        boolean advanced = context.embedded() ? state.death(victimId, killerId, hit == null ? -1 : hit.stage(), tick) : state.death(victimId, killerId, hit == null ? -1 : hit.stage());
         needsWeapon.remove(victimId);
         clearShots(victimId);
         protectedUntil.remove(victimId);
@@ -367,20 +370,22 @@ final class ArmsRaceSession implements GameSession {
                     + (connected.contains(id) ? "" : " (вышел)"), i == 0 ? NamedTextColor.GOLD : NamedTextColor.GRAY));
         }
         result = List.copyOf(lines);
-        services.session().endGame(EndReason.FINISHED);
+        context.finish(EndReason.FINISHED, roundResult());
     }
     @Override public void onEnd(EndReason reason) {
+        context.hideBars();
         phase = Phase.DONE;
         countdownFreeze.releaseAll();
         projectiles.clearAll();
         if (ticker != null) ticker.cancel();
-        if (reason == EndReason.FINISHED && state != null) {
+        if (!context.embedded() && reason == EndReason.FINISHED && state != null) {
             for (UUID id : names.keySet()) services.award("party", id, state.kills(id) + (id.equals(champion) ? 3 : 0));
         }
         deathPause.clear();
         respawnAt.clear(); protectedUntil.clear(); lastHit.clear(); needsWeapon.clear();
         if (arena != null) arena.cleanup();
     }
+    @Override public PartyRoundResult roundResult() { return state == null ? PartyRoundResult.empty() : state.result(context.eligible()); }
     @Override public List<Component> summary() { return result; }
     @Override public Component globalResult() {
         return champion == null ? null : text(name(champion) + " выиграл гонку вооружений!", NamedTextColor.GOLD);
@@ -417,6 +422,7 @@ final class ArmsRaceSession implements GameSession {
     @Override public void onParticipantQuit(Player player) { disconnect(player); }
     @Override public void onParticipantLeave(Player player) { disconnect(player); }
     private void disconnect(Player player) {
+        context.withdraw(player.getUniqueId());
         if (phase == Phase.DONE) return;
         UUID id = player.getUniqueId();
         countdownFreeze.release(id);

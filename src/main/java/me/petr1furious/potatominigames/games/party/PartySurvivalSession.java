@@ -54,8 +54,9 @@ import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
 
 /** Common one-life party games: protected temporary arena, countdown and spectator elimination. */
-abstract class PartySurvivalSession implements GameSession, Listener {
+abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     final SessionServices services;
+    final PartyRoundContext context;
     final PartyConfig config;
     final Random random = new Random();
     final String id;
@@ -78,7 +79,11 @@ abstract class PartySurvivalSession implements GameSession, Listener {
     private List<Component> result = List.of();
 
     PartySurvivalSession(SessionServices services, PartyConfig config, String id, String title) {
-        this.services = services; this.config = config; this.id = id; this.title = title;
+        this(services, config, id, title, PartyRoundContext.standalone(services));
+    }
+    PartySurvivalSession(SessionServices services, PartyConfig config, String id, String title, PartyRoundContext context) {
+        this.context = context;
+        this.services = context.services(); this.config = config; this.id = id; this.title = title;
     }
     abstract void buildArena();
     abstract Location spawn(int index, int count);
@@ -101,7 +106,7 @@ abstract class PartySurvivalSession implements GameSession, Listener {
         standings = new SurvivalStandings(names.keySet());
         countdownEnd = Math.clamp(config.survivalCountdownSeconds.get(), 3, 15) * 20L;
         durationTicks = Math.max(20, durationSeconds()) * 20L;
-        world = services.worlds().createVoid("party_" + id);
+        world = context.createVoid(id);
         services.arena().applyStandardGameRules(world);
         world.setDifficulty(Difficulty.NORMAL);
         world.setTime(18000);
@@ -161,9 +166,9 @@ abstract class PartySurvivalSession implements GameSession, Listener {
         for (Player player : services.session().audiencePlayers()) player.showTitle(message);
     }
     private void tickGame() {
-        if (done || !services.session().isRunning()) return;
+        if (done || context.ended() || !services.session().isRunning()) return;
         tick++;
-        if (connected.isEmpty()) { services.session().endGame(EndReason.ALL_PLAYERS_LEFT); return; }
+        if (connected.isEmpty()) { context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty()); return; }
         if (!playing && tick >= countdownEnd) {
             countdownFreeze.releaseAll();
             playing = true;
@@ -177,7 +182,7 @@ abstract class PartySurvivalSession implements GameSession, Listener {
             for (Player player : alivePlayers()) {
                 if (!player.getWorld().equals(world) || player.getLocation().getY() < outHeight()) eliminate(player);
             }
-            if (standings.decided(services.isTest(), tick)) { finish(standings.survivors()); return; }
+            if (survivalAutoFinish() && standings.decided(services.isTest(), tick)) { finish(standings.survivors()); return; }
             if (!standings.resultsHeld() && elapsed() >= durationTicks) { finish(standings.survivors()); return; }
         }
         // Native deaths may need one tick before they can become spectators.
@@ -204,7 +209,7 @@ abstract class PartySurvivalSession implements GameSession, Listener {
         player.sendMessage(Component.text("Ты выбыл. Следующую игру можно начать через меню.", NamedTextColor.GRAY));
         spectate(player);
     }
-    private void spectate(Player player) {
+    final void spectate(Player player) {
         if (player.isDead()) return;
         if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
         player.closeInventory();
@@ -225,8 +230,12 @@ abstract class PartySurvivalSession implements GameSession, Listener {
                     + TimeFormat.clock(Math.max(0, standings.survived(id, tick) - startedAt) / 20), NamedTextColor.GRAY));
         }
         result = List.copyOf(lines);
-        services.session().endGame(EndReason.FINISHED);
+        context.finish(EndReason.FINISHED, roundResult());
     }
+    @Override public PartyRoundResult roundResult() { return standings == null ? PartyRoundResult.empty() : standings.result(context.eligible(), tick); }
+    boolean survivalAutoFinish() { return true; }
+    boolean podiumAwards() { return false; }
+    final long gameTick() { return tick; }
     private void hud() {
         if (bar == null || done) return;
         String line = !playing ? "Старт через " + Math.max(1, (countdownEnd - tick + 19) / 20) + " с" : status();
@@ -249,7 +258,11 @@ abstract class PartySurvivalSession implements GameSession, Listener {
         countdownFreeze.releaseAll();
         HandlerList.unregisterAll(this);
         cleanup();
-        if (reason == EndReason.FINISHED) for (UUID id : champions) services.award("party", id, 3);
+        context.hideBars();
+        if (!context.embedded() && reason == EndReason.FINISHED) {
+            if (podiumAwards()) roundResult().awards().forEach((id, points) -> services.award("party", id, points));
+            else for (UUID id : champions) services.award("party", id, 3);
+        }
     }
     @Override public final List<Component> summary() { return result; }
     @Override public final Component globalResult() {
@@ -260,6 +273,7 @@ abstract class PartySurvivalSession implements GameSession, Listener {
     @Override public final void onParticipantQuit(Player player) { disconnect(player); }
     @Override public final void onParticipantLeave(Player player) { disconnect(player); }
     private void disconnect(Player player) {
+        context.withdraw(player.getUniqueId());
         if (done || standings == null) return;
         countdownFreeze.release(player.getUniqueId());
         if (standings.eliminate(player.getUniqueId(), tick)) playerOut(player);
@@ -284,18 +298,23 @@ abstract class PartySurvivalSession implements GameSession, Listener {
         event.getDrops().clear(); event.setDroppedExp(0); event.setKeepInventory(true); event.deathMessage(null);
         eliminate(event.getPlayer());
     }
-    @Override public final void onEntityDamage(EntityDamageEvent event) { if (event.getEntity().getWorld().equals(world)) event.setCancelled(true); }
-    @Override public final void onEntityDamageByEntity(EntityDamageByEntityEvent event) { if (event.getEntity().getWorld().equals(world)) event.setCancelled(true); }
+    @Override public final void onEntityDamage(EntityDamageEvent event) { handleDamage(event); }
+    protected void handleDamage(EntityDamageEvent event) { if (event.getEntity().getWorld().equals(world)) event.setCancelled(true); }
+    @Override public final void onEntityDamageByEntity(EntityDamageByEntityEvent event) { handleAttack(event); }
+    protected void handleAttack(EntityDamageByEntityEvent event) { if (event.getEntity().getWorld().equals(world)) event.setCancelled(true); }
     @EventHandler public final void onTarget(EntityTargetLivingEntityEvent event) { if (event.getEntity().getWorld().equals(world)) event.setCancelled(true); }
-    @Override public final void onBlockBreak(BlockBreakEvent event) { event.setCancelled(true); }
-    @Override public final void onBlockPlace(BlockPlaceEvent event) { event.setCancelled(true); }
+    @Override public final void onBlockBreak(BlockBreakEvent event) { handleBlockBreak(event); }
+    protected void handleBlockBreak(BlockBreakEvent event) { event.setCancelled(true); }
+    @Override public final void onBlockPlace(BlockPlaceEvent event) { handleBlockPlace(event); }
+    protected void handleBlockPlace(BlockPlaceEvent event) { event.setCancelled(true); }
     @Override public final void onEntityExplode(EntityExplodeEvent event) { event.blockList().clear(); }
     @Override public final void onBlockExplode(BlockExplodeEvent event) { event.blockList().clear(); }
     @Override public final void onFoodLevelChange(FoodLevelChangeEvent event) { event.setCancelled(true); }
     @Override public final void onDropItem(PlayerDropItemEvent event) { event.setCancelled(true); }
     @Override public void onPickupItem(EntityPickupItemEvent event) { event.setCancelled(true); }
     @Override public final void onCraftItem(CraftItemEvent event) { event.setCancelled(true); }
-    @Override public final void onInventoryClick(InventoryClickEvent event) { event.setCancelled(true); }
+    @Override public final void onInventoryClick(InventoryClickEvent event) { handleInventoryClick(event); }
+    protected void handleInventoryClick(InventoryClickEvent event) { event.setCancelled(true); }
     @Override public final void onInventoryDrag(InventoryDragEvent event) { event.setCancelled(true); }
     @Override public final void onSwapHandItems(PlayerSwapHandItemsEvent event) { event.setCancelled(true); }
     @Override public void onPlayerInteract(PlayerInteractEvent event) { event.setCancelled(true); }

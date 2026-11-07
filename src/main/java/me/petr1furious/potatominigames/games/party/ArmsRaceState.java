@@ -37,6 +37,9 @@ final class ArmsRaceState {
 
     /** Returns true only when the killer earned a new step (or the final victory). */
     boolean death(UUID victim, UUID killer, int weaponStage) {
+        return death(victim, killer, weaponStage, ++sequence);
+    }
+    boolean death(UUID victim, UUID killer, int weaponStage, long tick) {
         if (winner != null || !alive(victim)) return false;
         Score dead = scores.get(victim);
         dead.alive = false;
@@ -46,7 +49,7 @@ final class ArmsRaceState {
         // Old arrows and delayed fall credit cannot skip a newly equipped weapon.
         if (weaponStage != attacker.stage) return false;
         attacker.kills++;
-        attacker.advancedAt = ++sequence;
+        attacker.advancedAt = tick;
         if (attacker.stage == stages - 1) winner = killer;
         else attacker.stage++;
         return true;
@@ -56,6 +59,11 @@ final class ArmsRaceState {
                 .<UUID>comparingInt(this::kills).reversed()
                 .thenComparingInt(this::deaths)
                 .thenComparingLong(id -> scores.get(id).advancedAt)).toList();
+    }
+    PartyRoundResult result(Collection<UUID> eligible) {
+        return PartyRoundResult.ordered(eligible, Comparator.<UUID,Boolean>comparing(id -> !id.equals(winner))
+                .thenComparing(Comparator.<UUID>comparingInt(this::kills).reversed())
+                .thenComparingInt(this::deaths).thenComparingLong(id -> scores.get(id).advancedAt));
     }
     UUID timeWinner(Collection<UUID> eligible) {
         List<UUID> ranking = leaderboard(eligible);

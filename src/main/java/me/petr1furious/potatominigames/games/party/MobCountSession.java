@@ -25,7 +25,10 @@ final class MobCountSession extends PartySurvivalSession {
     private final int countSeconds, answerSeconds, rounds;
 
     MobCountSession(SessionServices services, PartyConfig config) {
-        super(services, config, "mob_count", "Пересчёт");
+        this(services, config, PartyRoundContext.standalone(services));
+    }
+    MobCountSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
+        super(services, config, "mob_count", "Пересчёт", context);
         countSeconds = Math.clamp(config.mobCountSeconds.get(), 6, 30);
         answerSeconds = Math.clamp(config.mobCountAnswerSeconds.get(), 4, 20);
         rounds = Math.clamp(config.mobCountRounds.get(), 2, 30);
@@ -87,6 +90,7 @@ final class MobCountSession extends PartySurvivalSession {
                     if (!arena.correct(player.getLocation(), round)) failed.add(player.getUniqueId());
                     player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, .8f, 1);
                 }
+                if (context.embedded()) for (Player player : alivePlayers()) if (failed.contains(player.getUniqueId())) eliminate(player);
                 arena.removeWrong(round);
                 phase = Phase.DROP;
                 phaseEnd = elapsed + 60;

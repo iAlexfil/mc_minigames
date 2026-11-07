@@ -7,7 +7,10 @@ final class TntRunSession extends PartySurvivalSession {
     private TntRunArena arena;
     private final int duration, collapse;
     TntRunSession(SessionServices services, PartyConfig config) {
-        super(services, config, "tnt_run", "TNT Run");
+        this(services, config, PartyRoundContext.standalone(services));
+    }
+    TntRunSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
+        super(services, config, "tnt_run", "TNT Run", context);
         duration = Math.clamp(config.tntRunSeconds.get(), 30, 600);
         collapse = Math.clamp(config.tntRunCollapseTicks.get(), 3, 40);
     }

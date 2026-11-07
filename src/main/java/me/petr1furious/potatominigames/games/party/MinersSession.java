@@ -70,10 +70,11 @@ import me.petr1furious.potatominigames.core.game.GameSession;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 
 /** Party FFA: private mining cells, physical random loot, then one-life underground PvP. */
-final class MinersSession implements GameSession {
+final class MinersSession implements PartyRoundSession {
     private record Hit(UUID attacker, long tick) { }
     private static final NamespacedKey COMPASS = new NamespacedKey("potatominigames", "miners_compass");
     private final SessionServices services;
+    private final PartyRoundContext context;
     private final PartyConfig config;
     private final Random random = new Random();
     private final Map<UUID, String> names = new LinkedHashMap<>();
@@ -98,7 +99,9 @@ final class MinersSession implements GameSession {
     private List<UUID> champions = List.of();
     private List<Component> result = List.of();
 
-    MinersSession(SessionServices services, PartyConfig config) { this.services = services; this.config = config; }
+    MinersSession(SessionServices services, PartyConfig config) { this(services, config, PartyRoundContext.standalone(services)); }
+    MinersSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
+        this.context=context; this.services = context.services(); this.config = config; }
     private static Component text(String value) { return Component.text(value, NamedTextColor.GOLD); }
     private void say(String value) { services.messages().broadcast(text(value)); }
     private String name(UUID id) { return names.getOrDefault(id, "Игрок"); }
@@ -124,10 +127,10 @@ final class MinersSession implements GameSession {
         Collections.shuffle(roster, random);
         for (int i = 0; i < roster.size(); i++) cells.put(roster.get(i), i);
         standings = new SurvivalStandings(roster);
-        finaleSeconds = Math.clamp(config.minersFinaleSeconds.get(), 15, 120);
+        finaleSeconds = Math.clamp((context.embedded() ? context.options().minersFinaleSeconds() : config.minersFinaleSeconds.get()), 15, 120);
         round = new MinersRound(Math.clamp(config.survivalCountdownSeconds.get(), 3, 15),
-                Math.clamp(config.minersPreparationSeconds.get(), 10, 300), Math.clamp(config.minersCombatSeconds.get(), 30, 600), finaleSeconds);
-        world = services.worlds().createVoid("party_miners");
+                Math.clamp((context.embedded() ? context.options().minersPreparationSeconds() : config.minersPreparationSeconds.get()), 10, 300), Math.clamp((context.embedded() ? context.options().minersCombatSeconds() : config.minersCombatSeconds.get()), 30, 600), finaleSeconds);
+        world = context.createVoid("party_miners");
         services.arena().applyStandardGameRules(world);
         world.setDifficulty(Difficulty.NORMAL); world.setTime(6000); world.setStorm(false);
         world.setGameRule(GameRules.PVP, false);
@@ -150,7 +153,7 @@ final class MinersSession implements GameSession {
             try { tickGame(); }
             catch (RuntimeException error) {
                 services.plugin().getLogger().log(java.util.logging.Level.SEVERE, "Miners match failed", error);
-                services.session().endGame(EndReason.ABORTED);
+                context.finish(EndReason.ABORTED, PartyRoundResult.empty());
             }
         }, 1, 1);
     }
@@ -187,7 +190,7 @@ final class MinersSession implements GameSession {
     private void tickGame() {
         if (round.phase() == MinersRound.Phase.DONE || !services.session().isRunning()) return;
         tick++;
-        if (connected.isEmpty()) { services.session().endGame(EndReason.ALL_PLAYERS_LEFT); return; }
+        if (connected.isEmpty()) { context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty()); return; }
         if (round.phase() == MinersRound.Phase.BUILDING && arena.buildSlice(4096)) {
             for (Player p : survivors()) equip(p);
             round.ready(tick);
@@ -208,7 +211,7 @@ final class MinersSession implements GameSession {
             }
         }
         if (round.phase() == MinersRound.Phase.RESULT) {
-            if (tick >= round.deadline()) services.session().endGame(EndReason.FINISHED);
+            if (tick >= round.deadline()) context.finish(EndReason.FINISHED, roundResult());
             return;
         }
         for (UUID id : List.copyOf(deadAt.keySet())) if (tick - deadAt.get(id) >= DeathPause.TICKS) {
@@ -386,6 +389,7 @@ final class MinersSession implements GameSession {
     @Override public void onParticipantQuit(Player p) { leave(p); }
     @Override public void onParticipantLeave(Player p) { leave(p); }
     private void leave(Player p) {
+        context.withdraw(p.getUniqueId());
         if (standings == null) return;
         standings.eliminate(p.getUniqueId(), tick); connected.remove(p.getUniqueId());
         freeze.release(p.getUniqueId()); bombs.remove(p.getUniqueId()); shots.clear(p.getUniqueId());
@@ -490,9 +494,12 @@ final class MinersSession implements GameSession {
         if (round != null) round.done();
     }
     @Override public void onEnd(EndReason reason) {
+        context.hideBars();
         cleanup();
-        if (reason == EndReason.FINISHED) for (UUID id : champions) services.award("party", id, 3);
+        if (!context.embedded() && reason == EndReason.FINISHED) for (UUID id : champions) services.award("party", id, 3);
     }
+    @Override public PartyRoundResult roundResult() { return standings == null ? PartyRoundResult.empty() : standings.result(context.eligible(), tick); }
+    @Override public boolean ready() { return round != null && round.phase() != MinersRound.Phase.BUILDING; }
     @Override public List<Component> summary() { return result; }
     @Override public Component globalResult() { return champions.isEmpty() ? null : text(name(champions.getFirst()) + " победил в Битве шахтёров!"); }
 }

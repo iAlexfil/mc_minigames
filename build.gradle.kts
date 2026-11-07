@@ -151,3 +151,14 @@ val checkPartyLifecycle by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.games.party.PartyLifecycleCheck")
 }
 tasks.check { dependsOn(checkPartyLifecycle) }
+
+for ((taskName, checkClass) in mapOf(
+    "checkColorFloor" to "ColorFloorCheck", "checkAnvils" to "AnvilsCheck",
+    "checkBuildMemory" to "BuildMemoryCheck", "checkToolRace" to "ToolRaceCheck")) {
+    val gameCheck = tasks.register<JavaExec>(taskName) {
+        dependsOn(checks.classesTaskName)
+        classpath = checks.runtimeClasspath
+        mainClass.set("me.petr1furious.potatominigames.games.party.$checkClass")
+    }
+    tasks.check { dependsOn(gameCheck) }
+}

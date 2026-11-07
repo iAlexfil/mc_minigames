@@ -220,7 +220,8 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     }
     final void finish(List<UUID> winners) {
         if (done) return;
-        champions = List.copyOf(winners);
+        PartyRoundResult podium = roundResult();
+        champions = podiumAwards() ? (podium.places().isEmpty() ? List.of() : podium.places().getFirst()) : List.copyOf(winners);
         List<Component> lines = new ArrayList<>();
         lines.add(text(champions.isEmpty() ? "Ничья — никто не выжил." : "Победители: "
                 + String.join(", ", champions.stream().map(names::get).toList())));
@@ -228,6 +229,11 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         for (UUID id : standings.ranking(names.keySet(), tick)) {
             lines.add(Component.text(++place + ". " + names.get(id) + " • "
                     + TimeFormat.clock(Math.max(0, standings.survived(id, tick) - startedAt) / 20), NamedTextColor.GRAY));
+        }
+        if (podiumAwards()) {
+            lines.clear();
+            for (var group : podium.places()) for (UUID id : group)
+                lines.add(text(podium.place(id) + ". " + names.get(id) + " • +" + podium.awards().get(id) + " очк."));
         }
         result = List.copyOf(lines);
         context.finish(EndReason.FINISHED, roundResult());
@@ -268,7 +274,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     @Override public final Component globalResult() {
         return champions.isEmpty() ? null : text(String.join(", ", champions.stream().map(names::get).toList()) + " — победа в " + title + "!");
     }
-    @Override public final boolean isInGame(Player player) { return alive(player); }
+    @Override public boolean isInGame(Player player) { return alive(player); }
     @Override public final Location spectatorLocation(Player viewer) { return world == null ? null : viewpoint(); }
     @Override public final void onParticipantQuit(Player player) { disconnect(player); }
     @Override public final void onParticipantLeave(Player player) { disconnect(player); }

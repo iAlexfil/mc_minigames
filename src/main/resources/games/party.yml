@@ -17,3 +17,23 @@ miners:
   preparationSeconds: 120
   combatSeconds: 180
   finaleSeconds: 60
+
+colorFloor:
+  stages: 12
+anvils:
+  waveSeconds: 12
+  moveSeconds: 4
+  waves: 10
+  pvpWave: 4
+buildMemory:
+  stages: 8
+toolRace:
+  durationSeconds: 180
+partyGames:
+  modes: "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race"
+  rounds: 11
+  intermissionSeconds: 8
+  armsRaceSeconds: 180
+  minersPreparationSeconds: 60
+  minersCombatSeconds: 90
+  minersFinaleSeconds: 30

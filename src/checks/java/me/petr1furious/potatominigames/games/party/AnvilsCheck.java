@@ -12,7 +12,7 @@ public final class AnvilsCheck {
         r.advance(320);r.advance(440);r.advance(540); check(!r.pvpEnabled(),"No PvP through third rain");
         r.advance(660);check(r.pvpEnabled(),"PvP from fourth wave");
         check(AnvilArena.RADIUS==10,"Twenty-one-block platform");
-        check(AnvilRain.batchSize(1)*20/AnvilRain.spawnInterval(1)>=50,"More rain per square metre even on larger arena");
+        check(AnvilRain.batchSize(1)*20/AnvilRain.spawnInterval(1)>=100,"Dense rain already from the first wave");
         check(AnvilRain.batchSize(10)>AnvilRain.batchSize(1),"Rain intensifies");
         var a=AnvilArena.layout(8,new Random(1));var b=AnvilArena.layout(7,new Random(2));
         check(!a.containsAll(b),"New shelter layout is not just removed old shelter");

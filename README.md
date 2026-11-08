@@ -32,8 +32,9 @@ Equal results share a place and skip occupied positions: `1, 2, 2, 4` awards
 `3, 2, 2, 0`. Simultaneous eliminations use server ticks; a failed color or
 building check is one shared elimination group. The final ranking compares
 points, then first places, then second places; exact ties share the title.
-Round results are followed by one four-second intermission, without a second
-countdown. The first game has a four-second countdown. The current game owns the
+Round results are followed by a four-second intermission. Every game then has
+its own four-second countdown after its arena is ready and players have spawned.
+The current game owns the
 sidebar during play; total points appear between games. Arms Race uses six weapon
 stages only inside Party Games (standalone keeps twelve), with a three-minute limit;
 Miners uses 60 seconds preparation, 90 seconds combat and a 30-second finale.
@@ -43,7 +44,7 @@ Four games are also independently available:
 | Mode | Command | Rules |
 | --- | --- | --- |
 | Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, falling to two seconds; twelve stages. Colors form patches of different sizes, with two rare colors. A target remains within eight blocks of every floor cell. |
-| Наковальни | `/play party anvils` | Dodge dense, staggered rain on a 21×21 platform or shelter under slabs. Each six-second wave is followed by five rain-free seconds to cross the larger arena: old anvils disappear and shelters move randomly. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves, at most 320 airborne anvils, with rate-limited impact sounds. |
+| Наковальни | `/play party anvils` | Dodge dense, staggered rain on a 21×21 platform or shelter under slabs. Each six-second wave is followed by five rain-free seconds to cross the larger arena: old anvils disappear and shelters move randomly. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves, starting at 100 anvils per second and capped at 512 airborne anvils, with rate-limited impact sounds. |
 | Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize a recognizable model (tree, arch, well, bridge, colonnade, fireplace, gate, house), then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The exact kit grows from 9 to 23 blocks; memorization drops from 12 to 5 seconds, while construction starts at 20 seconds and increases by two seconds per stage, up to 34. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
 

@@ -10,7 +10,7 @@ final class AnvilRain {
     private final Consumer<Player> hit;private final List<Drop> drops=new ArrayList<>();
     private long nextImpactSound;
     static int spawnInterval(int wave){return wave<4?2:1;}
-    static int batchSize(int wave){return 4+Math.clamp(wave,1,6);}
+    static int batchSize(int wave){return 8+2*Math.clamp(wave,1,6);}
     AnvilRain(World world,AnvilArena arena,Random random,Consumer<Player> hit){this.world=world;this.arena=arena;this.random=random;this.hit=hit;}
     // The anvil has a half-block-wide footprint. Return its bottom height at first contact.
     static double impact(double x,double z,double from,double to,BoundingBox box){
@@ -20,7 +20,7 @@ final class AnvilRain {
     }
     void tick(long tick,int wave,List<Player> targets){
         int interval=spawnInterval(wave);
-        if(tick%interval==0)for(int i=0;i<batchSize(wave)&&drops.size()<320;i++){
+        if(tick%interval==0)for(int i=0;i<batchSize(wave)&&drops.size()<512;i++){
             Drop d=new Drop();d.x=random.nextInt(2*AnvilArena.RADIUS+1)-AnvilArena.RADIUS+.5;d.z=random.nextInt(2*AnvilArena.RADIUS+1)-AnvilArena.RADIUS+.5;
             d.display=world.spawn(new Location(world,d.x-.5,d.y,d.z-.5),BlockDisplay.class,e->{e.setBlock(Material.ANVIL.createBlockData());e.setTeleportDuration(1);e.setPersistent(false);});drops.add(d);
         }

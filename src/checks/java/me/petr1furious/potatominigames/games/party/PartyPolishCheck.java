@@ -22,7 +22,8 @@ public final class PartyPolishCheck {
         }
         check(pool.size()==11&&selections.size()>20,"Random six selected from the full pool");
         check(PartyRoundOptions.party().forRound(0).countdownSeconds()==4,"Initial countdown is four seconds");
-        check(PartyRoundOptions.party().forRound(1).countdownSeconds()==0,"No extra countdown after intermission");
+        for(int round=1;round<11;round++)
+            check(PartyRoundOptions.party().forRound(round).countdownSeconds()==4,"Every later arena has its own four-second countdown");
         var shortChain=ArmsRaceWeapon.progression(true);var fullChain=ArmsRaceWeapon.progression(false);
         check(shortChain.size()==6&&fullChain.size()==12,"Six steps only inside Party Games");
         check(shortChain.getLast()==ArmsRaceWeapon.GOLDEN_SHOVEL&&new HashSet<>(shortChain).size()==6,"Short progression retains final challenge");

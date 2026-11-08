@@ -14,13 +14,15 @@ import net.kyori.adventure.text.format.NamedTextColor;
 
 /** Finite ammunition, ordered by general usefulness before the renewable regular stack. */
 enum PvpArrow {
-    SLOWNESS("Замедление I • 4 с", 6, 80, 0x709AB8),
-    POISON("Яд I • 4 с", 4, 80, 0x69A543),
-    WEAKNESS("Слабость I • 5 с", 4, 100, 0x797482),
-    SPECTRAL("Спектральные • подсветка", 6, 0, 0xEBC75E);
+    HARMING("Моментальный урон I", 10, 1, 0xA43332),
+    SLOWNESS("Замедление I • 4 с", 10, 80, 0x709AB8),
+    POISON("Яд I • 4 с", 10, 80, 0x69A543),
+    WEAKNESS("Слабость I • 5 с", 10, 100, 0x797482),
+    NAUSEA("Тошнота • 8 с", 10, 160, 0x695370),
+    SPECTRAL("Спектральные • подсветка", 10, 0, 0xEBC75E);
 
     static final int FIRST_SLOT = 9;
-    static final int NORMAL_SLOT = 13;
+    static final int NORMAL_SLOT = FIRST_SLOT + values().length;
     final String title;
     final int amount;
     final int durationTicks;
@@ -33,9 +35,11 @@ enum PvpArrow {
     Material material() { return this == SPECTRAL ? Material.SPECTRAL_ARROW : Material.TIPPED_ARROW; }
     private PotionEffectType effectType() {
         return switch (this) {
+            case HARMING -> PotionEffectType.INSTANT_DAMAGE;
             case SLOWNESS -> PotionEffectType.SLOWNESS;
             case POISON -> PotionEffectType.POISON;
             case WEAKNESS -> PotionEffectType.WEAKNESS;
+            case NAUSEA -> PotionEffectType.NAUSEA;
             case SPECTRAL -> throw new IllegalStateException("Spectral arrows use native Glowing");
         };
     }

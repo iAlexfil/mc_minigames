@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.core.command;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.ArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -27,6 +28,7 @@ import me.petr1furious.potatominigames.core.session.SessionManager;
 import me.petr1furious.potatominigames.core.team.TeamColor;
 import me.petr1furious.potatominigames.core.team.TeamService;
 import me.petr1furious.potatominigames.core.text.Messages;
+import me.petr1furious.potatominigames.games.party.PvpDuelKits;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
@@ -202,6 +204,18 @@ public final class GameCommands {
                                                         }))));
 
         if (game.id().equals("party")) {
+            root.then(Commands.literal("duel")
+                    .requires(GameCommands::isAdmin)
+                    .then(Commands.argument("classA", IntegerArgumentType.integer(-1, PvpDuelKits.classCount()))
+                            .suggests(GameCommands::suggestPvpClasses)
+                            .then(Commands.argument("classB", IntegerArgumentType.integer(-1, PvpDuelKits.classCount()))
+                                    .suggests(GameCommands::suggestPvpClasses)
+                                    .executes(ctx -> run(ctx, c -> launchPvpDuel(c, game))))));
+            root.then(Commands.literal("classes").executes(ctx -> run(ctx, c -> {
+                var sender = c.getSource().getSender();
+                sender.sendMessage(Component.text("Классы PvP: -1 — случайный", NamedTextColor.GOLD));
+                for (String label : PvpDuelKits.classList()) sender.sendMessage(Component.text(label, NamedTextColor.GREEN));
+            })));
             root.then(
                     Commands.literal("points")
                             .then(
@@ -274,6 +288,39 @@ public final class GameCommands {
     private ActiveSession requireOwnSession(Minigame game) throws CommandFailure {
         return sessions.sessionOf(game)
                 .orElseThrow(() -> new CommandFailure("No " + game.id() + " game is active."));
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestPvpClasses(
+            CommandContext<CommandSourceStack> ctx, com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        String prefix = builder.getRemaining();
+        for (int number = -1; number <= PvpDuelKits.classCount(); number++) {
+            if (number == 0 || !Integer.toString(number).startsWith(prefix)) continue;
+            builder.suggest(number, new com.mojang.brigadier.LiteralMessage(PvpDuelKits.label(number)));
+        }
+        return builder.buildFuture();
+    }
+
+    private void launchPvpDuel(CommandContext<CommandSourceStack> ctx, Minigame game) throws CommandFailure {
+        List<Player> roster = org.bukkit.Bukkit.getOnlinePlayers().stream()
+                .filter(player -> !sessions.isPlaying(player))
+                .sorted(java.util.Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        if (roster.size() != 2) throw new CommandFailure("Для /party duel нужны ровно два свободных игрока. Сейчас: " + roster.size());
+        if (ctx.getSource().getExecutor() instanceof Player author) {
+            if (sessions.isPlaying(author)) throw new CommandFailure("Сначала выйди из текущей игры, чтобы стать игроком A.");
+            if (roster.getLast().getUniqueId().equals(author.getUniqueId())) java.util.Collections.reverse(roster);
+        }
+        Player a = roster.getFirst(), b = roster.getLast();
+        PvpDuelKits setup;
+        try {
+            setup = new PvpDuelKits(IntegerArgumentType.getInteger(ctx, "classA"), IntegerArgumentType.getInteger(ctx, "classB"),
+                    a.getUniqueId(), b.getUniqueId());
+        } catch (IllegalArgumentException failure) {
+            throw new CommandFailure(failure.getMessage());
+        }
+        sessions.start(game, "pvp", roster, Map.of(), false, setup.options());
+        ctx.getSource().getSender().sendMessage(Component.text("BO3 запущен: A — " + a.getName() + " (" + PvpDuelKits.label(setup.classA())
+                + "), B — " + b.getName() + " (" + PvpDuelKits.label(setup.classB()) + ").", NamedTextColor.GOLD));
     }
 
     /** {@code start [mode] [players] [option]}; mode suggestions remain live for player presets. */

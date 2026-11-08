@@ -5,6 +5,9 @@ import java.util.Map;
 import java.util.UUID;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 /** Class passives have separate cooldowns; no lasting player attributes are modified. */
@@ -14,11 +17,12 @@ final class PvpCombat {
     static final int SHADOW_WAND_COOLDOWN = 20;
     static final int SHADOW_BLINDNESS_TICKS = 40;
     static final int SHADOW_SLOWNESS_TICKS = 60;
+    static final int FROST_COOLDOWN_TICKS = 10, FROST_SLOW_TICKS = 80, FROST_WEAKNESS_TICKS = 60;
     private final Map<UUID, Long> staticReady = new HashMap<>();
     private final Map<UUID, Long> shadowReady = new HashMap<>();
     private final Map<UUID, Long> backstabReady = new HashMap<>();
     private final Map<UUID, Long> leechReady = new HashMap<>();
-    private final Map<UUID, Long> frostReady = new HashMap<>();
+    private final Map<UUID, Integer> frostHits = new HashMap<>();
 
     boolean staticStrike(UUID player, long second, boolean landed) {
         if (!landed || second < staticReady.getOrDefault(player, 0L)) return false;
@@ -35,10 +39,15 @@ final class PvpCombat {
         leechReady.put(player, second + 3);
         return true;
     }
-    boolean frost(UUID player, long second) {
-        if (second < frostReady.getOrDefault(player, 0L)) return false;
-        frostReady.put(player, second + 2);
+    boolean frost(UUID player, int tick) {
+        Integer previous = frostHits.get(player);
+        if (previous != null && tick - previous < FROST_COOLDOWN_TICKS) return false;
+        frostHits.put(player, tick);
         return true;
+    }
+    static void applyFrost(LivingEntity target) {
+        target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, FROST_SLOW_TICKS, 3));
+        target.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, FROST_WEAKNESS_TICKS, 0));
     }
     boolean shadowStrike(UUID player, long second, boolean unblockedHit) {
         if (!unblockedHit || shadowRemaining(player, second) > 0) return false;
@@ -46,8 +55,8 @@ final class PvpCombat {
         return true;
     }
     long shadowRemaining(UUID player, long second) { return Math.max(0, shadowReady.getOrDefault(player, 0L) - second); }
-    void forget(UUID player) { staticReady.remove(player); backstabReady.remove(player); leechReady.remove(player); frostReady.remove(player); shadowReady.remove(player); }
-    void reset() { staticReady.clear(); backstabReady.clear(); leechReady.clear(); frostReady.clear(); shadowReady.clear(); }
+    void forget(UUID player) { staticReady.remove(player); backstabReady.remove(player); leechReady.remove(player); frostHits.remove(player); shadowReady.remove(player); }
+    void reset() { staticReady.clear(); backstabReady.clear(); leechReady.clear(); frostHits.clear(); shadowReady.clear(); }
     static boolean isBehind(Vector facing, Vector towardsAttacker) {
         Vector a = facing.clone().setY(0), b = towardsAttacker.clone().setY(0);
         return a.lengthSquared() > 1.0e-6 && b.lengthSquared() > 1.0e-6 && a.normalize().dot(b.normalize()) <= -.5;

@@ -14,7 +14,7 @@ final class MinersLoot {
     enum Quality { COMMON, GOOD, RARE }
     record Drop(Material material, int amount, Quality quality, String enchant, int level, PvpPotion potion) {
         ItemStack item() {
-            ItemStack item = potion != null ? potion.item(amount) : material == Material.TNT ? PvpBombs.item(amount) : new ItemStack(material, amount);
+            ItemStack item = potion != null ? potion.item(amount) : material == Material.TNT ? PvpBombs.item(amount, PvpBombs.MINERS_THROW_COOLDOWN) : new ItemStack(material, amount);
             item.editMeta(meta -> {
                 if (material.getMaxDurability() > 0) meta.setUnbreakable(true);
                 if (enchant != null && level > 0) meta.addEnchant(resolve(enchant), level, true);

@@ -118,6 +118,11 @@ public final class PartyConfig {
             bag.define("partyGames.minersFinaleSeconds", PropertyCodec.INT, 30)
                     .validate(n -> n >= 15 && n <= 120);
 
+    public final Property<Integer> pvpFfaOvertimeSeconds = bag.define("pvpFfa.overtimeSeconds", PropertyCodec.INT, 180)
+            .validate(n -> n >= 20 && n <= 600);
+    public final Property<Integer> sumoFfaOvertimeSeconds = bag.define("sumoFfa.overtimeSeconds", PropertyCodec.INT, 45)
+            .validate(n -> n >= 20 && n <= 300);
+
     public PartyConfig(ConfigRegistry configs) {
         configs.register(bag, "games/party.yml", "");
     }

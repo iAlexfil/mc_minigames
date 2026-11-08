@@ -89,7 +89,7 @@ final class MinersSession implements PartyRoundSession {
     private final Map<UUID, Long> deadAt = new HashMap<>();
     private final CountdownFreeze freeze = new CountdownFreeze();
     private final ArenaProjectiles shots = new ArenaProjectiles();
-    private final PvpBombs bombs = new PvpBombs();
+    private final PvpBombs bombs = new PvpBombs(PvpBombs.MINERS_THROW_COOLDOWN);
     private final MinersDrops drops = new MinersDrops();
     private final MinersGold gold = new MinersGold();
     private SurvivalStandings standings;

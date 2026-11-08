@@ -14,11 +14,7 @@ abstract class DuelArena {
     abstract Location spawn(boolean east);
 
     Location spawn(int index, int count) {
-        double angle = 2 * Math.PI * index / count;
-        double radius = this instanceof SumoArena ? 6 : 19;
-        Location at = center().clone().add(radius * Math.cos(angle), 0, radius * Math.sin(angle));
-        at.setDirection(center().toVector().subtract(at.toVector()));
-        return at;
+        return circleSpawn(center(), this instanceof SumoArena ? 6 : 20, index, count);
     }
 
     abstract Location spectator();
@@ -44,4 +40,13 @@ abstract class DuelArena {
     boolean isOut(Location location) {
         return false;
     }
+    static Location circleSpawn(Location center, double radius, int index, int count) {
+        if (count < 1 || count > 16 || index < 0 || index >= count)
+            throw new IllegalArgumentException("Invalid group spawn");
+        double angle = Math.PI * 2 * index / count;
+        Location at = center.clone().add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+        at.setDirection(center.toVector().subtract(at.toVector()));
+        return at;
+    }
+
 }

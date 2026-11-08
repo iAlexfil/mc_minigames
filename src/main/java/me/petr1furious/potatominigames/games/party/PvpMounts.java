@@ -18,7 +18,6 @@ final class PvpMounts {
     static final double SPEED = .25;
     static final double BOOST_SPEED = .30;
     static final double JUMP = .4;
-    static final double MAX_SPEAR_DAMAGE = 8;
     private static final class Mount {
         final Player owner;
         final Horse horse;
@@ -106,5 +105,4 @@ final class PvpMounts {
     void clear() {
         for (UUID owner : java.util.List.copyOf(mounts.keySet())) remove(owner);
     }
-    static double spearDamage(double rawDamage) { return Math.min(rawDamage, MAX_SPEAR_DAMAGE); }
 }

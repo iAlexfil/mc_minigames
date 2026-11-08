@@ -3,6 +3,11 @@ package me.petr1furious.potatominigames.games.party;
 import java.util.List;
 import java.util.Random;
 import org.bukkit.Color;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
+import org.bukkit.inventory.EquipmentSlotGroup;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.ItemAttributeModifiers;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.enchantments.Enchantment;
@@ -20,17 +25,17 @@ enum PvpClass {
     RANGER("Стрелок", "Лук Сила I, особые стрелы по приоритету и бесконечные обычные; отскок назад", "Отскок", 16),
     BERSERKER("Берсерк", "Топор и меч, вампиризм; ярость на 4 с стоит одно сердце", "Кровавая ярость", 22),
     DUELIST("Дуэлянт", "Острый меч, 2 жемчуга, удар в спину; рывок вперёд", "Выпад", 14),
-    ALCHEMIST("Маг", "Лёгкая броня, клинок Отдача I и 12 зелий; восполнение боевых зелий", "Магический запас", 24),
+    ALCHEMIST("Маг", "Лёгкая броня, клинок Отдача I и 14 зелий, включая тошноту; восполнение боевых зелий", "Магический запас", 24),
     ENGINEER("Инженер", "Арбалет с перезарядкой III и пробиванием I, 64 блока; укрепление", "Укрепление", 24),
     AERONAUT("Воздушный рыцарь", "Булава Плотность I, 8 зарядов ветра и запасной меч; воздушный скачок", "Воздушный скачок", 20),
     PALADIN("Паладин", "Железный меч, щит и лёгкая броня; лечение и очищение", "Очищение", 24),
     CRYOMANCER("Криомант", "Острый меч и 16 ледяных снежков; пополнение снежков и мороз", "Стужа", 20),
     PYROMANCER("Пиромант", "Огненные меч и лук, бесконечные стрелы; огненная вспышка", "Вспышка", 20),
-    LANCER("Всадник", "Железное копьё, запасной меч и конь на один раунд; лёгкая броня", "Пришпорить", 20),
-    SHADOW("Тень", "Без брони: алмазный меч, 2 зелья невидимости по 20 с и палка мрака", "Палка мрака", 20),
+    LANCER("Всадник", "Незеритовое копьё, запасной меч и конь на один раунд; лёгкая броня", "Пришпорить", 20),
+    SHADOW("Тень", "Кожаная броня, алмазный меч, 2 зелья невидимости по 20 с и палка мрака", "Палка мрака", 20),
     HARPOONER("Гарпунщик", "Трезубец Верность III, запасной меч и средняя броня; Тягун без воды", "Тягун", 20),
-    THUNDERER("Громовержец", "Грозовой жезл до 48 блоков, громовой топор и средняя броня; статика подсвечивает врага", "Грозовой разряд", 6),
-    DEMOLITIONIST("Подрывник", "Каменный меч, 12 TNT: ПКМ — поставить, ЛКМ — бросить; взрывозащита II", "Боезапас", 18);
+    THUNDERER("Громовержец", "Грозовой жезл до 48 блоков, громовой топор и средняя броня; статика подсвечивает врага", "Грозовой разряд", 3),
+    DEMOLITIONIST("Подрывник", "Каменный меч, 12 TNT, быстрые броски и ковровая бомбардировка; взрывозащита II", "Ковровая бомбардировка", 18);
 
     private static final NamespacedKey SHADOW_WAND = new NamespacedKey("potatominigames", "shadow_wand");
     private static final int ARROW_STACK = 64;
@@ -46,6 +51,7 @@ enum PvpClass {
     PvpClass(String title, String description, String ability, int cooldown) {
         this.title = title; this.description = description; this.ability = ability; this.cooldown = cooldown;
     }
+    static PvpClass random(Random random) { return values()[random.nextInt(values().length)]; }
     /** Swap the random matchup, then use an identical random kit for the deciding round. */
     static List<PvpClass> opening(Random random) {
         int first = random.nextInt(values().length);
@@ -58,7 +64,7 @@ enum PvpClass {
             case DUELIST, PALADIN -> Material.IRON_SWORD;
             case RANGER, ALCHEMIST, PYROMANCER -> Material.WOODEN_SWORD;
             case AERONAUT -> Material.MACE;
-            case LANCER -> Material.IRON_SPEAR;
+            case LANCER -> Material.NETHERITE_SPEAR;
             case SHADOW -> Material.DIAMOND_SWORD;
             case HARPOONER -> Material.TRIDENT;
             default -> Material.STONE_SWORD;
@@ -74,7 +80,7 @@ enum PvpClass {
             case AERONAUT -> new Armor(Material.IRON_HELMET, Material.CHAINMAIL_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.LEATHER_BOOTS);
             case PALADIN, PYROMANCER -> new Armor(Material.IRON_HELMET, Material.CHAINMAIL_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.IRON_BOOTS);
             case LANCER -> new Armor(Material.CHAINMAIL_HELMET, Material.LEATHER_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.IRON_BOOTS);
-            case SHADOW -> new Armor(Material.AIR, Material.AIR, Material.AIR, Material.AIR);
+            case SHADOW -> new Armor(Material.LEATHER_HELMET, Material.LEATHER_CHESTPLATE, Material.LEATHER_LEGGINGS, Material.LEATHER_BOOTS);
             case DEMOLITIONIST -> new Armor(Material.IRON_HELMET, Material.LEATHER_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.IRON_BOOTS);
             case CRYOMANCER -> new Armor(Material.IRON_HELMET, Material.LEATHER_CHESTPLATE, Material.IRON_LEGGINGS, Material.IRON_BOOTS);
         };
@@ -96,11 +102,11 @@ enum PvpClass {
     }
     List<PvpArrow> specialArrows() { return this == RANGER ? List.of(PvpArrow.values()) : List.of(); }
     List<PvpPotion> focusPotions() {
-        return this == ALCHEMIST ? List.of(PvpPotion.HARMING, PvpPotion.POISON, PvpPotion.SLOWNESS) : List.of();
+        return this == ALCHEMIST ? List.of(PvpPotion.HARMING, PvpPotion.POISON, PvpPotion.SLOWNESS, PvpPotion.NAUSEA) : List.of();
     }
     String abilityDescription() {
         return switch (this) {
-            case DEMOLITIONIST -> "+4 TNT, запас до 12; бросок ЛКМ раз в 2 с, установка ПКМ раз в 0,3 с";
+            case DEMOLITIONIST -> "Наведи порох на квадрат 7×7 до 48 блоков: 9 TNT после предупреждения 1 с и +4 TNT в запас, до 12; КД 18 с";
             case SHADOW -> "Удар палкой: слепота на 2 с и замедление II на 3 с; без урона, щит блокирует";
             case THUNDERER -> "Жезл показывает цель до 48 блоков; ПКМ — удар через 1 с, радиус 3 блока, от 4 сердец в центре до 1,5 на краю до брони";
             case HARPOONER -> "Рывок с вращением на 0,6 с без воды; до 3 сердец до брони и отбрасывание, одно попадание по цели";
@@ -109,30 +115,30 @@ enum PvpClass {
             case RANGER -> "Отскок назад и скорость I на 4 с";
             case BERSERKER -> "Сила I и скорость I на 4 с; цена — одно сердце";
             case DUELIST -> "Рывок вперёд и скорость I на 3 с";
-            case ALCHEMIST -> "+1 урон, яд и замедление; не больше двух каждого";
+            case ALCHEMIST -> "+1 зелье урона, яда, замедления и тошноты; не больше двух каждого";
             case ENGINEER -> "4 сердца щита на 6 с; +16 блоков, запас до 64";
             case AERONAUT -> "Прыжок вверх и +4 заряда ветра, запас до 8";
-            case PALADIN -> "Лечит 1,5 сердца, снимает яд, слабость, замедление, слепоту и огонь; защита на 2 с";
+            case PALADIN -> "Лечит 1,5 сердца, снимает яд, слабость, замедление, слепоту, тошноту и огонь; защита на 2 с";
             case CRYOMANCER -> "+8 снежков, скорость на 3 с и замедление видимой цели рядом";
             case PYROMANCER -> "Поджигает видимую цель до 8 блоков на 5 с; 2 сердца щита на 4 с";
         };
     }
     String passiveDescription() {
         return switch (this) {
-            case DEMOLITIONIST -> "Фитиль 2,5 с, до 4 активных TNT; взрывозащита II, свои взрывы тоже ранят; карта не разрушается";
-            case SHADOW -> "2 взрывных зелья невидимости по 20 с без пополнения; удары не раскрывают, предметы в руках видны";
+            case DEMOLITIONIST -> "Бросок TNT раз в 1 с, установка раз в 0,3 с; налёт слабее обычных зарядов; свои взрывы тоже ранят, карта не разрушается";
+            case SHADOW -> "2 взрывных зелья невидимости по 20 с; броня тоже скрывается, сохраняя защиту; предметы в руках видны";
             case THUNDERER -> "Статика: попадание топором подсвечивает врага на 3 с, не чаще раза в 8 с; от молнии можно уйти или укрыться";
-            case HARPOONER -> "Трезубец возвращается с Верностью III; щит блокирует рывок, бессмертия нет, нужен трезубец в инвентаре";
-            case LANCER -> "Конь: 8 сердец, без брони и возрождения; копьё — до 4 сердец до брони цели";
+            case HARPOONER -> "Удары трезубцем вблизи: +1 сердце урона до брони; Верность III; щит блокирует рывок";
+            case LANCER -> "Конь: 8 сердец, без брони и возрождения; копьё наносит обычный урон с учётом скорости";
             case GUARDIAN -> "Тяжёлая броня, устойчивые сапоги и защита от стрел";
-            case RANGER -> "Стрелы слева направо: замедление → яд → слабость → подсветка → обычные; выбор — левой рукой";
+            case RANGER -> "Стрелы слева направо: урон → замедление → яд → слабость → тошнота → подсветка → обычные; выбор — левой рукой";
             case BERSERKER -> "Удар в ближнем бою лечит полсердца, не чаще раза в 3 с";
             case DUELIST -> "Удар мечом в спину: +2 базового урона, не чаще раза в 5 с";
             case ALCHEMIST -> "Полезные зелья действуют только на тебя, вредные — на соперника";
             case ENGINEER -> "Арбалет: Быстрая перезарядка III, пробивание I; 64 блока для укрытий";
             case AERONAUT -> "Бей булавой при падении; Невесомость III на сапогах смягчает промах";
             case PALADIN -> "Меч и щит для ближнего боя; очищение снимает контроль и горение";
-            case CRYOMANCER -> "Снежки замедляют на 2 с, не чаще раза в 2 с; карту не замораживают";
+            case CRYOMANCER -> "Снежки: Замедление IV на 4 с и Слабость I на 3 с, срабатывание раз в 0,5 с; карта не замораживается";
             case PYROMANCER -> "Не получает урон от огня; огненные атаки не поджигают карту";
         };
     }
@@ -144,7 +150,7 @@ enum PvpClass {
             case DUELIST -> List.of(new PotionSlot(PvpPotion.SPEED, 1, 4), new PotionSlot(PvpPotion.HEALING, 1, 6));
             case ALCHEMIST -> List.of(new PotionSlot(PvpPotion.HARMING, 2, 3), new PotionSlot(PvpPotion.POISON, 2, 4),
                     new PotionSlot(PvpPotion.SLOWNESS, 2, 5), new PotionSlot(PvpPotion.HEALING, 3, 6),
-                    new PotionSlot(PvpPotion.WEAKNESS, 2, 10), new PotionSlot(PvpPotion.SPEED, 1, 11));
+                    new PotionSlot(PvpPotion.NAUSEA, 2, 9), new PotionSlot(PvpPotion.WEAKNESS, 2, 10), new PotionSlot(PvpPotion.SPEED, 1, 11));
             case ENGINEER -> List.of(new PotionSlot(PvpPotion.SLOWNESS, 2, 4), new PotionSlot(PvpPotion.HEALING, 1, 6));
             case AERONAUT -> List.of(new PotionSlot(PvpPotion.SPEED, 1, 5), new PotionSlot(PvpPotion.HEALING, 1, 6));
             case PALADIN, LANCER, HARPOONER, THUNDERER, DEMOLITIONIST -> List.of(new PotionSlot(PvpPotion.SPEED, 1, 4), new PotionSlot(PvpPotion.HEALING, 1, 6));
@@ -162,7 +168,18 @@ enum PvpClass {
         inv.setBoots(armor.boots() == Material.AIR ? null : item(armor.boots()));
         ItemStack weapon = item(primaryWeapon());
         if (this == THUNDERER) weapon.editMeta(meta -> meta.displayName(Component.text("Громовой топор", NamedTextColor.AQUA)));
-        if (this == HARPOONER) enchant(weapon, Enchantment.LOYALTY, 3);
+        if (this == HARPOONER) {
+            enchant(weapon, Enchantment.LOYALTY, 3);
+            // Preserve every native modifier, including attack speed; only the held melee weapon is stronger.
+            var modifiers = ItemAttributeModifiers.itemAttributes();
+            var original = weapon.getData(DataComponentTypes.ATTRIBUTE_MODIFIERS);
+            if (original != null) for (var entry : original.modifiers())
+                modifiers.addModifier(entry.attribute(), entry.modifier(), entry.getGroup(), entry.display());
+            modifiers.addModifier(Attribute.ATTACK_DAMAGE,
+                    new AttributeModifier(new NamespacedKey("potatominigames", "harpoon_melee"), 2,
+                            AttributeModifier.Operation.ADD_NUMBER, EquipmentSlotGroup.MAINHAND));
+            weapon.setData(DataComponentTypes.ATTRIBUTE_MODIFIERS, modifiers);
+        }
         if (this == DUELIST || this == CRYOMANCER) enchant(weapon, Enchantment.SHARPNESS, 1);
         if (this == AERONAUT) {
             enchant(weapon, Enchantment.DENSITY, 1);
@@ -183,6 +200,12 @@ enum PvpClass {
             robe.editMeta(LeatherArmorMeta.class, meta -> meta.setColor(Color.fromRGB(this == ALCHEMIST ? 0x793DA8 : 0x59CCED)));
             enchant(robe, Enchantment.PROTECTION, 2);
             inv.setChestplate(robe);
+        }
+        if (this == SHADOW) {
+            ItemStack[] shadowPieces = inv.getArmorContents();
+            for (ItemStack piece : shadowPieces)
+                piece.editMeta(LeatherArmorMeta.class, meta -> meta.setColor(Color.fromRGB(0x20202D)));
+            inv.setArmorContents(shadowPieces);
         }
         if (this == DEMOLITIONIST) {
             ItemStack chestplate = inv.getChestplate();
@@ -277,13 +300,7 @@ enum PvpClass {
     /** Failed resource-based activations do not consume the ability cooldown. */
     boolean activate(Player player, Player opponent) {
         switch (this) {
-            case SHADOW, HARPOONER, THUNDERER -> { return false; } // These abilities are handled by the session.
-            case DEMOLITIONIST -> {
-                if (PvpBombs.replenish(player) == 0) {
-                    player.sendActionBar(Component.text("Запас TNT полон или нет места", NamedTextColor.YELLOW));
-                    return false;
-                }
-            }
+            case SHADOW, HARPOONER, THUNDERER, DEMOLITIONIST -> { return false; } // These abilities are handled by the session.
             case LANCER -> {
                 // Mounted activation is handled by the session; the same cooldown applies on foot.
                 effect(player, PotionEffectType.SPEED, 3, 0);
@@ -331,6 +348,7 @@ enum PvpClass {
                 player.removePotionEffect(PotionEffectType.WEAKNESS);
                 player.removePotionEffect(PotionEffectType.SLOWNESS);
                 player.removePotionEffect(PotionEffectType.BLINDNESS);
+                player.removePotionEffect(PotionEffectType.NAUSEA);
                 player.setFireTicks(0);
                 effect(player, PotionEffectType.RESISTANCE, 2, 0);
             }
@@ -350,7 +368,7 @@ enum PvpClass {
         }
         return true;
     }
-    private static boolean visibleTarget(Player player, Player target, double range) {
+    static boolean visibleTarget(Player player, Player target, double range) {
         return target != null && player.getWorld().equals(target.getWorld())
                 && player.getLocation().distanceSquared(target.getLocation()) <= range * range && player.hasLineOfSight(target);
     }

@@ -5,6 +5,20 @@ import org.bukkit.entity.Player;
 import java.util.Collection;
 
 final class PartyTargeting {
+    static Player nearestVisible(Player caster, Collection<Player> candidates, double range) {
+        Player nearest = null;
+        double bestDistance = range * range;
+        for (Player target : candidates) {
+            if (target == null || target.equals(caster) || !PvpClass.visibleTarget(caster, target, range)) continue;
+            double distance = caster.getLocation().distanceSquared(target.getLocation());
+            if (nearest == null || distance < bestDistance) {
+                nearest = target;
+                bestDistance = distance;
+            }
+        }
+        return nearest;
+    }
+
     static Player select(Player caster, Collection<Player> candidates, double range) {
         Player selected = null;
         double best = .75, bestDistance = Double.MAX_VALUE;

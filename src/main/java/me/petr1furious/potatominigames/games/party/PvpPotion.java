@@ -20,6 +20,7 @@ enum PvpPotion {
     POISON("Яд I • 5 с", true, 100, 0x59B542),
     SLOWNESS("Замедление I • 4 с", true, 80, 0x718AA8),
     WEAKNESS("Слабость I • 6 с", true, 120, 0x626262),
+    NAUSEA("Тошнота • 8 с", true, 160, 0x695370),
     SPEED("Скорость I • 6 с", false, 120, 0x7CAFC6),
     INVISIBILITY("Невидимость • 20 с", false, 400, 0x444C64);
 
@@ -39,6 +40,7 @@ enum PvpPotion {
             case POISON -> PotionEffectType.POISON;
             case SLOWNESS -> PotionEffectType.SLOWNESS;
             case WEAKNESS -> PotionEffectType.WEAKNESS;
+            case NAUSEA -> PotionEffectType.NAUSEA;
             case SPEED -> PotionEffectType.SPEED;
             case INVISIBILITY -> PotionEffectType.INVISIBILITY;
         };

@@ -1,9 +1,13 @@
 package me.petr1furious.potatominigames.games.party;
 import java.util.*;
+import java.lang.reflect.Proxy;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.entity.BlockDisplay;
 import org.bukkit.util.BoundingBox;
 import static me.petr1furious.potatominigames.games.party.PartyScoringCheck.check;
 public final class AnvilsCheck {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         AnvilRound r=new AnvilRound(12); r.start(0);
         check(!r.raining() && r.shelters()==14,"Move before first rain");
         r.advance(99); check(!r.raining(),"Full five seconds to cross the larger arena");
@@ -22,6 +26,45 @@ public final class AnvilsCheck {
         check(AnvilRain.impact(.5,.5,90,80,slab)>AnvilRain.impact(.5,.5,90,80,body),"Slab intercepts before player");
         check(Double.isNaN(AnvilRain.impact(2,.5,90,80,slab)),"No imaginary radius shelter");
         check(AnvilRain.impact(.5,.5,84,81,body)>0,"Swept collision cannot tunnel through body");
+        fullPlatformRain();
         System.out.println("Anvil waves passed");
+    }
+    private static void fullPlatformRain() throws Exception {
+        for(int seed=0;seed<8;seed++){
+            RainWorld fixture=new RainWorld();
+            var rain=new AnvilRain(fixture.world,new AnvilArena(fixture.world),new Random(seed),p->{throw new AssertionError("No players");});
+            var sound=AnvilRain.class.getDeclaredField("nextImpactSound");sound.setAccessible(true);sound.setLong(rain,Long.MAX_VALUE);
+            for(int wave:new int[]{1,4,10}){
+                fixture.impacts.clear();fixture.landed=0;fixture.spawned=0;
+                // Even the shortest configurable wave must cover the whole floor before cleanup.
+                // Omit five audio ticks: Bukkit's sound registry requires a server. This gives
+                // the rain fewer simulation steps than production, a stricter coverage deadline.
+                for(int tick=0;tick<100;tick++)if(tick%20!=0)rain.tick(tick,wave,List.of());
+                check(fixture.impacts.size()==441,"Every floor cell is struck before wave ends; seed="+seed+", wave="+wave+", hit="+fixture.impacts.size());
+                check(fixture.spawned>=2375,"At least 500 anvils per second, including the first wave");
+                check(fixture.landed>=1500,"Dense rain reaches the floor instead of only spawning overhead");
+                check(rain.activeCount()<=1280,"Airborne display count remains bounded");
+                rain.clear();check(rain.activeCount()==0,"No anvils survive into relocation");
+            }
+        }
+    }
+    private static final class RainWorld {
+        final Set<String> impacts=new HashSet<>();int spawned,landed;
+        final World world=(World)Proxy.newProxyInstance(World.class.getClassLoader(),new Class[]{World.class},(proxy,m,a)->switch(m.getName()){
+            // Display appearance initialization is outside this physics/coverage fixture.
+            case "spawn"->{spawned++;yield display(((Location)a[0]).clone());}
+            case "playSound"->null;
+            default->throw new AssertionError("Unexpected world call: "+m.getName());
+        });
+        BlockDisplay display(Location initial){
+            Location[] position={initial};boolean[] removed={false};
+            return (BlockDisplay)Proxy.newProxyInstance(BlockDisplay.class.getClassLoader(),new Class[]{BlockDisplay.class},(proxy,m,a)->switch(m.getName()){
+                case "teleport"->{position[0]=((Location)a[0]).clone();yield true;}
+                case "remove"->{check(!removed[0],"Display removed once");removed[0]=true;
+                    if(position[0].getY()<83){landed++;int x=position[0].getBlockX(),z=position[0].getBlockZ();
+                        check(x>=-10&&x<=10&&z>=-10&&z<=10,"Impact stays inside platform");impacts.add(x+":"+z);}yield null;}
+                default->throw new AssertionError("Unexpected display call: "+m.getName());
+            });
+        }
     }
 }

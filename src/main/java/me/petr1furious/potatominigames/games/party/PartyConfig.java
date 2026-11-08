@@ -57,7 +57,7 @@ public final class PartyConfig {
 
     public final Property<Integer> colorFloorStages = bag.define("colorFloor.stages", PropertyCodec.INT, 12).validate(n -> n >= 2 && n <= 24);
     public final Property<Integer> anvilWaveSeconds = bag.define("anvils.waveSeconds", PropertyCodec.INT, 6).validate(n -> n >= 5 && n <= 30);
-    public final Property<Integer> anvilMoveSeconds = bag.define("anvils.moveSeconds", PropertyCodec.INT, 5).validate(n -> n >= 4 && n <= 15);
+    public final Property<Integer> anvilMoveSeconds = bag.define("anvils.moveSeconds", PropertyCodec.INT, 10).validate(n -> n >= 4 && n <= 15);
     public final Property<Integer> anvilWaves = bag.define("anvils.waves", PropertyCodec.INT, 10).validate(n -> n >= 2 && n <= 20);
     public final Property<Integer> anvilPvpWave = bag.define("anvils.pvpWave", PropertyCodec.INT, 4).validate(n -> n >= 1 && n <= 20);
     public final Property<Integer> buildMemoryStages = bag.define("buildMemory.stages", PropertyCodec.INT, 8).validate(n -> n >= 1 && n <= 8);

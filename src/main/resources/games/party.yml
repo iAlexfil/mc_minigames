@@ -22,7 +22,7 @@ colorFloor:
   stages: 12
 anvils:
   waveSeconds: 6
-  moveSeconds: 5
+  moveSeconds: 10
   waves: 10
   pvpWave: 4
 buildMemory:

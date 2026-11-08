@@ -38,7 +38,7 @@ public final class PartyPolishCheck {
         // No parent HUD service is supplied: touching it while the child owns the screen fails.
         session.onSecondTick(1);session.onSecondTick(2);
         check(updates[0]==2,"Only active child updates the scoreboard");
-        check(yaml.getInt("anvils.waveSeconds")==6&&yaml.getInt("anvils.moveSeconds")==5,"Short rain, sufficient relocation");
+        check(yaml.getInt("anvils.waveSeconds")==6&&yaml.getInt("anvils.moveSeconds")==10,"Short rain, sufficient relocation");
         System.out.println("Party match length, countdown, HUD ownership and short weapon chain passed");
     }
     private static void set(Object target,String name,Object value)throws Exception{var f=target.getClass().getDeclaredField(name);f.setAccessible(true);f.set(target,value);}

@@ -11,7 +11,7 @@ final class AnvilRain {
     private final List<Integer> cells=new ArrayList<>();private int cellIndex;
     private long nextImpactSound;
     static int spawnInterval(int wave){return 1;}
-    static int batchSize(int wave){return 24+2*Math.clamp(wave,1,6);}
+    static int batchSize(int wave){return 4*(24+2*Math.clamp(wave,1,6));}
     AnvilRain(World world,AnvilArena arena,Random random,Consumer<Player> hit){this.world=world;this.arena=arena;this.random=random;this.hit=hit;}
     // The anvil has a half-block-wide footprint. Return its bottom height at first contact.
     static double impact(double x,double z,double from,double to,BoundingBox box){
@@ -21,15 +21,15 @@ final class AnvilRain {
     }
     void tick(long tick,int wave,List<Player> targets){
         int interval=spawnInterval(wave);
-        if(tick%interval==0)for(int i=0;i<batchSize(wave)&&drops.size()<1280;i++){
-            int width=2*AnvilArena.RADIUS+1;
+        if(tick%interval==0)for(int i=0;i<batchSize(wave)&&drops.size()<5120;i++){
+            int width=AnvilArena.WIDTH;
             // Shuffle complete sweeps, never independent coordinates: no cell can be skipped.
             if(cellIndex==cells.size()){
                 if(cells.isEmpty())for(int cell=0;cell<width*width;cell++)cells.add(cell);
                 Collections.shuffle(cells,random);cellIndex=0;
             }
             int cell=cells.get(cellIndex++);
-            Drop d=new Drop();d.x=cell%width-AnvilArena.RADIUS+.5;d.z=cell/width-AnvilArena.RADIUS+.5;
+            Drop d=new Drop();d.x=cell%width+AnvilArena.MIN+.5;d.z=cell/width+AnvilArena.MIN+.5;
             d.display=world.spawn(new Location(world,d.x-.5,d.y,d.z-.5),BlockDisplay.class,e->{e.setBlock(Material.ANVIL.createBlockData());e.setTeleportDuration(1);e.setPersistent(false);});drops.add(d);
         }
         List<BoundingBox> solid=arena.collisionBoxes();

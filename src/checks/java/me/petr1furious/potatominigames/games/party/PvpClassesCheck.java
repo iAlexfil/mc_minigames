@@ -51,10 +51,14 @@ public final class PvpClassesCheck {
             }
             check(healing > 0 && healing <= 3, "Each kit has limited healing");
             check(kit.armor().helmet() != null && kit.armor().chestplate() != null && kit.armor().leggings() != null && kit.armor().boots() != null, "All four armour slots assigned");
-            check(kit.primaryWeapon() != null && kit.cooldown >= (kit == PvpClass.THUNDERER ? 6 : 14) && kit.cooldown <= 24, "Every class has a weapon and bounded ability cooldown");
+            check(kit.primaryWeapon() != null && kit.cooldown >= (kit == PvpClass.THUNDERER ? 3 : 14) && kit.cooldown <= 24, "Every class has a weapon and bounded ability cooldown");
         }
-        check(PvpClass.ALCHEMIST.potions().stream().mapToInt(PvpClass.PotionSlot::amount).sum() == 12, "Mage has twelve starting potions");
-        check(PvpClass.ALCHEMIST.potions().stream().map(PvpClass.PotionSlot::kind).distinct().count() == 6, "Mage has six potion types");
+        check(PvpClass.ALCHEMIST.potions().stream().mapToInt(PvpClass.PotionSlot::amount).sum() == 14, "Mage has fourteen starting potions");
+        check(PvpClass.ALCHEMIST.potions().stream().map(PvpClass.PotionSlot::kind).distinct().count() == 7, "Mage has seven potion types");
+        check(PvpClass.ALCHEMIST.potions().stream().filter(slot -> slot.kind() == PvpPotion.NAUSEA).mapToInt(PvpClass.PotionSlot::amount).sum() == 2,
+                "Mage starts with two nausea splashes");
+        check(PvpPotion.NAUSEA.harmful && PvpPotion.NAUSEA.durationTicks == 160
+                && PvpClass.ALCHEMIST.focusPotions().contains(PvpPotion.NAUSEA), "Nausea is an eight-second enemy-only refillable mage spell");
         check(PvpClass.ENGINEER.blocks() > PvpClass.GUARDIAN.blocks(), "Engineer has a larger building reserve");
         check(PvpClass.GUARDIAN.armor().boots() == Material.NETHERITE_BOOTS, "Guardian retains its heavier armour identity");
         check(PvpClass.ALCHEMIST.armor().chestplate() == Material.LEATHER_CHESTPLATE, "Mage's potion arsenal has a lighter-armour tradeoff");
@@ -62,14 +66,16 @@ public final class PvpClassesCheck {
         check(PvpClass.AERONAUT.supplies().stream().anyMatch(slot -> slot.material() == Material.WIND_CHARGE && slot.amount() == 8), "Aerial knight has eight native wind charges");
         check(PvpClass.AERONAUT.supplies().stream().anyMatch(slot -> slot.material() == Material.STONE_SWORD), "Aerial knight can fight on the ground");
         check(PvpClass.CRYOMANCER.supplies().stream().anyMatch(slot -> slot.material() == Material.SNOWBALL && slot.amount() == 16), "Cryomancer starts with sixteen projectiles");
-        check(PvpClass.LANCER.primaryWeapon() == Material.IRON_SPEAR, "Lancer uses the native iron spear");
+        check(PvpClass.LANCER.primaryWeapon() == Material.NETHERITE_SPEAR, "Lancer uses the native netherite spear");
         check(PvpClass.LANCER.supplies().stream().anyMatch(slot -> slot.material() == Material.STONE_SWORD), "Lancer retains a backup after losing their horse");
         check(PvpClass.LANCER.armor().chestplate() == Material.LEATHER_CHESTPLATE, "Mounted mobility has a light-armour tradeoff");
         check(PvpClass.SHADOW.primaryWeapon() == Material.DIAMOND_SWORD, "Shadow has the requested diamond sword");
-        check(PvpClass.SHADOW.armor().helmet() == Material.AIR
-                && PvpClass.SHADOW.armor().chestplate() == Material.AIR
-                && PvpClass.SHADOW.armor().leggings() == Material.AIR
-                && PvpClass.SHADOW.armor().boots() == Material.AIR, "Shadow has no armour even outside invisibility");
+        check(PvpClass.SHADOW.armor().helmet() == Material.LEATHER_HELMET
+                && PvpClass.SHADOW.armor().chestplate() == Material.LEATHER_CHESTPLATE
+                && PvpClass.SHADOW.armor().leggings() == Material.LEATHER_LEGGINGS
+                && PvpClass.SHADOW.armor().boots() == Material.LEATHER_BOOTS, "Shadow has a complete leather armour set");
+        PvpShadowArmorCheck.run();
+        PvpDuelKitsCheck.run();
         int invisibility = PvpClass.SHADOW.potions().stream().filter(slot -> slot.kind() == PvpPotion.INVISIBILITY)
                 .mapToInt(PvpClass.PotionSlot::amount).sum();
         check(invisibility == 2 && PvpPotion.INVISIBILITY.durationTicks == 400, "Shadow has two finite twenty-second splash invisibility charges");
@@ -96,20 +102,22 @@ public final class PvpClassesCheck {
         }
     }
     private static void arrowChecks() {
-        check(PvpClass.RANGER.specialArrows().equals(List.of(PvpArrow.SLOWNESS, PvpArrow.POISON, PvpArrow.WEAKNESS, PvpArrow.SPECTRAL)),
-                "Ranger arrows are ordered by usefulness: slow, poison, weakness, spectral");
+        check(PvpClass.RANGER.specialArrows().equals(List.of(PvpArrow.HARMING, PvpArrow.SLOWNESS, PvpArrow.POISON, PvpArrow.WEAKNESS, PvpArrow.NAUSEA, PvpArrow.SPECTRAL)),
+                "Ranger arrows are ordered by usefulness: harming, slow, poison, weakness, nausea, spectral");
         for (PvpClass kit : PvpClass.values()) if (kit != PvpClass.RANGER)
             check(kit.specialArrows().isEmpty(), "Only Ranger receives the new special ammunition");
         int next = 9, tipped = 0;
         for (PvpArrow arrow : PvpClass.RANGER.specialArrows()) {
             check(arrow.slot() == next++, "Special ammunition occupies consecutive top-row slots");
-            check(arrow.material() != Material.ARROW && arrow.amount > 0 && arrow.amount <= 6, "Special ammunition is finite and excluded from regular-arrow refill");
+            check(arrow.material() != Material.ARROW && arrow.amount == 10, "Each special ammunition type starts with ten finite arrows and is excluded from regular-arrow refill");
             if (arrow.material() == Material.TIPPED_ARROW) {
                 tipped += arrow.amount;
-                check(arrow.durationTicks >= 20 && arrow.durationTicks <= 100, "Debuffs are short level-I control effects");
+                if (arrow == PvpArrow.HARMING) check(arrow.durationTicks == 1, "Instant damage is an instant effect rather than a timed debuff");
+                else if (arrow == PvpArrow.NAUSEA) check(arrow.durationTicks == 160, "Nausea arrows last eight seconds");
+                else check(arrow.durationTicks >= 20 && arrow.durationTicks <= 100, "Debuffs are short level-I control effects");
             }
         }
-        check(tipped == 14, "Ranger starts with fourteen finite tipped arrows");
+        check(tipped == 50, "Ranger starts with fifty finite tipped arrows, plus ten spectral arrows");
         int normal = PvpClass.RANGER.supplies().stream().filter(slot -> slot.material() == Material.ARROW).findFirst().orElseThrow().slot();
         check(normal == next && normal == PvpArrow.NORMAL_SLOT, "Ordinary arrows follow every special stack in native inventory selection");
         check(PvpArrow.normalRefillSlot(slot -> true) == normal, "Missing normal arrows are not recreated ahead of specials");
@@ -148,7 +156,7 @@ public final class PvpClassesCheck {
     }
     private static void thunderChecks() {
         PvpClass kit = PvpClass.THUNDERER;
-        check(kit.primaryWeapon() == Material.IRON_AXE && kit.cooldown == 6, "Thunderer can repeatedly use its ranged spell while retaining the slow axe");
+        check(kit.primaryWeapon() == Material.IRON_AXE && kit.cooldown == 3, "Thunderer can repeatedly use its ranged spell while retaining the slow axe");
         check(kit.armor().chestplate() == Material.CHAINMAIL_CHESTPLATE
                 && kit.armor().leggings() == Material.CHAINMAIL_LEGGINGS, "Thunderer's ranged pressure trades heavy armour for chain armour");
         check(kit.potions().stream().filter(slot -> slot.kind() == PvpPotion.HEALING).mapToInt(PvpClass.PotionSlot::amount).sum() == 1,
@@ -294,6 +302,7 @@ public final class PvpClassesCheck {
         check(packets.size() == 11, "Old-world preview coordinates are never restored into another world");
     }
     private static void demolitionistChecks() {
+        PvpAirstrikeCheck.run();
         PvpClass kit = PvpClass.DEMOLITIONIST;
         check(kit.primaryWeapon() == Material.STONE_SWORD && kit.cooldown == 18, "Bomber has a modest melee backup and eighteen-second ammo refill");
         check(kit.armor().chestplate() == Material.LEATHER_CHESTPLATE, "Bomber trades melee armour for blast protection");
@@ -301,7 +310,7 @@ public final class PvpClassesCheck {
                 "Bomber starts with twelve finite TNT charges");
         check(kit.potions().stream().filter(slot -> slot.kind() == PvpPotion.HEALING).mapToInt(PvpClass.PotionSlot::amount).sum() == 1,
                 "Bomber only receives one healing potion");
-        check(PvpBombs.FUSE == 50 && PvpBombs.THROW_COOLDOWN == 40 && PvpBombs.PLACE_COOLDOWN == 6 && PvpBombs.MAX_ACTIVE == 4,
+        check(PvpBombs.FUSE == 50 && PvpBombs.THROW_COOLDOWN == 20 && PvpBombs.PLACE_COOLDOWN == 6 && PvpBombs.MAX_ACTIVE == 4,
                 "Fuse, throw/place pace and simultaneous bombs are bounded independently");
         for (int stock = 0; stock <= 20; stock++) {
             int added = PvpPotion.refillAmount(stock, PvpBombs.REFILL, PvpBombs.STOCK);
@@ -312,14 +321,14 @@ public final class PvpClassesCheck {
         check(cooldown.remaining(a, 100, true) == 0 && cooldown.remaining(a, 100, false) == 0, "Bombs start ready");
         cooldown.used(a, 100, true);
         check(cooldown.remaining(a, 105, false) == 1 && cooldown.remaining(a, 106, false) == 0,
-                "Placing is available six ticks after a throw, without waiting two seconds");
+                "Placing is available six ticks after a throw, without waiting for the one-second throw cooldown");
         cooldown.used(a, 106, false);
         check(cooldown.remaining(a, 111, false) == 1 && cooldown.remaining(a, 112, false) == 0, "Rapid placing obeys its own six-tick limit");
-        check(cooldown.remaining(a, 139, true) == 1 && cooldown.remaining(a, 140, true) == 0,
-                "Alternating placement and throws cannot bypass or extend the forty-tick throw cooldown");
+        check(cooldown.remaining(a, 119, true) == 1 && cooldown.remaining(a, 120, true) == 0,
+                "Alternating placement and throws cannot bypass or extend the twenty-tick throw cooldown");
         check(cooldown.remaining(b, 101, true) == 0, "Two bombers have independent throw cooldowns");
-        cooldown.used(a, 140, true); cooldown.forget(a);
-        check(cooldown.remaining(a, 141, true) == 0, "Leaving removes personal bomb cooldowns");
+        cooldown.used(a, 120, true); cooldown.forget(a);
+        check(cooldown.remaining(a, 121, true) == 0, "Leaving removes personal bomb cooldowns");
         cooldown.used(a, 200, true); cooldown.used(b, 200, false); cooldown.clear();
         check(cooldown.remaining(a, 0, true) == 0 && cooldown.remaining(b, 0, false) == 0, "New rounds clear both bomb cooldowns");
         Vector facing = new Vector(1, .2, 1), original = facing.clone();
@@ -358,7 +367,11 @@ public final class PvpClassesCheck {
         check(combat.backstab(a, 0, forward, behind) && !combat.backstab(a, 4, forward, behind), "Backstab has a five-second cooldown");
         check(combat.backstab(a, 5, forward, behind) && combat.backstab(b, 5, forward, behind), "Backstab is per player");
         check(combat.leech(a, 0) && !combat.leech(a, 2) && combat.leech(a, 3), "Lifesteal has a three-second cooldown");
-        check(combat.frost(a, 0) && !combat.frost(a, 1) && combat.frost(a, 2), "Frost projectiles cannot continuously refresh slow effects");
+        check(combat.frost(a, 0) && !combat.frost(a, 9) && combat.frost(a, 10), "Frost effects can refresh exactly every half second");
+        check(combat.frost(b, 10), "Different cryomancers have independent half-second cooldowns");
+        combat.forget(a);
+        check(combat.frost(a, Integer.MAX_VALUE - 5) && !combat.frost(a, Integer.MIN_VALUE + 3)
+                && combat.frost(a, Integer.MIN_VALUE + 4), "Half-second frost timing survives server tick wrap");
         check(!combat.shadowStrike(a, 0, false) && combat.shadowRemaining(a, 0) == 0, "Blocked/invalid wand hits cannot activate the perk or spend its cooldown");
         check(combat.shadowStrike(a, 0, true) && !combat.shadowStrike(a, 1, true) && !combat.shadowStrike(a, 19, true), "Wand hit spam cannot chain blindness or refresh slowness");
         check(combat.shadowRemaining(a, 19) == 1 && combat.shadowStrike(a, 20, true), "Wand becomes ready exactly after twenty seconds");

@@ -4,6 +4,11 @@ import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.List;
 import java.util.Random;
 import org.bukkit.Color;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
+import org.bukkit.inventory.EquipmentSlotGroup;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.ItemAttributeModifiers;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.enchantments.Enchantment;
@@ -30,7 +35,7 @@ enum PvpClass {
     LANCER(20),
     SHADOW(20),
     HARPOONER(20),
-    THUNDERER(6),
+    THUNDERER(3),
     DEMOLITIONIST(18);
 
     private static final NamespacedKey SHADOW_WAND = new NamespacedKey("potatominigames", "shadow_wand");
@@ -53,6 +58,7 @@ enum PvpClass {
     private Component label(String field) {
         return I18n.tr("party.duels.class." + name().toLowerCase(java.util.Locale.ROOT) + "." + field);
     }
+    static PvpClass random(Random random) { return values()[random.nextInt(values().length)]; }
     /** Swap the random matchup, then use an identical random kit for the deciding round. */
     static List<PvpClass> opening(Random random) {
         int first = random.nextInt(values().length);
@@ -65,7 +71,7 @@ enum PvpClass {
             case DUELIST, PALADIN -> Material.IRON_SWORD;
             case RANGER, ALCHEMIST, PYROMANCER -> Material.WOODEN_SWORD;
             case AERONAUT -> Material.MACE;
-            case LANCER -> Material.IRON_SPEAR;
+            case LANCER -> Material.NETHERITE_SPEAR;
             case SHADOW -> Material.DIAMOND_SWORD;
             case HARPOONER -> Material.TRIDENT;
             default -> Material.STONE_SWORD;
@@ -81,7 +87,7 @@ enum PvpClass {
             case AERONAUT -> new Armor(Material.IRON_HELMET, Material.CHAINMAIL_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.LEATHER_BOOTS);
             case PALADIN, PYROMANCER -> new Armor(Material.IRON_HELMET, Material.CHAINMAIL_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.IRON_BOOTS);
             case LANCER -> new Armor(Material.CHAINMAIL_HELMET, Material.LEATHER_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.IRON_BOOTS);
-            case SHADOW -> new Armor(Material.AIR, Material.AIR, Material.AIR, Material.AIR);
+            case SHADOW -> new Armor(Material.LEATHER_HELMET, Material.LEATHER_CHESTPLATE, Material.LEATHER_LEGGINGS, Material.LEATHER_BOOTS);
             case DEMOLITIONIST -> new Armor(Material.IRON_HELMET, Material.LEATHER_CHESTPLATE, Material.CHAINMAIL_LEGGINGS, Material.IRON_BOOTS);
             case CRYOMANCER -> new Armor(Material.IRON_HELMET, Material.LEATHER_CHESTPLATE, Material.IRON_LEGGINGS, Material.IRON_BOOTS);
         };
@@ -103,7 +109,7 @@ enum PvpClass {
     }
     List<PvpArrow> specialArrows() { return this == RANGER ? List.of(PvpArrow.values()) : List.of(); }
     List<PvpPotion> focusPotions() {
-        return this == ALCHEMIST ? List.of(PvpPotion.HARMING, PvpPotion.POISON, PvpPotion.SLOWNESS) : List.of();
+        return this == ALCHEMIST ? List.of(PvpPotion.HARMING, PvpPotion.POISON, PvpPotion.SLOWNESS, PvpPotion.NAUSEA) : List.of();
     }
     Component abilityDescription() {
         return label("ability_description");
@@ -119,7 +125,7 @@ enum PvpClass {
             case DUELIST -> List.of(new PotionSlot(PvpPotion.SPEED, 1, 4), new PotionSlot(PvpPotion.HEALING, 1, 6));
             case ALCHEMIST -> List.of(new PotionSlot(PvpPotion.HARMING, 2, 3), new PotionSlot(PvpPotion.POISON, 2, 4),
                     new PotionSlot(PvpPotion.SLOWNESS, 2, 5), new PotionSlot(PvpPotion.HEALING, 3, 6),
-                    new PotionSlot(PvpPotion.WEAKNESS, 2, 10), new PotionSlot(PvpPotion.SPEED, 1, 11));
+                    new PotionSlot(PvpPotion.NAUSEA, 2, 9), new PotionSlot(PvpPotion.WEAKNESS, 2, 10), new PotionSlot(PvpPotion.SPEED, 1, 11));
             case ENGINEER -> List.of(new PotionSlot(PvpPotion.SLOWNESS, 2, 4), new PotionSlot(PvpPotion.HEALING, 1, 6));
             case AERONAUT -> List.of(new PotionSlot(PvpPotion.SPEED, 1, 5), new PotionSlot(PvpPotion.HEALING, 1, 6));
             case PALADIN, LANCER, HARPOONER, THUNDERER, DEMOLITIONIST -> List.of(new PotionSlot(PvpPotion.SPEED, 1, 4), new PotionSlot(PvpPotion.HEALING, 1, 6));
@@ -137,7 +143,18 @@ enum PvpClass {
         inv.setBoots(armor.boots() == Material.AIR ? null : item(armor.boots()));
         ItemStack weapon = item(primaryWeapon());
         if (this == THUNDERER) weapon.editMeta(meta -> meta.displayName(I18n.tr("party.duels.item.thunder_axe").color(NamedTextColor.AQUA)));
-        if (this == HARPOONER) enchant(weapon, Enchantment.LOYALTY, 3);
+        if (this == HARPOONER) {
+            enchant(weapon, Enchantment.LOYALTY, 3);
+            // Preserve every native modifier, including attack speed; only the held melee weapon is stronger.
+            var modifiers = ItemAttributeModifiers.itemAttributes();
+            var original = weapon.getData(DataComponentTypes.ATTRIBUTE_MODIFIERS);
+            if (original != null) for (var entry : original.modifiers())
+                modifiers.addModifier(entry.attribute(), entry.modifier(), entry.getGroup(), entry.display());
+            modifiers.addModifier(Attribute.ATTACK_DAMAGE,
+                    new AttributeModifier(new NamespacedKey("potatominigames", "harpoon_melee"), 2,
+                            AttributeModifier.Operation.ADD_NUMBER, EquipmentSlotGroup.MAINHAND));
+            weapon.setData(DataComponentTypes.ATTRIBUTE_MODIFIERS, modifiers);
+        }
         if (this == DUELIST || this == CRYOMANCER) enchant(weapon, Enchantment.SHARPNESS, 1);
         if (this == AERONAUT) {
             enchant(weapon, Enchantment.DENSITY, 1);
@@ -158,6 +175,12 @@ enum PvpClass {
             robe.editMeta(LeatherArmorMeta.class, meta -> meta.setColor(Color.fromRGB(this == ALCHEMIST ? 0x793DA8 : 0x59CCED)));
             enchant(robe, Enchantment.PROTECTION, 2);
             inv.setChestplate(robe);
+        }
+        if (this == SHADOW) {
+            ItemStack[] shadowPieces = inv.getArmorContents();
+            for (ItemStack piece : shadowPieces)
+                piece.editMeta(LeatherArmorMeta.class, meta -> meta.setColor(Color.fromRGB(0x20202D)));
+            inv.setArmorContents(shadowPieces);
         }
         if (this == DEMOLITIONIST) {
             ItemStack chestplate = inv.getChestplate();
@@ -252,13 +275,7 @@ enum PvpClass {
     /** Failed resource-based activations do not consume the ability cooldown. */
     boolean activate(Player player, Player opponent) {
         switch (this) {
-            case SHADOW, HARPOONER, THUNDERER -> { return false; } // These abilities are handled by the session.
-            case DEMOLITIONIST -> {
-                if (PvpBombs.replenish(player) == 0) {
-                    player.sendActionBar(I18n.tr("party.duels.ability.tnt_full").color(NamedTextColor.YELLOW));
-                    return false;
-                }
-            }
+            case SHADOW, HARPOONER, THUNDERER, DEMOLITIONIST -> { return false; } // These abilities are handled by the session.
             case LANCER -> {
                 // Mounted activation is handled by the session; the same cooldown applies on foot.
                 effect(player, PotionEffectType.SPEED, 3, 0);
@@ -306,6 +323,7 @@ enum PvpClass {
                 player.removePotionEffect(PotionEffectType.WEAKNESS);
                 player.removePotionEffect(PotionEffectType.SLOWNESS);
                 player.removePotionEffect(PotionEffectType.BLINDNESS);
+                player.removePotionEffect(PotionEffectType.NAUSEA);
                 player.setFireTicks(0);
                 effect(player, PotionEffectType.RESISTANCE, 2, 0);
             }
@@ -325,7 +343,7 @@ enum PvpClass {
         }
         return true;
     }
-    private static boolean visibleTarget(Player player, Player target, double range) {
+    static boolean visibleTarget(Player player, Player target, double range) {
         return target != null && player.getWorld().equals(target.getWorld())
                 && player.getLocation().distanceSquared(target.getLocation()) <= range * range && player.hasLineOfSight(target);
     }

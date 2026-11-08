@@ -129,6 +129,12 @@ val checkPvpClasses by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.games.party.PvpClassesCheck")
 }
 
+val checkPartyGroupCombat by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.GroupCombatCheck")
+}
+
 val checkPartyMiners by tasks.registering(JavaExec::class) {
     dependsOn(checks.classesTaskName)
     classpath = checks.runtimeClasspath
@@ -143,7 +149,7 @@ val checkPillarsPerks by tasks.registering(JavaExec::class) {
 
 tasks.check {
     dependsOn(checkPillarsPresets, checkSniperDuel, checkPillarsMath, checkPillarsShuffle, checkPillarsAdhd,
-            checkPartyPvp, checkPartySumo, checkPartyArmsRace, checkPartySurvival, checkPartyRuntime, checkPvpClasses, checkPartyMiners, checkPillarsPerks)
+            checkPartyPvp, checkPartySumo, checkPartyArmsRace, checkPartySurvival, checkPartyRuntime, checkPvpClasses, checkPartyGroupCombat, checkPartyMiners, checkPillarsPerks)
 }
 
 val checkPartyScoring by tasks.registering(JavaExec::class) {

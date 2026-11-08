@@ -17,7 +17,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Bingo** | `/bingo` | `default`, `butfast`, `collectall`, `lockout` | Teams race to collect items on a generated board. Cage drop into a random arena; deaths are short spectator punishments. In `lockout` each item goes to the team that collects it first: a line wins, else the most items when time runs out. |
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
-| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | Random-class PvP and sumo use round-robin BO3 tournaments. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random loot and underground PvP. |
+| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random loot and underground PvP. |
 
 ### Party Games and new party games
 
@@ -98,20 +98,20 @@ messages and the ability item's tooltip. Sumo still has no hunger or health dama
 | Class | Equipment and tradeoff | Class ability (slot 8) |
 |---|---|---|
 | Страж / Guardian | Stone sword, shield, iron armour with netherite boots and Projectile Protection I chestplate; 2 Healing I splashes, 1 Slowness I splash | **Bastion:** Resistance II + self Slowness I for 4 s; 22 s cooldown |
-| Стрелок / Ranger | Wooden sword, Power I bow, unlimited regular arrows, 6 Slowness I arrows (4 s), 4 Poison I arrows (4 s), 4 Weakness I arrows (5 s) and 6 spectral arrows; chain chestplate, remaining iron armour; 1 healing and 1 slowness splash | **Retreat:** backward dash and Speed I for 4 s; 16 s cooldown |
+| Стрелок / Ranger | Wooden sword, Power I bow, unlimited regular arrows, 10 Instant Damage I arrows, 10 Slowness I arrows (4 s), 10 Poison I arrows (4 s), 10 Weakness I arrows (5 s), 10 Nausea arrows (8 s) and 10 spectral arrows; chain chestplate, remaining iron armour; 1 healing and 1 slowness splash | **Retreat:** backward dash and Speed I for 4 s; 16 s cooldown |
 | Берсерк / Berserker | Iron axe, backup stone sword, chain chest/leggings and iron helmet/boots; 2 speed and 1 healing splash. Melee hits heal half a heart at most once per 3 s | **Blood Fury:** costs one heart; Strength I + Speed I for 4 s; 22 s cooldown. Unavailable at one heart or less |
 | Дуэлянт / Duelist | Sharpness I iron sword, 2 pearls, chain chest/leggings and iron helmet/boots; 1 speed and 1 healing splash. Sword hits from behind add 2 base damage at most once per 5 s | **Lunge:** forward dash and Speed I for 3 s; 14 s cooldown |
-| Маг / Mage (formerly Alchemist) | Knockback I wooden ritual blade, gold helmet, purple leather robe with Protection II, chain leggings, iron boots; 12 splashes, listed below | **Magic Stock:** restores one harming, poison and slowness potion, capped at two of each; 24 s cooldown. Healing is never restored |
+| Маг / Mage (formerly Alchemist) | Knockback I wooden ritual blade, gold helmet, purple leather robe with Protection II, chain leggings, iron boots; 14 splashes, listed below | **Magic Stock:** restores one harming, poison, slowness and nausea potion, capped at two of each; 24 s cooldown. Healing is never restored |
 | Инженер / Engineer | Stone sword, Quick Charge III + Piercing I crossbow, unlimited arrows, 64 wool; iron armour with chain leggings; 2 slowness and 1 healing splash | **Fortify:** Absorption II (4 extra hearts) for 6 s and up to 16 wool, capped at 64 carried wool; 24 s cooldown |
 | Воздушный рыцарь / Aerial Knight | Density I mace, backup stone sword, 8 wind charges; chain chest/leggings, iron helmet, leather boots with Feather Falling III; 1 speed and 1 healing splash | **Wind Leap:** upward launch and up to 4 wind charges, capped at 8 carried charges; 20 s cooldown |
-| Паладин / Paladin | Iron sword and shield, chain chest/leggings and iron helmet/boots; 1 speed and 1 healing splash | **Purify:** heals 1.5 hearts, removes poison/weakness/slowness/blindness and extinguishes fire, then Resistance I for 2 s; 24 s cooldown |
-| Криомант / Cryomancer | Sharpness I stone sword, 16 snowballs; cyan leather robe with Protection II, remaining iron armour; 1 slowness and 2 healing splashes. Snowball hits apply Slowness I for 2 s, at most once per 2 s | **Frost:** up to 8 snowballs (cap 16), Speed I for 3 s, and Slowness I for 3 s on a visible opponent within 6 blocks; 20 s cooldown |
+| Паладин / Paladin | Iron sword and shield, chain chest/leggings and iron helmet/boots; 1 speed and 1 healing splash | **Purify:** heals 1.5 hearts, removes poison/weakness/slowness/blindness/nausea and extinguishes fire, then Resistance I for 2 s; 24 s cooldown |
+| Криомант / Cryomancer | Sharpness I stone sword, 16 snowballs; cyan leather robe with Protection II, remaining iron armour; 1 slowness and 2 healing splashes. Snowball hits apply Slowness IV for 4 s and Weakness I for 3 s, at most once per 0.5 s | **Frost:** up to 8 snowballs (cap 16), Speed I for 3 s, and Slowness I for 3 s on a visible opponent within 6 blocks; 20 s cooldown |
 | Пиромант / Pyromancer | Fire Aspect I wooden sword, Flame I bow, unlimited arrows; chain chest/leggings and iron helmet/boots; 1 weakness and 1 healing splash. Fire Resistance lasts the round | **Flare:** ignites a visible opponent within 8 blocks for 5 s and grants 2 absorption hearts for 4 s; 20 s cooldown. No target means no cooldown spent |
-| Всадник / Lancer | Iron spear, backup stone sword, leather chestplate, chain helmet/leggings, iron boots; 1 speed and 1 healing splash; vulnerable horse, once per round | **Spur:** faster horse for 3 s, or Speed I for 3 s on foot; 20 s cooldown |
-| Гарпунщик / Harpooner | Loyalty III trident, backup stone sword; iron helmet/boots and chain chest/leggings; 1 speed and 1 healing splash | **Dry Riptide:** 0.6 s forward spin with native collision damage, capped at 6 before armour (3 hearts), and moderate knockback; 20 s cooldown. One hit per target; shields block it |
-| Громовержец / Thunderer | Iron thunder axe, backup stone sword; iron helmet/boots and chain chest/leggings; 1 speed and 1 healing splash. Unblocked axe hits apply Glowing for 3 s, at most once per 8 s | **Thunderstrike:** hold the storm wand to preview the aimed block within 48 blocks, then right-click. After 1 s, a fixed 3-block-radius strike deals 8 damage in its central core, falling to 3 at the edge before armour; 6 s cooldown. Move out or use cover |
-| Подрывник / Demolitionist | Stone sword; iron helmet/boots, chain leggings and orange leather chestplate with Blast Protection II; 12 tagged TNT, 1 speed and 1 healing splash | **Ammo Stock:** +4 TNT up to 12 carried; 18 s cooldown. TNT right-click places an instantly primed charge (0.3 s interval); left-click throws one (2 s cooldown) |
-| Тень / Shadow | Unenchanted diamond sword, **no armour**, 2 splash Invisibility potions (up to 20 s each), 1 speed and 1 healing splash. Hits do not remove invisibility; its stock cannot be replenished | **Dark Wand:** hit an opponent with the tagged stick in slot 8 to apply Blindness I for 2 s and Slowness II for 3 s, once per 20 s. No health damage; shields block the proc; right-click does not activate it |
+| Всадник / Lancer | Netherite spear, backup stone sword, leather chestplate, chain helmet/leggings, iron boots; 1 speed and 1 healing splash; vulnerable horse, once per round | **Spur:** faster horse for 3 s, or Speed I for 3 s on foot; 20 s cooldown |
+| Гарпунщик / Harpooner | Loyalty III trident with +2 main-hand melee damage, backup stone sword; iron helmet/boots and chain chest/leggings; 1 speed and 1 healing splash | **Dry Riptide:** 0.6 s forward spin with native collision damage, capped at 6 before armour (3 hearts), and moderate knockback; 20 s cooldown. One hit per target; shields block it |
+| Громовержец / Thunderer | Iron thunder axe, backup stone sword; iron helmet/boots and chain chest/leggings; 1 speed and 1 healing splash. Unblocked axe hits apply Glowing for 3 s, at most once per 8 s | **Thunderstrike:** hold the storm wand to preview the aimed block within 48 blocks, then right-click. After 1 s, a fixed 3-block-radius strike deals 8 damage in its central core, falling to 3 at the edge before armour; 3 s cooldown. Move out or use cover |
+| Подрывник / Demolitionist | Stone sword; iron helmet/boots, chain leggings and orange leather chestplate with Blast Protection II; 12 tagged TNT, 1 speed and 1 healing splash | **Carpet Bombing:** aim at a 7×7 square within 48 blocks; a one-second warning precedes nine weaker TNT in three rows, plus up to 4 carried TNT (cap 12). 18 s cooldown. Manual throws every 1 s; placement every 0.3 s |
+| Тень / Shadow | Unenchanted diamond sword, full dark leather armour (hidden to others during invisibility), 2 splash Invisibility potions (up to 20 s each), 1 speed and 1 healing splash. Hits do not remove invisibility; its stock cannot be replenished | **Dark Wand:** hit an opponent with the tagged stick in slot 8 to apply Blindness I for 2 s and Slowness II for 3 s, once per 20 s. No health damage; shields block the proc; right-click does not activate it |
 
 Demolitionist uses the tagged TNT stack in hotbar slot 4. Right-click an arena
 surface to spawn an already primed charge in the adjacent empty buildable cell;
@@ -119,13 +119,24 @@ no TNT block or separate ignition tool is needed. Left-click air, a block or an
 entity to throw one along the look direction, including when the target's damage
 invulnerability would prevent a normal punch. Both modes consume one charge only
 after a successful spawn. Placement/hand interval is 6 ticks (0.3 s); throwing has
-an additional 40-tick cooldown. Alternating modes does not bypass the throw cooldown,
+an additional 20-tick (one-second) cooldown. Alternating modes does not bypass the throw cooldown,
 and placing remains possible while a throw is on cooldown. Invalid placement,
 full live-bomb slots or blocked cooldowns spend no ammo. The loadout starts with
-12 charges; Ammo Stock in slot 8 adds up to four, capped at 12 carried charges,
-every 18 s. A full stock or full inventory does not spend the refill cooldown.
+12 charges. Carpet Bombing uses the tagged gunpowder in slot 8: while held, the
+caster sees the aimed block in gold when ready or red during cooldown, with a
+7×7 square marking the drop zone. Aim reaches 48 blocks and stops at solid cover.
+The entire square must fit inside the arena. Right-click locks the target and
+warns everyone for one second, then drops three rows of three TNT, four ticks
+between rows, from six blocks above that surface. These charges have a 1.5-second
+fuse, power 1.5 and a damage cap of 6 (three hearts before armour) each. They can
+also hurt their owner. The nine airstrike charges have a separate allowance from
+the four manual charges. The ability also adds up to four carried TNT, capped at
+12, on an 18-second cooldown; it still calls the strike when stock is full. An
+invalid target consumes neither cooldown nor supplies. Death, round transition
+and stop cancel pending rows, remove live charges and restore preview blocks.
+The Miners mode keeps its separate two-second TNT throw cooldown.
 
-At most four TNT can be live per bomber. Each native charge has a 50-tick fuse,
+At most four manually thrown/placed TNT can be live per bomber. Each manual charge has a 50-tick fuse,
 explosion power 2 (roughly 4-block reach, with native distance/cover attenuation),
 and no incendiary effect. Raw blast damage is capped at 10 (5 hearts before armour)
 for enemies, horses and the bomber; armour, Blast Protection and native damage
@@ -138,7 +149,7 @@ charges are removed on death/withdrawal, and all charges/cooldowns are cleared a
 round reset, result and session stop. Cleanup scans only the bounded tracked charges.
 
 Thunderer's storm wand (a tagged lightning rod in slot 8) is a reusable ranged
-attack with a 6-second cooldown. While held in the main hand, a private preview
+attack with a 3-second cooldown. While held in the main hand, a private preview
 colours the first solid block under the crosshair: gold when ready, red while on
 cooldown. The centre spark and 3-block ring show the exact impact and splash area.
 Aiming reaches 48 blocks and stops at cover; any face selects that block's top
@@ -170,6 +181,11 @@ be hit only once per 12-tick charge, including overlapping manual attacks. A
 successful unblocked hit gives moderate knockback (0.65 horizontal / 0.25 vertical),
 reduced by knockback resistance. Failed activations while the trident is thrown
 spend no cooldown: wait for Loyalty III to return it, or use the backup sword.
+Harpooner's trident gains +2 attack damage (one heart before armour on a normal
+fully charged hit) through a main-hand item attribute. Native attack speed and
+all other default modifiers are retained; attack cooldown and critical hits remain
+native. Thrown-trident damage and the Dry Riptide damage cap are unchanged.
+
 Tracked tridents are exempt from ordinary arrow expiry so Loyalty can finish;
 round reset, leaving and shutdown still remove them. Native spin state and pending
 knockback are cleaned up on elimination, round reset, leaving and shutdown.
@@ -179,9 +195,9 @@ The lancer receives a saddled horse **only when the countdown ends**. It has
 0.4. Killing it leaves the rider on foot until the next round; there is no resummon
 or healing the horse with class potions/food. Only its owner can mount it, and its
 inventory is locked. Enemy arrows, melee, harmful potions and environmental damage
-can hurt it; frost snowballs and Slowness can counter mounted movement. Iron spear
-hits, including native speed-scaled charges, are capped at **8 damage before armour**
-(4 hearts); this also applies on foot and against horses. A backup stone sword,
+can hurt it; frost snowballs and Slowness can counter mounted movement. Netherite spear
+hits, including native speed-scaled charges, deal their normal Minecraft damage
+without a class-specific cap, both on foot and against horses. A backup stone sword,
 light armour, one speed splash and one healing splash complete the kit. Spur gives
 the rider Speed I for 3 s when used on foot, with the same 20 s cooldown. Mounts
 are removed on elimination, leaving, round reset and session shutdown.
@@ -191,11 +207,24 @@ two splashes grants up to 20 seconds, depending on splash intensity; refreshing 
 effect does not add unused duration. The potions only affect their caster, and no
 ability restores them. Attacking and taking damage do not remove invisibility.
 Items held in either hand remain visible, as with native Minecraft invisibility;
-fire and Glowing also give away the player. The absence of armour, limited potions
-and a 20-second wand cooldown offset the diamond sword and longer concealment.
+fire and Glowing also give away the player. The full leather set keeps its normal
+protection during invisibility, while opponents and spectators see empty armour
+slots. The owner still sees their real equipment and armour bar. When invisibility
+expires or is removed, the current armour becomes visible again. Equipment changes
+and newly tracking viewers are masked at the end of the server tick after native
+equipment broadcasts, without resending unchanged packets every tick. Cloaks are
+cleared on elimination, leaving, round reset and shutdown. Light armour, limited
+potions and a 20-second wand cooldown offset the diamond sword and concealment.
 The wand perk requires a successful unblocked melee hit on a player; it deals no
 health damage. Shields do not spend its cooldown, hit spam cannot refresh its
 control, and the HUD shows its remaining cooldown. Paladin Purify removes Blindness.
+
+Cryomancer snowballs now apply Slowness IV for four seconds and Weakness I for
+three seconds, at most once every ten server ticks (0.5 s) per caster. The hit
+cooldown is independent for each cryomancer and resets on leaving/round reset.
+A hit on a mounted player also applies the effects to their horse; a direct horse
+hit affects the horse. The snowballs remain control projectiles without direct
+health damage. Paladin Purify removes these debuffs and the new nausea effect.
 
 The aerial knight uses native mace smash attacks and native wind-charge boosts.
 Its leap preserves falling attacks: no Slow Falling effect is applied. Charges are
@@ -203,28 +232,29 @@ limited per stock and replenished by the ability. The full-height world border
 aligns with the 49×49 playing area so jumping above the low barrier wall cannot
 escape the arena. Neither frost effects nor fire abilities edit terrain.
 
-The mage starts with **12 potions in six types**: 2 Harming I, 2 Poison I (5 s),
-2 Slowness I (4 s), 2 Weakness I (6 s), 3 Healing I (two hearts each), and 1 Speed I
-(6 s). Weakness and speed start in inventory slots 11 and 12; combat spells and
+The mage starts with **14 potions in seven types**: 2 Harming I, 2 Poison I (5 s),
+2 Slowness I (4 s), 2 Nausea (8 s), 2 Weakness I (6 s), 3 Healing I (two hearts each),
+and 1 Speed I (6 s). Nausea, weakness and speed start in inventory slots 10–12; combat spells and
 healing are on the hotbar, with slot 9 reserved for food. Class potions stack up to
 eight and have distinct colours and labels.
 Helpful splashes affect only their caster, harmful splashes only the active opponent;
 spectators are excluded. Other classes use the same potion targeting rules.
 
 Mage refills cannot exceed the individual stock caps or generate healing. Activating
-Magic Stock while all three stocks are full does not consume its cooldown. Blood
+Magic Stock while all four refillable stocks are full does not consume its cooldown. Blood
 Fury cannot kill its caster. Backstab and lifesteal cooldowns reset every round,
 and class perks do not leave permanent player attributes behind. The mage retains
 the original alchemist enum entry. There are now fifteen equally likely classes: each
 has a 1/15 (about 6.67%) marginal chance per player; the two opening classes are always distinct.
 
 Ranger ammunition occupies the top inventory row, left to right by general utility:
-**slowness → poison → weakness → spectral → ordinary** (slots 10–14, counting
+**instant damage → slowness → poison → weakness → nausea → spectral → ordinary** (slots 10–16, counting
 from 1). The offhand starts empty so native bow selection follows that order;
 move any chosen stack into the offhand to prioritise it manually. Special arrows
-are finite, cannot be picked back up, and only reset between rounds. Regular-arrow
+start with ten of each type (60 special arrows total), are finite, cannot be picked
+back up, and only reset between rounds. Regular-arrow
 refills never take an earlier slot ahead of the special stacks. Custom tipped-arrow
-durations are explicitly scaled to 1 so the short effects last their stated 4/4/5 s.
+durations are explicitly scaled to 1 so the short effects last their stated 4/4/5/8 s.
 
 Rangers, engineers and pyromancers start with 64 ordinary arrows; their arrow stack is replenished to 64
 every second during combat, including overtime. Moving the stack to another slot
@@ -265,8 +295,9 @@ Open the compass → **Вечеринка** → **sumo**, or run `/play party su
 Sumo uses the same 2–12 player round-robin tournament, BO3, three points per
 match, title tie-breaks, spectator handling and withdrawal rules as PvP.
 The difference is the fight: a **Knockback I stick**, no armour, no health damage
-and no building. The stick applies stronger controlled knockback; sprinting adds
-a small boost. Empty-hand punches remain weaker. A low upward impulse and a
+and no building. The stick applies controlled horizontal knockback of 0.9, or
+1.1 when sprinting (about 30% stronger than the previous 0.7/0.85 impulses).
+Empty-hand punches remain weaker. A low upward impulse and a
 horizontal speed cap prevent runaway launches from repeated hits. Falling below
 the platform loses the round. Each player's hit immunity lasts ten server ticks;
 it resets before every round. Both falling in the same server tick replays the round.
@@ -282,6 +313,67 @@ Waiting players spectate the duel after the countdown.
 Admin commands: `/party start sumo @a`, `/party test sumo` (solo platform training),
 `/party stop`. Settings in `games/party.yml`: `sumo.roundSeconds`,
 `sumo.countdownSeconds`, `sumo.intermissionSeconds`; changes apply next session.
+
+### PvP BO3 with chosen starting classes
+
+Admins can run `/party duel <class_A> <class_B>` to start an ordinary two-player
+PvP BO3. Class numbers are 1–15, as listed by `/party classes`; `-1` independently
+draws any random class for that player. Zero and out-of-range numbers are rejected.
+The same class may be assigned to both players.
+
+Player A is the command author, player B is the other free online player. Exactly
+two free players are required; players in another game cannot be taken into the
+duel. From the console, A/B follow alphabetical player-name order. The command
+announces both assignments and tab completion shows class names for each number.
+
+For example, `/party duel 11 14` starts Lancer against Thunderer, and
+`/party duel -1 12` gives A a random class and B Shadow. Round one uses those
+starting kits, round two swaps them, and a deciding third round gives both players
+one identical random class. A draw replays the same round; two wins end the BO3.
+Assignments are bound to player UUIDs and survive tournament shuffling.
+
+### Party group PvP and sumo
+
+Open the compass → **Вечеринка** → **Массовое PvP** or **Массовое сумо**,
+or run `/play party pvp_ffa` / `/play party sumo_ffa`.
+Both variants support **2–16 players** fighting at once with one life each.
+The last survivor wins three Party points. If everyone dies together, the battle
+ends in a draw. Eliminations never restart the battle or reshuffle surviving kits.
+Leaving or reconnecting cannot grant a second life.
+
+In group PvP, each player receives an independent uniformly random class from the
+full pool of fifteen; duplicate classes are allowed. All current class balance
+changes and abilities apply. The arena stays protected, while players can place
+and break their own wool. Targeted fire/frost abilities select the nearest visible
+opponent within their normal range, without requiring the caster to aim at them. Lightning can hit multiple enemies in its area.
+After death, the native death screen remains for three seconds, then the player
+becomes a spectator while everyone else keeps fighting. Respawning early also
+leads to spectator mode.
+
+Group sumo uses the original 19-block platform and the stronger Knockback I stick.
+All players start around a ring, face the centre and remain frozen during the
+countdown. Hits cause no health damage. Falling eliminates the player and moves
+them to spectator mode immediately.
+
+Group PvP overtime starts after 180 seconds: the border shrinks to the centre
+over 30 seconds, then combat continues until the last survivor; health is never
+used to pick a timed winner. Group sumo starts shrinking after 45 seconds.
+Configure these separately through `pvpFfa.overtimeSeconds` and
+`sumoFfa.overtimeSeconds` in `games/party.yml`. The respective existing PvP/sumo
+countdown settings also apply to group battles.
+
+Admin commands: `/party start pvp_ffa @a`, `/party start sumo_ffa @a`,
+`/party test pvp_ffa`, `/party test sumo_ffa`, `/party stop`.
+Solo testing ends on elimination, without a new round.
+
+Group PvP spawns lie on a 20-block-radius ring; sumo uses a six-block-radius ring.
+FFA results wait two ticks after the most recent elimination to account for
+simultaneous deaths. Eliminated players' projectiles are cleaned up after that
+window, while surviving players' projectiles remain. In sumo, eliminated players
+move to the spectator viewpoint immediately; PvP keeps its three-second death
+screen. Eliminated spectators can teleport to follow survivors. During combat,
+the boss bar shows the fraction of players still alive, and overtime has its own
+label instead of a timer stuck at zero.
 
 ### Party Arms Race
 
@@ -944,14 +1036,18 @@ and two-block gaps, unique mob-count answers, landing deadlines, ravager swept
 collision/difficulty, fixed mine fuses through pickup/throw/drop, and elimination ties.
 `checkPartyRuntime` checks countdown locking, respawn/result pauses and projectile
 cleanup. `checkPvpClasses` checks class equipment, finite stock and combat abilities.
+`checkPartyGroupCombat` checks group menu/queue integration, actual clear circular
+spawns for 1–16 players, all random classes, one-life outcomes, simultaneous deaths
+and withdrawal/reconnect rules.
 `checkPartyMiners` checks Party menu/queue integration, equal ore quotas for 1–12
 players, sliced construction/opening, protected shells and unused cells, single-use
 ore rewards, random loot grades and ammunition, phase timing, capped extra hearts,
 TNT spawn clearance and bounded ground-item cleanup.
 
-`checkPvpClasses` additionally verifies Shadow's finite invisibility stock, unarmoured
-loadout, on-hit wand cooldown and blocked-hit rejection, alongside all 132 distinct
-opening class matchups.
+`checkPvpClasses` additionally verifies Shadow's finite invisibility stock, leather
+loadout, client-only armour hiding/restoration, equipment changes and viewer tracking,
+independent cloaks, on-hit wand cooldown and blocked-hit rejection, alongside all
+210 distinct opening class matchups.
 
 ## License
 

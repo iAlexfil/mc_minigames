@@ -43,12 +43,12 @@ final class SumoCombat {
         // Damage is cancelled by the session, so vanilla cannot apply the enchantment itself.
         // Keep one controlled impulse, rather than stacking native and custom knockback.
         int level = Math.clamp(knockbackLevel, 0, 1);
-        double strength = .5 + .2 * level + (sprinting ? .15 : 0);
-        double cap = .8 + .15 * level;
+        double strength = .5 + .4 * level + (sprinting ? .2 : 0);
+        double cap = .8 + .4 * level;
         Vector motion = direction.normalize().multiply(strength)
                 .add(current.clone().setY(0).multiply(.25));
         if (motion.lengthSquared() > cap * cap) motion.normalize().multiply(cap);
-        // Shorter airtime leaves room to recover on the enlarged platform.
+        // A low hop leaves room to recover on the platform despite the stronger push.
         motion.setY(Math.max(.30, Math.min(.36, current.getY() * .5 + .30)));
         return motion;
     }

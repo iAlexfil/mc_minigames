@@ -179,3 +179,7 @@ miners.ore.gold: "Золото: каждые 4 руды +2 сердца, мак�
 miners.ore.lapis: "Лазурит: зелья"
 miners.ore.redstone: "Редстоун: TNT, жемчуг и заряды ветра"
 miners.ore.emerald: "Изумруды: редкая добыча из разных категорий"
+mode.pvp_ffa: "Массовое PvP"
+mode.sumo_ffa: "Массовое сумо"
+description.pvp_ffa: "Массовое PvP: все против всех • случайные классы • одна жизнь"
+description.sumo_ffa: "Массовое сумо: все на одной платформе • последний выживший"

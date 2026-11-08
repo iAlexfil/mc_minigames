@@ -39,6 +39,8 @@ public final class PartyGame implements Minigame {
         return List.of(
                 "pvp",
                 "sumo",
+                "pvp_ffa",
+                "sumo_ffa",
                 "arms_race",
                 "tnt_run",
                 "mob_count",
@@ -64,7 +66,7 @@ public final class PartyGame implements Minigame {
 
     @Override
     public Component modeTitle(String mode) {
-        return mode.equals("party_games")
+        return mode.equals("pvp_ffa") || mode.equals("sumo_ffa") ? I18n.tr("party.rounds.mode." + mode) : mode.equals("party_games")
                 ? I18n.tr("party.rounds.mode.party_games")
                 : PartyRoundFactory.title(mode);
     }
@@ -74,6 +76,8 @@ public final class PartyGame implements Minigame {
         return switch (mode) {
             case "miners", "tool_race" -> Material.DIAMOND_PICKAXE;
             case "color_floor" -> Material.LIME_CONCRETE;
+            case "pvp_ffa" -> Material.DIAMOND_SWORD;
+            case "sumo_ffa" -> Material.STICK;
             case "anvils" -> Material.ANVIL;
             case "hole_in_the_wall" -> Material.SLIME_BLOCK;
             case "party_games" -> Material.FIREWORK_ROCKET;
@@ -122,6 +126,7 @@ public final class PartyGame implements Minigame {
         if (mode.equals("tnt_run")) return new TntRunSession(services, config);
         if (mode.equals("mob_count")) return new MobCountSession(services, config);
         if (mode.equals("rhino")) return new RhinoSession(services, config);
-        return new DuelSession(services, config, mode.equals("sumo"));
+        return new DuelSession(services, config, mode.equals("sumo") || mode.equals("sumo_ffa"),
+                mode.equals("pvp_ffa") || mode.equals("sumo_ffa"));
     }
 }

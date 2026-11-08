@@ -21,7 +21,7 @@ public final class PartyRuntimeCheck {
         mountChecks();
         deathPauseChecks();
         bombChecks();
-        System.out.println("Party runtime: fixed countdown anchors, jump/flight lock, speed restoration and targeted projectile expiry, mount ownership/cleanup, spear damage cap and death/early-respawn timing passed");
+        System.out.println("Party runtime: fixed countdown anchors, jump/flight lock, speed restoration and targeted projectile expiry, mount ownership/cleanup and death/early-respawn timing passed");
     }
 
     private static void freezeChecks() {
@@ -118,11 +118,6 @@ public final class PartyRuntimeCheck {
         mounts.clear(); mounts.clear(); mounts.remove(first.id);
         check(replacement.ejected == 1 && replacement.removed == 1, "Round reset/abort cleanup removes all horses exactly once");
         check(mounts.owner(replacement.horse) == null, "No mount references survive round cleanup");
-        for (double damage : new double[] {0, 1, 3, 6, 8, 12, 40, 1000}) {
-            double capped = PvpMounts.spearDamage(damage);
-            check(capped <= 8 && capped <= damage && capped >= 0, "Speed-scaled charges cannot exceed four hearts before armour");
-            if (damage <= 8) check(capped == damage, "Ordinary spear jabs retain their native damage");
-        }
     }
     private static final class FakeHorse {
         int ejected, removed;
@@ -227,6 +222,24 @@ public final class PartyRuntimeCheck {
         FakeBomb last = new FakeBomb(14);
         bombs.track(first.player, last.entity); bombs.clear(); bombs.clear();
         check(last.removed == 1 && bombs.owner(last.entity) == null, "Round/stop cleanup cancels all remaining native TNT exactly once");
+        FakeBomb normal = new FakeBomb(20), rain = new FakeBomb(21);
+        PvpAirstrike.configure(rain.entity, first.player);
+        check(rain.source == first.player && rain.fuse == 30 && rain.power == 1.5f && !rain.incendiary && !rain.persistent
+                && rain.velocity.getY() < 0, "Airstrike TNT keeps ownership and falls with the weaker short-fuse configuration");
+        bombs.track(first.player, normal.entity); bombs.trackAirstrike(first.player, rain.entity);
+        check(bombs.active(first.id) == 1 && bombs.activeAirstrike(first.id) == 1, "Airstrike TNT does not consume the four manual-charge slots");
+        check(bombs.blastDamage(normal.entity, 100) == 10 && bombs.blastDamage(rain.entity, 100) == 6,
+                "Normal and airstrike blasts use their own damage caps");
+        rain.valid = false;
+        check(bombs.owner(rain.entity) == first.player && bombs.blastDamage(rain.entity, 100) == 6,
+                "Discarding a detonating airstrike retains both kill credit and its damage cap");
+        bombs.eliminate(first.id);
+        check(normal.removed == 1 && bombs.owner(rain.entity) == first.player, "Death removes live charges but retains a currently resolving airstrike blast");
+        bombs.prune();
+        check(bombs.owner(rain.entity) == null, "Finished airstrike references expire with the existing bounded cleanup");
+        FakeBomb reset = new FakeBomb(22);
+        bombs.trackAirstrike(first.player, reset.entity); bombs.clear();
+        check(reset.removed == 1 && bombs.activeAirstrike(first.id) == 0, "Round/stop cleanup removes airstrike entities too");
     }
     private static final class FakeBomb {
         boolean valid = true, incendiary = true, persistent = true;

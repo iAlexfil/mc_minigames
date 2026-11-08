@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.lang.reflect.*;
@@ -42,6 +43,7 @@ public final class PartyInteractionCheck {
                         PartyInteractionCheck::memoryMining,
                         PartyInteractionCheck::armsReconnect,
                         PartyInteractionCheck::cancelRecovery,
+                        PartyInteractionCheck::spectatorTeleport,
                         () -> teardownFailure(false),
                         () -> teardownFailure(true))) {
             try {
@@ -141,6 +143,8 @@ public final class PartyInteractionCheck {
         set(session, "mounts", new PvpMounts());
         set(session, "harpoon", new PvpHarpoon());
         set(session, "thunder", new PvpThunder());
+        set(session, "airstrike", new PvpAirstrike());
+        set(session, "shadowArmor", new PvpShadowArmor(player -> false));
         set(session, "bombs", new PvpBombs());
         set(session, "combat", new PvpCombat());
         set(session, "lastHit", new HashMap<>());
@@ -170,6 +174,18 @@ public final class PartyInteractionCheck {
         tasks.set(session, pending);
         session.onParticipantLeave(PLAYER);
         check(cancelled[0], "Leaving must cancel an outstanding spectator recovery");
+    }
+
+    private static void spectatorTeleport() throws Exception {
+        var session = bare(DuelSession.class);
+        set(session, "fighters", Set.of(ID));
+        set(session, "withdrawn", Set.of());
+        set(session, "eliminated", Set.of(ID));
+        // A defeated player remains in the roster but must be able to use spectator follow.
+        var location = new Location(null, 0, 88, 0);
+        var event = new PlayerTeleportEvent(PLAYER, location, location.clone(), PlayerTeleportEvent.TeleportCause.SPECTATE);
+        session.onPlayerTeleport(event);
+        check(!event.isCancelled(), "Eliminated spectators can teleport to follow surviving fighters");
     }
 
     private static PlayerInteractEvent interact(Action action, org.bukkit.block.Block block) {

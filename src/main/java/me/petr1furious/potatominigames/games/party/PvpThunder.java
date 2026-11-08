@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.LongSupplier;
+import java.util.function.BiConsumer;
 import org.bukkit.Bukkit;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
@@ -85,12 +86,16 @@ final class PvpThunder {
     /** One cheap ray every four ticks, only while the tagged rod is in the main hand. */
     void watch(Player player, Plugin plugin, NamespacedKey abilityKey, Predicate<Player> fighting,
             Predicate<Location> allowed, LongSupplier remaining) {
+        watch(player, plugin, abilityKey, fighting, allowed, remaining, Material.LIGHTNING_ROD, PvpThunder::mark);
+    }
+    void watch(Player player, Plugin plugin, NamespacedKey abilityKey, Predicate<Player> fighting,
+            Predicate<Location> allowed, LongSupplier remaining, Material focus, BiConsumer<Location, Player> marker) {
         UUID id = player.getUniqueId();
         remove(id);
         watchers.put(id, Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (!fighting.test(player)) { remove(id); return; }
             var item = player.getInventory().getItemInMainHand();
-            if (item.getType() != Material.LIGHTNING_ROD || !item.hasItemMeta()
+            if (item.getType() != focus || !item.hasItemMeta()
                     || !item.getItemMeta().getPersistentDataContainer().has(abilityKey, PersistentDataType.BYTE)) {
                 clearPreview(id); return;
             }
@@ -98,7 +103,7 @@ final class PvpThunder {
             if (aim == null || !allowed.test(aim.point())) { clearPreview(id); return; }
             var highlight = (remaining.getAsLong() == 0 ? Material.GOLD_BLOCK : Material.REDSTONE_BLOCK).createBlockData();
             showPreview(player, aim, highlight);
-            mark(aim.point(), player);
+            marker.accept(aim.point(), player);
             player.spawnParticle(Particle.END_ROD, aim.point().clone().add(0, .2, 0), 2, .05, .12, .05, 0, null, true);
         }, 1, 4));
     }

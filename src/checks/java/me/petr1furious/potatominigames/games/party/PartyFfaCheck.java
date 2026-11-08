@@ -35,6 +35,13 @@ public final class PartyFfaCheck {
                 near = player(world, 0, 3, true),
                 side = player(world, 3, 1, true),
                 hidden = player(world, 0, 2, false);
+        Player closestSide = player(world, 1, 0, true);
+        check(PartyTargeting.nearestVisible(caster, List.of(near, closestSide), 6) == closestSide,
+                "Restored class targeting selects the closest visible opponent even to the side");
+        check(PartyTargeting.nearestVisible(caster, List.of(hidden, near), 6) == near,
+                "Occluded targets cannot replace a valid visible opponent");
+        check(PartyTargeting.nearestVisible(caster, List.of(near), 2) == null,
+                "Nearest-target abilities retain their normal range");
         check(
                 PartyTargeting.select(caster, List.of(side, near), 6) == near,
                 "Aim beats collection order");

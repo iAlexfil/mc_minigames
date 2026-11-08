@@ -78,8 +78,8 @@ public final class SumoCheck {
         Vector away = new Vector(2, 9, 0), current = new Vector(0, 0, 0);
         Vector normal = SumoCombat.knockback(away, current, false, 1);
         Vector sprint = SumoCombat.knockback(away, current, true, 1);
-        check(normal.getX() > 0 && normal.getZ() == 0 && normal.getY() > 0, "Stick pushes away with a low upward hop");
-        check(sprint.getX() > normal.getX(), "Sprint has stronger knockback");
+        check(normal.getX() > .85 && normal.getX() < 1 && normal.getZ() == 0 && normal.getY() > 0, "Buffed stick pushes away with a low upward hop");
+        check(sprint.getX() > 1 && sprint.getX() > normal.getX(), "Sprint has stronger knockback above the previous speed cap");
         Vector bare = SumoCombat.knockback(away, current, false, 0);
         check(normal.getX() > bare.getX(), "Knockback I actually increases the custom impulse over bare hands");
         check(SumoCombat.knockback(away, current, false, 20).equals(normal), "Unexpected higher enchants cannot bypass the balance cap");
@@ -88,7 +88,7 @@ public final class SumoCheck {
         Vector mirrored = SumoCombat.knockback(new Vector(-2, 0, 0), current, false, 1);
         check(mirrored.getX() == -normal.getX() && mirrored.getY() == normal.getY(), "Spawn sides have equal knockback");
         Vector fast = SumoCombat.knockback(away, new Vector(100, 100, 100), true, 1);
-        check(fast.clone().setY(0).length() <= .950001 && fast.getY() <= .36, "Repeated hits cannot cause runaway velocity");
+        check(fast.clone().setY(0).length() <= 1.200001 && fast.getY() <= .36, "Repeated hits cannot cause runaway velocity");
         Vector overlapping = SumoCombat.knockback(new Vector(), current, false, 1);
         check(Double.isFinite(overlapping.getX()) && Double.isFinite(overlapping.getZ()), "Overlapping players cannot produce NaN velocity");
         SumoCombat combat = new SumoCombat();

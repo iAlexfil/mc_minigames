@@ -23,33 +23,43 @@ import net.kyori.adventure.text.format.NamedTextColor;
 
 /** Tracked native TNT: short fuses, separate throw cooldown and bounded simultaneous charges. */
 final class PvpBombs {
-    static final int STOCK = 12, REFILL = 4, FUSE = 50, THROW_COOLDOWN = 40, PLACE_COOLDOWN = 6, MAX_ACTIVE = 4;
+    static final int STOCK = 12, REFILL = 4, FUSE = 50, THROW_COOLDOWN = 20, PLACE_COOLDOWN = 6, MAX_ACTIVE = 4;
+    static final int MINERS_THROW_COOLDOWN = 40;
     static final float POWER = 2;
     static final double MAX_DAMAGE = 10;
     private static final NamespacedKey KEY = new NamespacedKey("potatominigames", "pvp_bomb");
     static final class Cooldowns {
+        private final int throwCooldown;
+        Cooldowns() { this(THROW_COOLDOWN); }
+        Cooldowns(int throwCooldown) { this.throwCooldown = throwCooldown; }
         private final Map<UUID, Integer> handReady = new HashMap<>(), throwReady = new HashMap<>();
         int remaining(UUID owner, int tick, boolean thrown) {
             return Math.max(0, Math.max(handReady.getOrDefault(owner, 0), thrown ? throwReady.getOrDefault(owner, 0) : 0) - tick);
         }
         void used(UUID owner, int tick, boolean thrown) {
             handReady.put(owner, tick + PLACE_COOLDOWN);
-            if (thrown) throwReady.put(owner, tick + THROW_COOLDOWN);
+            if (thrown) throwReady.put(owner, tick + throwCooldown);
         }
         void forget(UUID owner) { handReady.remove(owner); throwReady.remove(owner); }
         void clear() { handReady.clear(); throwReady.clear(); }
     }
-    private record Bomb(Player owner, TNTPrimed entity) { }
+    private record Bomb(Player owner, TNTPrimed entity, boolean airstrike) { }
     private final Map<UUID, Bomb> bombs = new HashMap<>();
-    private final Cooldowns cooldowns = new Cooldowns();
+    private final Cooldowns cooldowns;
     private BukkitTask cleanup;
 
+    PvpBombs() { this(THROW_COOLDOWN); }
+    PvpBombs(int throwCooldown) { cooldowns = new Cooldowns(throwCooldown); }
+
     static ItemStack item(int amount) {
+        return item(amount, THROW_COOLDOWN);
+    }
+    static ItemStack item(int amount, int throwCooldown) {
         ItemStack item = new ItemStack(Material.TNT, amount);
         item.editMeta(meta -> {
             meta.displayName(I18n.tr("party.duels.bomb.title").color(NamedTextColor.GOLD));
             meta.lore(List.of(I18n.tr("party.duels.bomb.place").color(NamedTextColor.GRAY),
-                    I18n.tr("party.duels.bomb.throw").color(NamedTextColor.GRAY),
+                    I18n.tr("party.duels.bomb.throw", throwCooldown / 20).color(NamedTextColor.GRAY),
                     I18n.tr("party.duels.bomb.fuse").color(NamedTextColor.RED)));
             meta.getPersistentDataContainer().set(KEY, PersistentDataType.BYTE, (byte) 1);
         });
@@ -93,7 +103,7 @@ final class PvpBombs {
         held.setAmount(amount);
         player.getInventory().setItemInMainHand(amount > 0 ? held : null);
         at.getWorld().playSound(at, Sound.ENTITY_TNT_PRIMED, .8f, 1);
-        if (cleanup == null) cleanup = Bukkit.getScheduler().runTaskTimer(plugin, this::prune, 1, 1);
+        maintain(plugin);
         return true;
     }
     static void configure(TNTPrimed charge, Player owner, Vector velocity) {
@@ -104,14 +114,27 @@ final class PvpBombs {
         charge.setPersistent(false);
         charge.setVelocity(velocity);
     }
-    void track(Player owner, TNTPrimed entity) { bombs.put(entity.getUniqueId(), new Bomb(owner, entity)); }
+    void track(Player owner, TNTPrimed entity) { bombs.put(entity.getUniqueId(), new Bomb(owner, entity, false)); }
+    void trackAirstrike(Player owner, TNTPrimed entity) { bombs.put(entity.getUniqueId(), new Bomb(owner, entity, true)); }
     Player owner(Entity entity) {
         if (!(entity instanceof TNTPrimed)) return null;
         Bomb bomb = bombs.get(entity.getUniqueId());
         return bomb == null ? null : bomb.owner();
     }
     int active(UUID owner) {
-        return (int) bombs.values().stream().filter(bomb -> bomb.owner().getUniqueId().equals(owner) && bomb.entity().isValid()).count();
+        return active(owner, false);
+    }
+    int activeAirstrike(UUID owner) { return active(owner, true); }
+    private int active(UUID owner, boolean airstrike) {
+        return (int) bombs.values().stream().filter(bomb -> bomb.airstrike() == airstrike
+                && bomb.owner().getUniqueId().equals(owner) && bomb.entity().isValid()).count();
+    }
+    double blastDamage(Entity entity, double raw) {
+        Bomb bomb = entity == null ? null : bombs.get(entity.getUniqueId());
+        return Math.clamp(raw, 0, bomb != null && bomb.airstrike() ? PvpAirstrike.MAX_DAMAGE : MAX_DAMAGE);
+    }
+    void maintain(Plugin plugin) {
+        if (cleanup == null) cleanup = Bukkit.getScheduler().runTaskTimer(plugin, this::prune, 1, 1);
     }
     void prune() {
         // Do not prune from damage/explode callbacks: native TNT is discarded before applying its blast.

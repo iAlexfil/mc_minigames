@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.command;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -12,6 +13,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.command.brigadier.MessageComponentSerializer;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.CustomArgumentType;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
@@ -84,7 +86,8 @@ public final class GameCommands {
         } catch (CommandSyntaxException exception) {
             ctx.getSource()
                     .getSender()
-                    .sendMessage(Component.text(exception.getMessage(), NamedTextColor.RED));
+                    .sendMessage(MessageComponentSerializer.message().deserialize(exception.getRawMessage())
+                            .colorIfAbsent(NamedTextColor.RED));
             return 0;
         }
     }
@@ -94,7 +97,7 @@ public final class GameCommands {
         if (ctx.getSource().getExecutor() instanceof Player player) {
             return player;
         }
-        throw new CommandFailure("This command can only be used by a player.");
+        throw new CommandFailure(I18n.tr("common.command.player_only"));
     }
 
     private static boolean isAdmin(CommandSourceStack source) {
@@ -120,13 +123,7 @@ public final class GameCommands {
                                             ActiveSession session = requireOwnSession(game);
                                             session.stopNow(EndReason.ABORTED);
                                             messages.broadcast(
-                                                    Component.text()
-                                                            .append(session.displayName())
-                                                            .append(
-                                                                    Component.text(
-                                                                            " stopped.",
-                                                                            NamedTextColor.RED))
-                                                            .build());
+                                                    I18n.tr("core.session.stopped", session.displayName()).color(NamedTextColor.RED));
                                         })));
 
         // Admin-only; players spectate through /play.
@@ -197,10 +194,7 @@ public final class GameCommands {
                                                                     .getSender()
                                                                     .sendMessage(
                                                                             messages.success(
-                                                                                    "Points for "
-                                                                                            + game
-                                                                                                    .id()
-                                                                                            + " reset."));
+                                                                                    I18n.tr("core.points.reset", game.displayName())));
                                                         }))));
 
         if (game.id().equals("party")) {
@@ -213,8 +207,8 @@ public final class GameCommands {
                                     .executes(ctx -> run(ctx, c -> launchPvpDuel(c, game))))));
             root.then(Commands.literal("classes").executes(ctx -> run(ctx, c -> {
                 var sender = c.getSource().getSender();
-                sender.sendMessage(Component.text("Классы PvP: -1 — случайный", NamedTextColor.GOLD));
-                for (String label : PvpDuelKits.classList()) sender.sendMessage(Component.text(label, NamedTextColor.GREEN));
+                sender.sendMessage(I18n.tr("party.duels.duel.class_list").color(NamedTextColor.GOLD));
+                for (Component label : PvpDuelKits.classList()) sender.sendMessage(label.color(NamedTextColor.GREEN));
             })));
             root.then(
                     Commands.literal("points")
@@ -242,10 +236,7 @@ public final class GameCommands {
                                                                                         .sendMessage(
                                                                                                 messages
                                                                                                         .success(
-                                                                                                                "Party"
-                                                                                                                    + " Games"
-                                                                                                                    + " points"
-                                                                                                                    + " reset."));
+                                                                                                                I18n.tr("core.points.party_reset")));
                                                                             })))));
         }
 
@@ -278,7 +269,7 @@ public final class GameCommands {
                                                     .getSender()
                                                     .sendMessage(
                                                             messages.success(
-                                                                    "Configuration reloaded."));
+                                                                    I18n.tr("core.config.reloaded")));
                                         })));
 
         game.extendCommands(root);
@@ -287,7 +278,7 @@ public final class GameCommands {
 
     private ActiveSession requireOwnSession(Minigame game) throws CommandFailure {
         return sessions.sessionOf(game)
-                .orElseThrow(() -> new CommandFailure("No " + game.id() + " game is active."));
+                .orElseThrow(() -> new CommandFailure(I18n.tr("core.session.no_active_game", game.displayName())));
     }
 
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestPvpClasses(
@@ -295,7 +286,8 @@ public final class GameCommands {
         String prefix = builder.getRemaining();
         for (int number = -1; number <= PvpDuelKits.classCount(); number++) {
             if (number == 0 || !Integer.toString(number).startsWith(prefix)) continue;
-            builder.suggest(number, new com.mojang.brigadier.LiteralMessage(PvpDuelKits.label(number)));
+            builder.suggest(number, new com.mojang.brigadier.LiteralMessage(I18n.plain(PvpDuelKits.label(number),
+                    ctx.getSource().getSender() instanceof Player viewer ? viewer.locale() : java.util.Locale.ENGLISH)));
         }
         return builder.buildFuture();
     }
@@ -305,9 +297,9 @@ public final class GameCommands {
                 .filter(player -> !sessions.isPlaying(player))
                 .sorted(java.util.Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-        if (roster.size() != 2) throw new CommandFailure("Для /party duel нужны ровно два свободных игрока. Сейчас: " + roster.size());
+        if (roster.size() != 2) throw new CommandFailure(I18n.tr("party.duels.duel.free_players", roster.size()));
         if (ctx.getSource().getExecutor() instanceof Player author) {
-            if (sessions.isPlaying(author)) throw new CommandFailure("Сначала выйди из текущей игры, чтобы стать игроком A.");
+            if (sessions.isPlaying(author)) throw new CommandFailure(I18n.tr("party.duels.duel.author_busy"));
             if (roster.getLast().getUniqueId().equals(author.getUniqueId())) java.util.Collections.reverse(roster);
         }
         Player a = roster.getFirst(), b = roster.getLast();
@@ -316,11 +308,11 @@ public final class GameCommands {
             setup = new PvpDuelKits(IntegerArgumentType.getInteger(ctx, "classA"), IntegerArgumentType.getInteger(ctx, "classB"),
                     a.getUniqueId(), b.getUniqueId());
         } catch (IllegalArgumentException failure) {
-            throw new CommandFailure(failure.getMessage());
+            throw new CommandFailure(I18n.message(failure));
         }
         sessions.start(game, "pvp", roster, Map.of(), false, setup.options());
-        ctx.getSource().getSender().sendMessage(Component.text("BO3 запущен: A — " + a.getName() + " (" + PvpDuelKits.label(setup.classA())
-                + "), B — " + b.getName() + " (" + PvpDuelKits.label(setup.classB()) + ").", NamedTextColor.GOLD));
+        ctx.getSource().getSender().sendMessage(I18n.tr("party.duels.duel.started", a.getName(), PvpDuelKits.label(setup.classA()),
+                b.getName(), PvpDuelKits.label(setup.classB())).color(NamedTextColor.GOLD));
     }
 
     /** {@code start [mode] [players] [option]}; mode suggestions remain live for player presets. */
@@ -519,22 +511,18 @@ public final class GameCommands {
                         .map(node -> node.getRange().get(ctx.getInput()))
                         .orElse("@");
         if (raw.startsWith("@")) {
-            throw new CommandFailure("No players match " + raw + ".");
+            throw new CommandFailure(I18n.tr("core.command.no_selector_players", raw));
         }
         StartOption option = game.startOption();
         if (option != null && option.values().get().stream().anyMatch(raw::equalsIgnoreCase)) {
             throw new CommandFailure(
-                    "Give players before the " + option.key() + " " + raw + ": " + usage(game));
+                    I18n.tr("core.command.players_before_option", option.key(), raw, usage(game)));
         }
         if (firstArgument && game.showModes()) {
             throw new CommandFailure(
-                    "Unknown mode or player: "
-                            + raw
-                            + " (modes: "
-                            + String.join(", ", game.modes())
-                            + ")");
+                    I18n.tr("core.command.unknown_mode_player", raw, String.join(", ", game.modes())));
         }
-        throw new CommandFailure("No player called " + raw + " is online.");
+        throw new CommandFailure(I18n.tr("core.command.player_offline", raw));
     }
 
     /** Reject non-modes during parsing, so the sibling player/arena argument can still match. */
@@ -560,7 +548,7 @@ public final class GameCommands {
     private static void requireKnownMode(Minigame game, String mode) throws CommandFailure {
         if (mode != null && !game.modes().contains(mode)) {
             throw new CommandFailure(
-                    "Unknown mode: " + mode + " (modes: " + String.join(", ", game.modes()) + ")");
+                    I18n.tr("core.command.unknown_mode", mode, String.join(", ", game.modes())));
         }
     }
 
@@ -572,15 +560,8 @@ public final class GameCommands {
             }
         }
         throw new CommandFailure(
-                "Unknown "
-                        + option.key()
-                        + ": "
-                        + raw
-                        + " ("
-                        + (values.isEmpty()
-                                ? "none available"
-                                : "options: " + String.join(", ", values))
-                        + ")");
+                values.isEmpty() ? I18n.tr("core.command.option_unavailable", option.key(), raw)
+                        : I18n.tr("core.command.unknown_option", option.key(), raw, String.join(", ", values)));
     }
 
     private static String usage(Minigame game) {
@@ -614,49 +595,22 @@ public final class GameCommands {
         var running = sessions.sessionOf(game);
         if (running.isEmpty()) {
             sender.sendMessage(
-                    Component.text()
-                            .append(game.displayName())
-                            .append(
-                                    Component.text(
-                                            " — not running. Queue with ", NamedTextColor.GRAY))
-                            .append(
-                                    Component.text(
-                                            sessions.playCommand(game, game.defaultMode()),
-                                            NamedTextColor.GOLD))
-                            .build());
+                    I18n.tr("core.command.not_running", game.displayName(),
+                            Component.text(sessions.playCommand(game, game.defaultMode()), NamedTextColor.GOLD))
+                            .color(NamedTextColor.GRAY));
             if (isAdmin(ctx.getSource())) {
                 sender.sendMessage(
-                        Component.text()
-                                .append(Component.text("Start now: ", NamedTextColor.GRAY))
-                                .append(Component.text(usage(game), NamedTextColor.GOLD))
-                                .append(
-                                        Component.text(
-                                                game.showModes()
-                                                        ? " (modes: "
-                                                                + String.join(", ", game.modes())
-                                                                + ")"
-                                                        : "",
-                                                NamedTextColor.GRAY))
-                                .build());
+                        (game.showModes() ? I18n.tr("core.command.start_modes",
+                                Component.text(usage(game), NamedTextColor.GOLD), String.join(", ", game.modes()))
+                                : I18n.tr("core.command.start", Component.text(usage(game), NamedTextColor.GOLD)))
+                                .color(NamedTextColor.GRAY));
             }
             return;
         }
         ActiveSession session = running.get();
         sender.sendMessage(
-                Component.text()
-                        .append(session.displayName())
-                        .append(
-                                Component.text(
-                                        " — "
-                                                + session.phase().name().toLowerCase()
-                                                + ", "
-                                                + Messages.count(
-                                                        session.participants().size(), "player")
-                                                + ", "
-                                                + Messages.count(
-                                                        session.spectatorIds().size(), "spectator"),
-                                        NamedTextColor.GRAY))
-                        .build());
+                I18n.tr("core.command.session_status", session.displayName(), session.phase().displayName(),
+                        session.participants().size(), session.spectatorIds().size()).color(NamedTextColor.GRAY));
     }
 
     private void sendList(CommandContext<CommandSourceStack> ctx, Minigame game)
@@ -669,7 +623,7 @@ public final class GameCommands {
             } else {
                 ctx.getSource()
                         .getSender()
-                        .sendMessage(messages.info("No " + game.id() + " game is running."));
+                        .sendMessage(messages.info(I18n.tr("core.session.no_running_game", game.displayName())));
             }
             return;
         }
@@ -681,20 +635,15 @@ public final class GameCommands {
                             : NamedTextColor.WHITE;
             Component name = Component.text(participant.name(), color);
             if (!participant.isOnline()) {
-                name = name.append(Component.text(" (offline)", NamedTextColor.DARK_GRAY));
+                name = I18n.tr("core.command.offline_name", name).color(NamedTextColor.DARK_GRAY);
             }
             names.add(name);
         }
         ctx.getSource()
                 .getSender()
                 .sendMessage(
-                        Component.text()
-                                .append(
-                                        Component.text(
-                                                "Players (" + names.size() + "): ",
-                                                NamedTextColor.GRAY))
-                                .append(Component.join(JoinConfiguration.commas(true), names))
-                                .build());
+                        I18n.tr("core.command.players", names.size(),
+                                Component.join(JoinConfiguration.separator(Component.text(", ")), names)).color(NamedTextColor.GRAY));
     }
 
     private void sendPoints(CommandContext<CommandSourceStack> ctx, Minigame game) {
@@ -706,19 +655,12 @@ public final class GameCommands {
         var sender = ctx.getSource().getSender();
         List<PointsService.Entry> standings = points.standings(scoreKey);
         if (standings.isEmpty()) {
-            sender.sendMessage(messages.info("No points recorded for " + scoreKey + " yet."));
+            sender.sendMessage(messages.info(I18n.tr("core.points.empty", scoreKey)));
             return;
         }
         sender.sendMessage(
-                Component.text()
-                        .append(game.displayName())
-                        .append(
-                                Component.text(
-                                        scoreKey.equals("party_games")
-                                                ? " • Party Games:"
-                                                : " standings:",
-                                        NamedTextColor.GRAY))
-                        .build());
+                I18n.tr(scoreKey.equals("party_games") ? "core.points.party_standings" : "core.points.standings",
+                        game.displayName()).color(NamedTextColor.GRAY));
         int place = 1;
         for (PointsService.Entry entry : standings) {
             sender.sendMessage(
@@ -818,11 +760,7 @@ public final class GameCommands {
                                                             .getSender()
                                                             .sendMessage(
                                                                     messages.success(
-                                                                            "Saved "
-                                                                                    + game.id()
-                                                                                    + " team"
-                                                                                    + " colours"
-                                                                                    + " cleared."));
+                                                                            I18n.tr("core.team.saved_cleared", game.displayName())));
                                                 })))
                 .then(
                         Commands.literal("cycle")
@@ -840,18 +778,8 @@ public final class GameCommands {
                                                     c.getSource()
                                                             .getSender()
                                                             .sendMessage(
-                                                                    Component.text()
-                                                                            .append(
-                                                                                    Component.text(
-                                                                                            "You are"
-                                                                                                + " now on"
-                                                                                                + " ",
-                                                                                            NamedTextColor
-                                                                                                    .GREEN))
-                                                                            .append(
-                                                                                    next
-                                                                                            .displayNameComponent())
-                                                                            .build());
+                                                                    I18n.tr("core.team.you_joined", next.displayNameComponent())
+                                                                            .color(NamedTextColor.GREEN));
                                                 })))
                 .then(
                         Commands.literal("swap")
@@ -914,8 +842,7 @@ public final class GameCommands {
                                                                                             .sendMessage(
                                                                                                     messages
                                                                                                             .success(
-                                                                                                                    "Swapped"
-                                                                                                                        + " teams."));
+                                                                                                                    I18n.tr("core.team.swapped")));
                                                                                 })))));
     }
 
@@ -925,29 +852,20 @@ public final class GameCommands {
             throws CommandFailure {
         TeamColor color = TeamColor.fromId(colorId);
         if (color == null) {
-            throw new CommandFailure("Unknown team color: " + colorId);
+            throw new CommandFailure(I18n.tr("core.team.unknown_color", colorId));
         }
         teams.assign(game.id(), player.getUniqueId(), color);
         applyTeamChange(game, player, color);
         messages.broadcast(
-                Component.text()
-                        .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                        .append(Component.text(" joined ", NamedTextColor.GREEN))
-                        .append(color.displayNameComponent())
-                        .append(Component.text(" team for ", NamedTextColor.GREEN))
-                        .append(game.displayName())
-                        .build());
+                I18n.tr("core.team.joined", Component.text(player.getName(), NamedTextColor.AQUA),
+                        color.displayNameComponent(), game.displayName()).color(NamedTextColor.GREEN));
     }
 
     private void teamLeave(Minigame game, Player player) {
         teams.unassign(game.id(), player.getUniqueId());
         messages.broadcast(
-                Component.text()
-                        .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                        .append(Component.text(" left their ", NamedTextColor.YELLOW))
-                        .append(game.displayName())
-                        .append(Component.text(" team", NamedTextColor.YELLOW))
-                        .build());
+                I18n.tr("core.team.left", Component.text(player.getName(), NamedTextColor.AQUA),
+                        game.displayName()).color(NamedTextColor.YELLOW));
     }
 
     private void applyTeamChange(Minigame game, Player player, TeamColor color) {
@@ -966,7 +884,7 @@ public final class GameCommands {
             var sender = ctx.getSource().getSender();
             var byTeam = running.get().teams().byTeam();
             if (byTeam.isEmpty()) {
-                sender.sendMessage(messages.info("No teams assigned yet."));
+                sender.sendMessage(messages.info(I18n.tr("core.team.empty")));
                 return;
             }
             for (var entry : byTeam.entrySet()) {
@@ -979,7 +897,7 @@ public final class GameCommands {
                         Component.text()
                                 .append(entry.getKey().displayNameComponent())
                                 .append(Component.text(": ", NamedTextColor.GRAY))
-                                .append(Component.join(JoinConfiguration.commas(true), names))
+                                .append(Component.join(JoinConfiguration.separator(Component.text(", ")), names))
                                 .build());
             }
             return;
@@ -993,11 +911,7 @@ public final class GameCommands {
         if (byTeam.isEmpty()) {
             sender.sendMessage(
                     messages.info(
-                            "No teams set for "
-                                    + game.id()
-                                    + " — use /"
-                                    + game.id()
-                                    + " team join <color>."));
+                            I18n.tr("core.team.no_saved", game.displayName(), "/" + game.id() + " team join <color>")));
             return;
         }
         var names = teams.nameLookup(teams.standingTeams(game.id()).keySet());
@@ -1010,7 +924,7 @@ public final class GameCommands {
                     Component.text()
                             .append(entry.getKey().displayNameComponent())
                             .append(Component.text(": ", NamedTextColor.GRAY))
-                            .append(Component.join(JoinConfiguration.commas(true), members))
+                            .append(Component.join(JoinConfiguration.separator(Component.text(", ")), members))
                             .build());
         }
     }
@@ -1072,21 +986,15 @@ public final class GameCommands {
         String gadgetId = ctx.getArgument("gadget", String.class);
         var gadget = gadgets.get(gadgetId);
         if (gadget == null) {
-            throw new CommandFailure("Unknown gadget: " + gadgetId);
+            throw new CommandFailure(I18n.tr("core.command.unknown_gadget", gadgetId));
         }
         for (Player target : targets) {
-            target.getInventory().addItem(gadget.createItem(count));
+            target.getInventory().addItem(I18n.item(gadget.createItem(count), target));
         }
         ctx.getSource()
                 .getSender()
                 .sendMessage(
                         messages.success(
-                                "Gave "
-                                        + gadgetId
-                                        + " x"
-                                        + count
-                                        + " to "
-                                        + targets.size()
-                                        + " player(s)."));
+                                I18n.tr("core.command.gadget_given", gadgetId, count, targets.size())));
     }
 }

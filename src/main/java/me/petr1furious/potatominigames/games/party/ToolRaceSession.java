@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
 import org.bukkit.event.block.Action;
@@ -15,7 +17,7 @@ final class ToolRaceSession extends PartySurvivalSession {
     private ToolRaceTrack track;
 
     ToolRaceSession(SessionServices s, PartyConfig c, PartyRoundContext context) {
-        super(s, c, "tool_race", "Гонка инструментов", context);
+        super(s, c, "tool_race", context);
         duration = c.toolRaceSeconds.get();
     }
 
@@ -49,9 +51,8 @@ final class ToolRaceSession extends PartySurvivalSession {
         return false;
     }
 
-    String instructions() {
-        return "Прокопай 50 блоков вниз! 1 — железный топор, 2 — лопата, 3 — кирка. Выбирай"
-                + " инструмент под блок.";
+    Component instructions() {
+        return I18n.tr("party.rounds.tool_race.instructions");
     }
 
     void beginPlay() {
@@ -85,11 +86,8 @@ final class ToolRaceSession extends PartySurvivalSession {
         e.setDropItems(false);
         e.setExpToDrop(0);
         if (track.finished(id)) {
-            p.sendMessage(
-                    text(
-                            "Финиш! Время: "
-                                    + String.format(java.util.Locale.ROOT, "%.2f", elapsed() / 20.0)
-                                    + " с"));
+            p.sendMessage(text(I18n.tr("party.rounds.tool_race.finish",
+                    String.format(java.util.Locale.ROOT, "%.2f", elapsed() / 20.0))));
             p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .8f, 1.4f);
             spectate(p);
         }
@@ -104,12 +102,10 @@ final class ToolRaceSession extends PartySurvivalSession {
         return track == null ? PartyRoundResult.empty() : track.result(context.eligible());
     }
 
-    String status() {
-        return "50 блоков • финишировали: "
-                + names.keySet().stream().filter(track::finished).count()
-                + " • "
-                + Math.max(0, duration - elapsed() / 20)
-                + " с";
+    Component status() {
+        return I18n.tr("party.rounds.tool_race.status",
+                names.keySet().stream().filter(track::finished).count(),
+                Math.max(0, duration - elapsed() / 20));
     }
 
     @Override

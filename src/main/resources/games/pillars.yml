@@ -207,7 +207,7 @@ items:
 
   # Variants of items under a name of their own, written exactly the way /give takes them.
   custom:
-    explosive_firework_rocket: firework_rocket[fireworks={flight_duration:1,explosions:[{shape:"large_ball",colors:[I;16711680,16776960],has_trail:true}]},item_name={text:"Explosive Firework Rocket"}]
+    explosive_firework_rocket: firework_rocket[fireworks={flight_duration:1,explosions:[{shape:"large_ball",colors:[I;16711680,16776960],has_trail:true}]},item_name={translate:"potatominigames.pillars.play.item.explosive_firework_rocket"}]
 
   # Items that only make sense together. Being given one of a group's triggers (or, without
   # triggers, any of its items) makes the others far more likely for that player: until they

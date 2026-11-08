@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.warfare;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -96,16 +98,19 @@ abstract class WarfareSessionBase implements GameSession {
         }
         List<WarfareMap> usable = config.mapsFor(services.session().mode());
         if (usable.isEmpty()) {
-            throw new CommandFailure("No warfare map can host " + services.session().mode()
-                    + " (team beacon maps need beacons for two teams: /war beacon set).");
+            Component modeName = switch (services.session().mode()) {
+                case "classic", "team_beacon" -> I18n.tr("warfare.mode." + services.session().mode());
+                default -> Component.text(services.session().mode());
+            };
+            throw new CommandFailure(I18n.tr("warfare.map.no_usable", modeName));
         }
         String forced = services.option(MAP_OPTION);
         if (forced == null) {
             return usable.get(ThreadLocalRandom.current().nextInt(usable.size()));
         }
         return usable.stream().filter(candidate -> candidate.name().equalsIgnoreCase(forced)).findFirst()
-                .orElseThrow(() -> new CommandFailure("Unknown or unusable map: " + forced + " (options: "
-                        + String.join(", ", usable.stream().map(WarfareMap::name).toList()) + ")"));
+                .orElseThrow(() -> new CommandFailure(I18n.tr("warfare.map.unusable", forced,
+                        String.join(", ", usable.stream().map(WarfareMap::name).toList()))));
     }
 
     /** False when the session brings the border in itself, later in the game. */
@@ -158,7 +163,13 @@ abstract class WarfareSessionBase implements GameSession {
         if (config.enableGameInventory.get()) {
             var kit = config.gameInventory();
             if (kit != null) {
-                player.getInventory().setContents(kit.clone());
+                var contents = kit.clone();
+                for (int i = 0; i < contents.length; i++) {
+                    if (contents[i] != null) {
+                        contents[i] = I18n.item(contents[i].clone(), player);
+                    }
+                }
+                player.getInventory().setContents(contents);
             }
         }
         if (config.noHunger.get()) {
@@ -217,7 +228,7 @@ abstract class WarfareSessionBase implements GameSession {
             int roundedDistance = ((int) (distance + 0.5) / granularity) * granularity;
             rows.add(new Row(roundedDistance, Component.text()
                     .append(Component.text(distanceRange(roundedDistance, granularity), NamedTextColor.GOLD))
-                    .append(Component.text(" " + targetLabel(viewer, target), NamedTextColor.AQUA))
+                    .append(Component.space()).append(targetLabel(viewer, target).color(NamedTextColor.AQUA))
                     .build()));
         }
         rows.sort((a, b) -> Integer.compare(b.distance(), a.distance()));
@@ -228,15 +239,13 @@ abstract class WarfareSessionBase implements GameSession {
         return lines;
     }
 
-    private String targetLabel(Player viewer, Player target) {
-        return shouldHideTrackedPlayerNames(viewer) ? "Enemy" : target.getName();
+    private Component targetLabel(Player viewer, Player target) {
+        return shouldHideTrackedPlayerNames(viewer) ? I18n.tr("warfare.enemy") : Component.text(target.getName());
     }
 
     protected Component refreshLine() {
-        return Component.text()
-                .append(Component.text("Refresh: ", NamedTextColor.GRAY))
-                .append(Component.text(Math.max(0, secondsUntilHudRefresh) + "s", NamedTextColor.GREEN))
-                .build();
+        return I18n.tr("warfare.hud.refresh", Component.text(Math.max(0, secondsUntilHudRefresh),
+                NamedTextColor.GREEN)).color(NamedTextColor.GRAY);
     }
 
     // Distances refresh only every interval (stale positions are intended); the
@@ -306,10 +315,8 @@ abstract class WarfareSessionBase implements GameSession {
     public List<Component> summary() {
         List<Component> lines = new ArrayList<>(summary);
         if (map != null) {
-            lines.add(Component.text()
-                    .append(Component.text("Map: ", NamedTextColor.GRAY))
-                    .append(Component.text(map.name(), NamedTextColor.WHITE))
-                    .build());
+            lines.add(I18n.tr("warfare.summary.map", Component.text(map.name(), NamedTextColor.WHITE))
+                    .color(NamedTextColor.GRAY));
         }
         return lines;
     }

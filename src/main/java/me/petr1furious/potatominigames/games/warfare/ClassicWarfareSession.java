@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.warfare;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -107,7 +109,7 @@ final class ClassicWarfareSession extends WarfareSessionBase {
         }
         ended = true;
         if (alive.isEmpty()) {
-            summary.add(Component.text("Nobody survived", NamedTextColor.YELLOW));
+            summary.add(I18n.tr("warfare.nobody_survived").color(NamedTextColor.YELLOW));
         } else {
             Player winner = alive.getFirst();
             summary.add(Summary.winners(List.of(Component.text(winner.getName(), NamedTextColor.WHITE))));
@@ -134,6 +136,6 @@ final class ClassicWarfareSession extends WarfareSessionBase {
 
     @Override
     protected Component hudTitle(Player viewer) {
-        return Component.text("Distances", NamedTextColor.GOLD);
+        return I18n.tr("warfare.hud.distances").color(NamedTextColor.GOLD);
     }
 }

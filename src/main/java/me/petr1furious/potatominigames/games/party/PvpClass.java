@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.List;
 import java.util.Random;
 import org.bukkit.Color;
@@ -21,21 +22,21 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 enum PvpClass {
-    GUARDIAN("Страж", "Тяжёлая броня, щит, 2 лечения и замедление; Бастион на 4 с", "Бастион", 22),
-    RANGER("Стрелок", "Лук Сила I, особые стрелы по приоритету и бесконечные обычные; отскок назад", "Отскок", 16),
-    BERSERKER("Берсерк", "Топор и меч, вампиризм; ярость на 4 с стоит одно сердце", "Кровавая ярость", 22),
-    DUELIST("Дуэлянт", "Острый меч, 2 жемчуга, удар в спину; рывок вперёд", "Выпад", 14),
-    ALCHEMIST("Маг", "Лёгкая броня, клинок Отдача I и 14 зелий, включая тошноту; восполнение боевых зелий", "Магический запас", 24),
-    ENGINEER("Инженер", "Арбалет с перезарядкой III и пробиванием I, 64 блока; укрепление", "Укрепление", 24),
-    AERONAUT("Воздушный рыцарь", "Булава Плотность I, 8 зарядов ветра и запасной меч; воздушный скачок", "Воздушный скачок", 20),
-    PALADIN("Паладин", "Железный меч, щит и лёгкая броня; лечение и очищение", "Очищение", 24),
-    CRYOMANCER("Криомант", "Острый меч и 16 ледяных снежков; пополнение снежков и мороз", "Стужа", 20),
-    PYROMANCER("Пиромант", "Огненные меч и лук, бесконечные стрелы; огненная вспышка", "Вспышка", 20),
-    LANCER("Всадник", "Незеритовое копьё, запасной меч и конь на один раунд; лёгкая броня", "Пришпорить", 20),
-    SHADOW("Тень", "Кожаная броня, алмазный меч, 2 зелья невидимости по 20 с и палка мрака", "Палка мрака", 20),
-    HARPOONER("Гарпунщик", "Трезубец Верность III, запасной меч и средняя броня; Тягун без воды", "Тягун", 20),
-    THUNDERER("Громовержец", "Грозовой жезл до 48 блоков, громовой топор и средняя броня; статика подсвечивает врага", "Грозовой разряд", 3),
-    DEMOLITIONIST("Подрывник", "Каменный меч, 12 TNT, быстрые броски и ковровая бомбардировка; взрывозащита II", "Ковровая бомбардировка", 18);
+    GUARDIAN(22),
+    RANGER(16),
+    BERSERKER(22),
+    DUELIST(14),
+    ALCHEMIST(24),
+    ENGINEER(24),
+    AERONAUT(20),
+    PALADIN(24),
+    CRYOMANCER(20),
+    PYROMANCER(20),
+    LANCER(20),
+    SHADOW(20),
+    HARPOONER(20),
+    THUNDERER(3),
+    DEMOLITIONIST(18);
 
     private static final NamespacedKey SHADOW_WAND = new NamespacedKey("potatominigames", "shadow_wand");
     private static final int ARROW_STACK = 64;
@@ -43,13 +44,19 @@ enum PvpClass {
     record PotionSlot(PvpPotion kind, int amount, int slot) { }
     record SupplySlot(Material material, int amount, int slot) { }
     record Armor(Material helmet, Material chestplate, Material leggings, Material boots) { }
-    final String title;
-    final String description;
-    final String ability;
+    final Component title;
+    final Component description;
+    final Component ability;
     final int cooldown;
 
-    PvpClass(String title, String description, String ability, int cooldown) {
-        this.title = title; this.description = description; this.ability = ability; this.cooldown = cooldown;
+    PvpClass(int cooldown) {
+        this.title = label("title");
+        this.description = label("description");
+        this.ability = label("ability");
+        this.cooldown = cooldown;
+    }
+    private Component label(String field) {
+        return I18n.tr("party.duels.class." + name().toLowerCase(java.util.Locale.ROOT) + "." + field);
     }
     static PvpClass random(Random random) { return values()[random.nextInt(values().length)]; }
     /** Swap the random matchup, then use an identical random kit for the deciding round. */
@@ -104,43 +111,11 @@ enum PvpClass {
     List<PvpPotion> focusPotions() {
         return this == ALCHEMIST ? List.of(PvpPotion.HARMING, PvpPotion.POISON, PvpPotion.SLOWNESS, PvpPotion.NAUSEA) : List.of();
     }
-    String abilityDescription() {
-        return switch (this) {
-            case DEMOLITIONIST -> "Наведи порох на квадрат 7×7 до 48 блоков: 9 TNT после предупреждения 1 с и +4 TNT в запас, до 12; КД 18 с";
-            case SHADOW -> "Удар палкой: слепота на 2 с и замедление II на 3 с; без урона, щит блокирует";
-            case THUNDERER -> "Жезл показывает цель до 48 блоков; ПКМ — удар через 1 с, радиус 3 блока, от 4 сердец в центре до 1,5 на краю до брони";
-            case HARPOONER -> "Рывок с вращением на 0,6 с без воды; до 3 сердец до брони и отбрасывание, одно попадание по цели";
-            case LANCER -> "Ускоряет твоего коня на 3 с; пешком даёт скорость I на 3 с";
-            case GUARDIAN -> "Сопротивление II на 4 с, но замедляет тебя на 4 с";
-            case RANGER -> "Отскок назад и скорость I на 4 с";
-            case BERSERKER -> "Сила I и скорость I на 4 с; цена — одно сердце";
-            case DUELIST -> "Рывок вперёд и скорость I на 3 с";
-            case ALCHEMIST -> "+1 зелье урона, яда, замедления и тошноты; не больше двух каждого";
-            case ENGINEER -> "4 сердца щита на 6 с; +16 блоков, запас до 64";
-            case AERONAUT -> "Прыжок вверх и +4 заряда ветра, запас до 8";
-            case PALADIN -> "Лечит 1,5 сердца, снимает яд, слабость, замедление, слепоту, тошноту и огонь; защита на 2 с";
-            case CRYOMANCER -> "+8 снежков, скорость на 3 с и замедление видимой цели рядом";
-            case PYROMANCER -> "Поджигает видимую цель до 8 блоков на 5 с; 2 сердца щита на 4 с";
-        };
+    Component abilityDescription() {
+        return label("ability_description");
     }
-    String passiveDescription() {
-        return switch (this) {
-            case DEMOLITIONIST -> "Бросок TNT раз в 1 с, установка раз в 0,3 с; налёт слабее обычных зарядов; свои взрывы тоже ранят, карта не разрушается";
-            case SHADOW -> "2 взрывных зелья невидимости по 20 с; броня тоже скрывается, сохраняя защиту; предметы в руках видны";
-            case THUNDERER -> "Статика: попадание топором подсвечивает врага на 3 с, не чаще раза в 8 с; от молнии можно уйти или укрыться";
-            case HARPOONER -> "Удары трезубцем вблизи: +1 сердце урона до брони; Верность III; щит блокирует рывок";
-            case LANCER -> "Конь: 8 сердец, без брони и возрождения; копьё наносит обычный урон с учётом скорости";
-            case GUARDIAN -> "Тяжёлая броня, устойчивые сапоги и защита от стрел";
-            case RANGER -> "Стрелы слева направо: урон → замедление → яд → слабость → тошнота → подсветка → обычные; выбор — левой рукой";
-            case BERSERKER -> "Удар в ближнем бою лечит полсердца, не чаще раза в 3 с";
-            case DUELIST -> "Удар мечом в спину: +2 базового урона, не чаще раза в 5 с";
-            case ALCHEMIST -> "Полезные зелья действуют только на тебя, вредные — на соперника";
-            case ENGINEER -> "Арбалет: Быстрая перезарядка III, пробивание I; 64 блока для укрытий";
-            case AERONAUT -> "Бей булавой при падении; Невесомость III на сапогах смягчает промах";
-            case PALADIN -> "Меч и щит для ближнего боя; очищение снимает контроль и горение";
-            case CRYOMANCER -> "Снежки: Замедление IV на 4 с и Слабость I на 3 с, срабатывание раз в 0,5 с; карта не замораживается";
-            case PYROMANCER -> "Не получает урон от огня; огненные атаки не поджигают карту";
-        };
+    Component passiveDescription() {
+        return label("passive_description");
     }
     List<PotionSlot> potions() {
         return switch (this) {
@@ -167,7 +142,7 @@ enum PvpClass {
         inv.setLeggings(armor.leggings() == Material.AIR ? null : item(armor.leggings()));
         inv.setBoots(armor.boots() == Material.AIR ? null : item(armor.boots()));
         ItemStack weapon = item(primaryWeapon());
-        if (this == THUNDERER) weapon.editMeta(meta -> meta.displayName(Component.text("Громовой топор", NamedTextColor.AQUA)));
+        if (this == THUNDERER) weapon.editMeta(meta -> meta.displayName(I18n.tr("party.duels.item.thunder_axe").color(NamedTextColor.AQUA)));
         if (this == HARPOONER) {
             enchant(weapon, Enchantment.LOYALTY, 3);
             // Preserve every native modifier, including attack speed; only the held melee weapon is stronger.
@@ -194,7 +169,7 @@ enum PvpClass {
         if (this == ALCHEMIST || this == CRYOMANCER) {
             if (this == ALCHEMIST) {
                 enchant(weapon, Enchantment.KNOCKBACK, 1);
-                weapon.editMeta(meta -> meta.displayName(Component.text("Ритуальный клинок", NamedTextColor.LIGHT_PURPLE)));
+                weapon.editMeta(meta -> meta.displayName(I18n.tr("party.duels.item.ritual_blade").color(NamedTextColor.LIGHT_PURPLE)));
             }
             ItemStack robe = inv.getChestplate();
             robe.editMeta(LeatherArmorMeta.class, meta -> meta.setColor(Color.fromRGB(this == ALCHEMIST ? 0x793DA8 : 0x59CCED)));
@@ -218,7 +193,7 @@ enum PvpClass {
             enchant(chestplate, Enchantment.PROJECTILE_PROTECTION, 1);
             inv.setChestplate(chestplate);
         }
-        inv.setItem(0, weapon);
+        inv.setItem(0, I18n.item(weapon, player));
         inv.setItem(1, item(Material.SHEARS));
         inv.setItem(2, new ItemStack(Material.WHITE_WOOL, blocks()));
         inv.setItem(FOOD_SLOT, new ItemStack(Material.COOKED_BEEF, 16));
@@ -231,10 +206,10 @@ enum PvpClass {
                 enchant(stack, Enchantment.QUICK_CHARGE, 3);
                 enchant(stack, Enchantment.PIERCING, 1);
             }
-            inv.setItem(supply.slot(), stack);
+            inv.setItem(supply.slot(), I18n.item(stack, player));
         }
-        for (PvpArrow arrows : specialArrows()) inv.setItem(arrows.slot(), arrows.item());
-        for (PotionSlot potion : potions()) inv.setItem(potion.slot(), potion.kind().item(potion.amount()));
+        for (PvpArrow arrows : specialArrows()) inv.setItem(arrows.slot(), I18n.item(arrows.item(), player));
+        for (PotionSlot potion : potions()) inv.setItem(potion.slot(), I18n.item(potion.kind().item(potion.amount()), player));
         ItemStack active = new ItemStack(switch (this) {
             case GUARDIAN -> Material.IRON_INGOT;
             case RANGER -> Material.FEATHER;
@@ -253,13 +228,13 @@ enum PvpClass {
             case DEMOLITIONIST -> Material.GUNPOWDER;
         });
         active.editMeta(meta -> {
-            meta.displayName(Component.text(this == THUNDERER ? "Грозовой жезл" : ability, NamedTextColor.GOLD));
-            meta.lore(List.of(Component.text((this == SHADOW ? "Удар по сопернику" : "ПКМ") + " • перезарядка " + cooldown + " с", NamedTextColor.GRAY),
-                    Component.text(abilityDescription(), NamedTextColor.GRAY),
-                    Component.text(passiveDescription() + (this == THUNDERER ? "; золотая цель — готово, красная — откат" : ""), NamedTextColor.DARK_GRAY)));
+            meta.displayName((this == THUNDERER ? I18n.tr("party.duels.item.thunder_wand") : ability).color(NamedTextColor.GOLD));
+            meta.lore(List.of(I18n.tr(this == SHADOW ? "party.duels.item.ability_hit" : "party.duels.item.ability_use", cooldown).color(NamedTextColor.GRAY),
+                    abilityDescription().color(NamedTextColor.GRAY),
+                    (this == THUNDERER ? I18n.tr("party.duels.item.thunder_preview", passiveDescription()) : passiveDescription()).color(NamedTextColor.DARK_GRAY)));
             meta.getPersistentDataContainer().set(this == SHADOW ? SHADOW_WAND : abilityKey, PersistentDataType.BYTE, (byte) 1);
         });
-        inv.setItem(7, active);
+        inv.setItem(7, I18n.item(active, player));
         inv.setHeldItemSlot(0);
     }
     static boolean shadowWand(ItemStack item) {
@@ -315,7 +290,7 @@ enum PvpClass {
             }
             case BERSERKER -> {
                 if (!PvpCombat.canPayFury(player.getHealth())) {
-                    player.sendActionBar(Component.text("Для ярости нужно больше одного сердца", NamedTextColor.RED));
+                    player.sendActionBar(I18n.tr("party.duels.ability.fury_health").color(NamedTextColor.RED));
                     return false;
                 }
                 player.setHealth(player.getHealth() - 2);
@@ -330,7 +305,7 @@ enum PvpClass {
                 int supplied = 0;
                 for (PvpPotion potion : focusPotions()) supplied += potion.replenish(player, 1, 2);
                 if (supplied == 0) {
-                    player.sendActionBar(Component.text("Боевые зелья уже полны или нет места", NamedTextColor.YELLOW));
+                    player.sendActionBar(I18n.tr("party.duels.ability.potions_full").color(NamedTextColor.YELLOW));
                     return false;
                 }
             }
@@ -359,7 +334,7 @@ enum PvpClass {
             }
             case PYROMANCER -> {
                 if (!visibleTarget(player, opponent, 8)) {
-                    player.sendActionBar(Component.text("Нужна видимая цель не дальше 8 блоков", NamedTextColor.YELLOW));
+                    player.sendActionBar(I18n.tr("party.duels.ability.visible_target").color(NamedTextColor.YELLOW));
                     return false;
                 }
                 opponent.setFireTicks(Math.max(opponent.getFireTicks(), 100));

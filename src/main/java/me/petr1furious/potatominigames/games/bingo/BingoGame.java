@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.bingo;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.List;
 
 import org.bukkit.Material;
@@ -64,7 +66,7 @@ public final class BingoGame implements Minigame {
 
     @Override
     public Component displayName() {
-        return Component.text("Bingo", NamedTextColor.GOLD);
+        return I18n.tr("bingo.name").color(NamedTextColor.GOLD);
     }
 
     @Override
@@ -78,17 +80,25 @@ public final class BingoGame implements Minigame {
     }
 
     @Override
+    public Component modeTitle(String mode) {
+        return switch (mode) {
+            case "default", "butfast", "collectall", "lockout" -> I18n.tr("bingo.mode." + mode);
+            default -> Component.text(mode);
+        };
+    }
+
+    @Override
     public Material icon() {
         return Material.FILLED_MAP;
     }
 
     @Override
     public Component description(String mode) {
-        return Component.text(switch (mode) {
-            case "butfast" -> "First team to collect an item scores it";
-            case "collectall" -> "Collect every item on a 3x3 card";
-            case "lockout" -> "Each item goes to whoever collects it first; a line wins, else the most items";
-            default -> "Collect a line of items on your 5x5 card";
+        return I18n.tr(switch (mode) {
+            case "butfast" -> "bingo.description.butfast";
+            case "collectall" -> "bingo.description.collectall";
+            case "lockout" -> "bingo.description.lockout";
+            default -> "bingo.description.default";
         });
     }
 
@@ -130,10 +140,10 @@ public final class BingoGame implements Minigame {
                 .executes(ctx -> run(ctx, c -> {
                     Player player = requirePlayer(c);
                     if (activeSession == null) {
-                        throw new CommandFailure("No bingo game is active.");
+                        throw new CommandFailure(I18n.tr("bingo.not_active"));
                     }
                     activeSession.returnCard(player);
-                    player.sendMessage(Component.text("Bingo card returned to slot 9.", NamedTextColor.GREEN));
+                    player.sendMessage(I18n.tr("bingo.card.returned").color(NamedTextColor.GREEN));
                 })));
     }
 }

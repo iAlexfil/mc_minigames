@@ -1,11 +1,12 @@
 package me.petr1furious.potatominigames.games.bingo;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -132,13 +133,13 @@ final class BingoSession implements GameSession {
             teamStates.computeIfAbsent(color, TeamState::new).addMember(participant.name());
         }
         if (teamStates.isEmpty()) {
-            throw new CommandFailure("No active teams.");
+            throw new CommandFailure(I18n.tr("bingo.no_active_teams"));
         }
 
         try {
             board = boardService.generateBoard(mode, difficulty, itemPool.entries()).board();
-        } catch (IllegalStateException exception) {
-            throw new CommandFailure(exception.getMessage());
+        } catch (IllegalStateException | IllegalArgumentException exception) {
+            throw new CommandFailure(I18n.message(exception));
         }
 
         finishSeconds = difficulty.durationFor(mode);
@@ -160,11 +161,8 @@ final class BingoSession implements GameSession {
             }
         }
 
-        broadcast(Component.text("Game started: ", NamedTextColor.GREEN)
-                .append(Component.text("mode ", NamedTextColor.GREEN))
-                .append(Component.text(mode.key(), NamedTextColor.GOLD))
-                .append(Component.text(", difficulty ", NamedTextColor.GREEN))
-                .append(Component.text(difficulty.key(), NamedTextColor.GOLD)));
+        broadcast(I18n.tr("bingo.started", mode.displayName().color(NamedTextColor.GOLD),
+                difficulty.displayName().color(NamedTextColor.GOLD)).color(NamedTextColor.GREEN));
 
         if (dropRemaining <= 0) {
             openFloorNow();
@@ -182,7 +180,7 @@ final class BingoSession implements GameSession {
                 openFloorNow();
             } else {
                 broadcastParticipantsActionbar(
-                        Component.text("Dropping in " + dropRemaining + "s", NamedTextColor.YELLOW));
+                        I18n.tr("bingo.dropping", dropRemaining).color(NamedTextColor.YELLOW));
                 playParticipantsSound(Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 1.2f);
             }
         }
@@ -196,15 +194,15 @@ final class BingoSession implements GameSession {
                 return;
             }
             broadcastParticipantsActionbar(
-                    Component.text("Game ending in " + endGraceRemaining + "s", NamedTextColor.YELLOW));
+                    I18n.tr("bingo.ending", endGraceRemaining).color(NamedTextColor.YELLOW));
             playParticipantsSound(Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 0.8f);
         } else if (finishSeconds > 0 && elapsedSeconds >= finishSeconds) {
             triggerEnd();
             return;
         } else {
-            String warning = timeWarningMessage();
+            Component warning = timeWarningMessage();
             if (warning != null) {
-                broadcastParticipantsActionbar(Component.text(warning, NamedTextColor.RED));
+                broadcastParticipantsActionbar(warning.color(NamedTextColor.RED));
                 playParticipantsSound(Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 0.9f);
             }
         }
@@ -215,7 +213,7 @@ final class BingoSession implements GameSession {
     private void openFloorNow() {
         preStartLocked = false;
         openCageFloor();
-        broadcastParticipantsActionbar(Component.text("Go", NamedTextColor.GREEN));
+        broadcastParticipantsActionbar(I18n.tr("bingo.go").color(NamedTextColor.GREEN));
         playParticipantsSound(Sound.ENTITY_PLAYER_LEVELUP, 0.9f, 1.1f);
     }
 
@@ -245,7 +243,7 @@ final class BingoSession implements GameSession {
 
         summary.clear();
         if (!ranking.isEmpty()) {
-            summary.add(Component.text("Ranking", NamedTextColor.GRAY));
+            summary.add(I18n.tr("bingo.ranking").color(NamedTextColor.GRAY));
             int place = 1;
             for (TeamState state : ranking) {
                 summary.add(Summary.rank(place, teamDisplayName(state), teamResultComponent(state)));
@@ -404,7 +402,7 @@ final class BingoSession implements GameSession {
             team.setScore(computeScore(team));
         }
 
-        broadcast(teamCollectedMessage(player.getName(), team, prettify(material.name())));
+        broadcast(teamCollectedMessage(player.getName(), team, Component.translatable(material.translationKey())));
         playCollectionSounds(player);
         checkFinish(team);
         updateSidebar();
@@ -428,9 +426,8 @@ final class BingoSession implements GameSession {
         if (won && !team.finished()) {
             team.setFinished(true);
             team.setFinishedAtSeconds((int) elapsedSeconds);
-            broadcast(team.color().displayNameComponent()
-                    .append(Component.text(mode == GameMode.LOCKOUT ? " got a bingo line!" : " has completed the board.",
-                            NamedTextColor.GOLD)));
+            broadcast(I18n.tr(mode == GameMode.LOCKOUT ? "bingo.team.line" : "bingo.team.completed",
+                    team.color().displayNameComponent()).color(NamedTextColor.GOLD));
             moveFinishedTeamToSpectators(team.color());
             playParticipantsSound(Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
         }
@@ -458,7 +455,7 @@ final class BingoSession implements GameSession {
         } else {
             endGraceRemaining = graceSeconds;
             broadcastParticipantsActionbar(
-                    Component.text("Game ending in " + endGraceRemaining + "s", NamedTextColor.YELLOW));
+                    I18n.tr("bingo.ending", endGraceRemaining).color(NamedTextColor.YELLOW));
             playParticipantsSound(Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 0.8f);
         }
     }
@@ -563,7 +560,7 @@ final class BingoSession implements GameSession {
         player.getInventory().setArmorContents(null);
         player.getInventory().setItemInOffHand(null);
         player.sendActionBar(
-                Component.text("You died. Spectating for " + punishmentSeconds + "s.", NamedTextColor.RED));
+                I18n.tr("bingo.death_pause", punishmentSeconds).color(NamedTextColor.RED));
 
         Location deathLocation = player.getLocation().clone();
         BukkitTask releaseTask = Bukkit.getScheduler().runTaskLater(services.plugin(),
@@ -609,11 +606,11 @@ final class BingoSession implements GameSession {
             player.getInventory().setArmorContents(cloneContents(state.armor()));
             player.getInventory().setItemInOffHand(state.offHand() == null ? null : state.offHand().clone());
             if (player.getInventory().getItem(8) == null) {
-                player.getInventory().setItem(8, boardUi.createCard());
+                player.getInventory().setItem(8, I18n.item(boardUi.createCard(), player));
             }
         }
         player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 20 * 20, 0, false, false, false));
-        player.sendActionBar(Component.text("You respawned.", NamedTextColor.GREEN));
+        player.sendActionBar(I18n.tr("bingo.respawned").color(NamedTextColor.GREEN));
     }
 
     private boolean isPunished(Player player) {
@@ -810,12 +807,12 @@ final class BingoSession implements GameSession {
 
     void openBoardFor(Player player) {
         if (board == null) {
-            player.sendActionBar(Component.text("No active bingo board right now.", NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("bingo.board.not_active").color(NamedTextColor.RED));
             return;
         }
         TeamState team = stateOf(teamOf(player));
         if (team == null) {
-            player.sendActionBar(Component.text("You are not participating.", NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("bingo.not_participating").color(NamedTextColor.RED));
             return;
         }
         boardUi.openBoard(player, board, team, mode, difficulty, this::rewardForIndex, lockoutOwners());
@@ -851,7 +848,7 @@ final class BingoSession implements GameSession {
 
     void returnCard(Player player) {
         if (!boardUi.isBingoCard(player.getInventory().getItem(8))) {
-            player.getInventory().setItem(8, boardUi.createCard());
+            player.getInventory().setItem(8, I18n.item(boardUi.createCard(), player));
         }
     }
 
@@ -859,7 +856,7 @@ final class BingoSession implements GameSession {
         clearPunishment(player, false);
         services.playerState().resetForRound(player, org.bukkit.GameMode.SURVIVAL);
         kit.fillStarterItems(player.getInventory());
-        player.getInventory().setItem(8, boardUi.createCard());
+        player.getInventory().setItem(8, I18n.item(boardUi.createCard(), player));
         player.addPotionEffect(
                 new PotionEffect(PotionEffectType.WATER_BREATHING, PotionEffect.INFINITE_DURATION, 0, false, false,
                         false));
@@ -950,18 +947,10 @@ final class BingoSession implements GameSession {
         List<TeamState> teams = new ArrayList<>(teamStates.values());
         teams.sort(teamRankingComparator());
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.text()
-                .append(Component.text("Mode: ", NamedTextColor.GOLD))
-                .append(Component.text(mode.key(), NamedTextColor.YELLOW))
-                .append(Component.text(" / ", NamedTextColor.GOLD))
-                .append(Component.text(difficulty.key(), NamedTextColor.YELLOW))
-                .build());
-        lines.add(Component.text()
-                .append(Component.text("Time: ", NamedTextColor.GOLD))
-                .append(Component.text(TimeFormat.clock(elapsedSeconds), NamedTextColor.GREEN))
-                .append(Component.text("/", NamedTextColor.GOLD))
-                .append(Component.text(TimeFormat.clock(finishSeconds), NamedTextColor.GREEN))
-                .build());
+        lines.add(I18n.tr("bingo.hud.mode", mode.displayName().color(NamedTextColor.YELLOW),
+                difficulty.displayName().color(NamedTextColor.YELLOW)).color(NamedTextColor.GOLD));
+        lines.add(I18n.tr("bingo.hud.time", Component.text(TimeFormat.clock(elapsedSeconds), NamedTextColor.GREEN),
+                Component.text(TimeFormat.clock(finishSeconds), NamedTextColor.GREEN)).color(NamedTextColor.GOLD));
         lines.add(Component.text(" "));
         for (TeamState state : teams) {
             lines.add(Component.text()
@@ -974,7 +963,7 @@ final class BingoSession implements GameSession {
             }
         }
         for (Player player : services.participants().onlinePlayers()) {
-            services.sidebar().update(player, Component.text("Bingo", NamedTextColor.GOLD), lines);
+            services.sidebar().update(player, I18n.tr("bingo.name").color(NamedTextColor.GOLD), lines);
         }
     }
 
@@ -987,8 +976,8 @@ final class BingoSession implements GameSession {
 
     private Component teamResultComponent(TeamState state) {
         if (mode == GameMode.LOCKOUT) {
-            return Component.text(state.score() + (state.finished() ? " BINGO" : ""),
-                    state.finished() ? NamedTextColor.GREEN : NamedTextColor.WHITE);
+            return (state.finished() ? I18n.tr("bingo.result.bingo", state.score()) : Component.text(state.score()))
+                    .color(state.finished() ? NamedTextColor.GREEN : NamedTextColor.WHITE);
         }
         if (mode != GameMode.DEFAULT) {
             return Component.text(state.score(), NamedTextColor.WHITE);
@@ -999,14 +988,13 @@ final class BingoSession implements GameSession {
         return Component.text(state.score() + "/5", NamedTextColor.RED);
     }
 
-    private Component teamCollectedMessage(String nickname, TeamState team, String itemName) {
-        return Component.text(nickname, team.color().textColor())
-                .append(Component.text(mode == GameMode.LOCKOUT ? " claimed " : " collected ", NamedTextColor.GOLD))
-                .append(Component.text(itemName, NamedTextColor.AQUA))
-                .append(Component.text(".", NamedTextColor.GOLD));
+    private Component teamCollectedMessage(String nickname, TeamState team, Component itemName) {
+        return I18n.tr(mode == GameMode.LOCKOUT ? "bingo.item.claimed" : "bingo.item.collected",
+                Component.text(nickname, team.color().textColor()), itemName.color(NamedTextColor.AQUA))
+                .color(NamedTextColor.GOLD);
     }
 
-    private String timeWarningMessage() {
+    private Component timeWarningMessage() {
         if (finishSeconds <= 0) {
             return null;
         }
@@ -1015,16 +1003,16 @@ final class BingoSession implements GameSession {
             return null;
         }
         if (left % 600 == 0) {
-            return left / 60 + " minutes left";
+            return I18n.tr("bingo.minutes_left", left / 60);
         }
         if (left <= 300 && left % 60 == 0) {
-            return left / 60 + " minutes left";
+            return I18n.tr("bingo.minutes_left", left / 60);
         }
         if (left <= 30 && left % 10 == 0) {
-            return left + " seconds left";
+            return I18n.tr("bingo.seconds_left", left);
         }
         if (left <= 5) {
-            return left + " seconds left";
+            return I18n.tr("bingo.seconds_left", left);
         }
         return null;
     }
@@ -1051,9 +1039,6 @@ final class BingoSession implements GameSession {
         }
     }
 
-    private static String prettify(String raw) {
-        return raw.toLowerCase(Locale.ROOT).replace('_', ' ');
-    }
 
     private static ItemStack[] cloneContents(ItemStack[] source) {
         if (source == null) {

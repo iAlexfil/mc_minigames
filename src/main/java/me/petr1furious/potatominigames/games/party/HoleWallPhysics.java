@@ -1,22 +1,25 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+
 import org.bukkit.util.BoundingBox;
 
 import java.util.List;
 
 final class HoleWallPhysics {
     enum Direction {
-        NORTH(0, 1, "Север"),
-        EAST(-1, 0, "Восток"),
-        SOUTH(0, -1, "Юг"),
-        WEST(1, 0, "Запад");
+        NORTH(0, 1, "north"),
+        EAST(-1, 0, "east"),
+        SOUTH(0, -1, "south"),
+        WEST(1, 0, "west");
         final int dx, dz;
-        final String title;
+        final Component title;
 
         Direction(int dx, int dz, String title) {
             this.dx = dx;
             this.dz = dz;
-            this.title = title;
+            this.title = I18n.tr("party.rounds.hole_wall.direction." + title);
         }
     }
 

@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
@@ -23,11 +25,11 @@ final class BuildMemorySession extends PartySurvivalSession {
     private Phase phase = Phase.SHOW;
     private int stage = 1;
     private long deadline;
-    private String modelTitle = "";
+    private Component modelTitle = Component.empty();
     private final Map<UUID, BuildMemoryPattern> patterns = new LinkedHashMap<>();
 
     BuildMemorySession(SessionServices s, PartyConfig c, PartyRoundContext context) {
-        super(s, c, "build_memory", "Повтори постройку", context);
+        super(s, c, "build_memory", context);
         stages = c.buildMemoryStages.get();
     }
 
@@ -56,10 +58,8 @@ final class BuildMemorySession extends PartySurvivalSession {
         return true;
     }
 
-    String instructions() {
-        return "Запомни постройку и повтори её на голубом участке 5×5. Ориентируйся по его краям."
-                + " Инструменты для исправлений — в слотах 7–9; сломанные блоки возвращаются."
-                + " Ошибка в конце — выбывание!";
+    Component instructions() {
+        return I18n.tr("party.rounds.build_memory.instructions");
     }
 
     void beginPlay() {
@@ -81,8 +81,8 @@ final class BuildMemorySession extends PartySurvivalSession {
         }
         deadline = elapsed() + Math.max(5, 13 - stage) * 20L;
         announceTitle(
-                "Запоминай: " + modelTitle,
-                "Этап " + stage + " • ориентир — края голубого участка",
+                I18n.tr("party.rounds.build_memory.memorize", modelTitle),
+                I18n.tr("party.rounds.build_memory.orientation", stage),
                 2);
         PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, .9f);
     }
@@ -108,8 +108,8 @@ final class BuildMemorySession extends PartySurvivalSession {
                 }
                 deadline = elapsed + (20 + 2L * (stage - 1)) * 20;
                 announceTitle(
-                        "Построй: " + modelTitle,
-                        "Воспроизведи образец точно • инструменты в слотах 7–9",
+                        I18n.tr("party.rounds.build_memory.build", modelTitle),
+                        I18n.tr("party.rounds.build_memory.reproduce"),
                         2);
                 PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, .7f, 1.5f);
             }
@@ -127,8 +127,9 @@ final class BuildMemorySession extends PartySurvivalSession {
                 arena.screens(false);
                 deadline = elapsed + 60;
                 announceTitle(
-                        "Проверка",
-                        failed.isEmpty() ? "Все верно!" : "Ошиблись: " + failed.size(),
+                        I18n.tr("party.rounds.build_memory.review"),
+                        failed.isEmpty() ? I18n.tr("party.rounds.build_memory.correct")
+                                : I18n.tr("party.rounds.build_memory.failed", failed.size()),
                         2);
             }
             case REVIEW -> {
@@ -199,17 +200,12 @@ final class BuildMemorySession extends PartySurvivalSession {
                 || e.getAction() == InventoryAction.CLONE_STACK) e.setCancelled(true);
     }
 
-    String status() {
-        return "Этап "
-                + stage
-                + " • "
-                + switch (phase) {
-                    case SHOW -> "Запоминай";
-                    case BUILD -> "Строй";
-                    case REVIEW -> "Проверка";
-                }
-                + " • "
-                + Math.max(0, (deadline - elapsed() + 19) / 20)
-                + " с";
+    Component status() {
+        return I18n.tr("party.rounds.build_memory.status", stage,
+                I18n.tr(switch (phase) {
+                    case SHOW -> "party.rounds.build_memory.show";
+                    case BUILD -> "party.rounds.build_memory.building";
+                    case REVIEW -> "party.rounds.build_memory.review";
+                }), Math.max(0, (deadline - elapsed() + 19) / 20));
     }
 }

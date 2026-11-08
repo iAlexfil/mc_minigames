@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import java.util.List;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
@@ -14,18 +16,18 @@ public record PvpDuelKits(int classA, int classB, UUID playerA, UUID playerB) {
     public PvpDuelKits {
         validate(classA); validate(classB);
         if (playerA == null || playerB == null || playerA.equals(playerB))
-            throw new IllegalArgumentException("Для BO3 нужны два разных игрока.");
+            throw I18n.exception("party.duels.duel.distinct_players");
     }
     private static void validate(int number) {
         if (number != -1 && (number < 1 || number > classCount()))
-            throw new IllegalArgumentException("Номер класса: от 1 до " + classCount() + ", либо -1 для случайного. /party classes");
+            throw I18n.exception("party.duels.duel.invalid_class", classCount());
     }
     public static int classCount() { return PvpClass.values().length; }
-    public static String label(int number) {
+    public static Component label(int number) {
         validate(number);
-        return number == -1 ? "случайный класс" : number + ". " + PvpClass.values()[number - 1].title;
+        return number == -1 ? I18n.tr("party.duels.duel.random_class") : I18n.tr("party.duels.duel.numbered_class", number, PvpClass.values()[number - 1].title);
     }
-    public static List<String> classList() {
+    public static List<Component> classList() {
         return IntStream.rangeClosed(1, classCount()).mapToObj(PvpDuelKits::label).toList();
     }
     public Map<String, String> options() {
@@ -38,7 +40,7 @@ public record PvpDuelKits(int classA, int classB, UUID playerA, UUID playerB) {
             return new PvpDuelKits(Integer.parseInt(options.get(CLASS_A)), Integer.parseInt(options.get(CLASS_B)),
                     UUID.fromString(options.get(PLAYER_A)), UUID.fromString(options.get(PLAYER_B)));
         } catch (IllegalArgumentException | NullPointerException failure) {
-            throw new IllegalArgumentException("Некорректные параметры начальных классов BO3. Используй /party duel <класс_A> <класс_B>.", failure);
+            throw I18n.exception("party.duels.duel.invalid_options");
         }
     }
     boolean matches(List<UUID> roster) {
@@ -49,7 +51,7 @@ public record PvpDuelKits(int classA, int classB, UUID playerA, UUID playerB) {
     }
     List<PvpClass> opening(DuelTournament.Pair pair, Random random) {
         if (!pair.contains(playerA) || !pair.contains(playerB))
-            throw new IllegalArgumentException("Начальные классы заданы для другой пары игроков.");
+            throw I18n.exception("party.duels.duel.wrong_pair");
         PvpClass a = resolve(classA, random), b = resolve(classB, random);
         return pair.first().equals(playerA) ? List.of(a, b) : List.of(b, a);
     }

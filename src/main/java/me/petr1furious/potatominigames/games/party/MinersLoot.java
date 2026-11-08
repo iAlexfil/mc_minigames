@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -19,9 +21,9 @@ final class MinersLoot {
                 if (material.getMaxDurability() > 0) meta.setUnbreakable(true);
                 if (enchant != null && level > 0) meta.addEnchant(resolve(enchant), level, true);
                 List<Component> lore = meta.lore() == null ? new ArrayList<>() : new ArrayList<>(meta.lore());
-                lore.add(Component.text("Шахтёрский лут • " + switch (quality) {
-                    case COMMON -> "обычный"; case GOOD -> "хороший"; case RARE -> "редкий";
-                }, quality == Quality.RARE ? NamedTextColor.LIGHT_PURPLE : quality == Quality.GOOD ? NamedTextColor.AQUA : NamedTextColor.GRAY));
+                lore.add(I18n.tr("party.rounds.miners.loot." + quality.name().toLowerCase(java.util.Locale.ROOT))
+                        .color(quality == Quality.RARE ? NamedTextColor.LIGHT_PURPLE
+                                : quality == Quality.GOOD ? NamedTextColor.AQUA : NamedTextColor.GRAY));
                 meta.lore(lore);
             });
             return item;

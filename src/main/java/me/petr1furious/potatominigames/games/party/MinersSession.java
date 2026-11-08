@@ -8,6 +8,7 @@ import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
 import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.game.EndReason;
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
@@ -114,16 +115,16 @@ final class MinersSession implements PartyRoundSession {
         this.config = config;
     }
 
-    private static Component text(String value) {
-        return Component.text(value, NamedTextColor.GOLD);
+    private static Component text(Component value) {
+        return value.color(NamedTextColor.GOLD);
     }
 
-    private void say(String value) {
+    private void say(Component value) {
         services.messages().broadcast(text(value));
     }
 
-    private String name(UUID id) {
-        return names.getOrDefault(id, "Игрок");
+    private Component name(UUID id) {
+        return names.containsKey(id) ? Component.text(names.get(id)) : I18n.tr("party.rounds.player");
     }
 
     private Player player(UUID id) {
@@ -173,7 +174,7 @@ final class MinersSession implements PartyRoundSession {
             roster.add(participant.id());
         }
         if (roster.isEmpty() || roster.size() > 12)
-            throw new CommandFailure("Битва шахтёров рассчитана на 1–12 участников.");
+            throw new CommandFailure(I18n.tr("party.rounds.miners.error.players"));
         Collections.shuffle(roster, random);
         for (int i = 0; i < roster.size(); i++) cells.put(roster.get(i), i);
         standings = new SurvivalStandings(roster);
@@ -222,7 +223,7 @@ final class MinersSession implements PartyRoundSession {
         bar =
                 services.bossBars()
                         .create(
-                                text("Битва шахтёров • Подготовка арены"),
+                                text(I18n.tr("party.rounds.miners.preparing")),
                                 BossBar.Color.BLUE,
                                 BossBar.Overlay.PROGRESS);
         for (Player p : services.participants().onlinePlayers()) {
@@ -234,8 +235,8 @@ final class MinersSession implements PartyRoundSession {
             freeze.freeze(p);
             p.showBossBar(bar);
         }
-        say("Битва шахтёров: копай руды, подбирай случайный лут и выживи после открытия шахт!");
-        if (services.isTest()) say("Тренировка: без очков. /party stop — закончить.");
+        say(I18n.tr("party.rounds.miners.instructions"));
+        if (services.isTest()) say(I18n.tr("party.rounds.miners.test"));
         ticker =
                 Bukkit.getScheduler()
                         .runTaskTimer(
@@ -298,21 +299,18 @@ final class MinersSession implements PartyRoundSession {
         inv.setBoots(PvpClass.item(Material.LEATHER_BOOTS));
         ItemStack compass = new ItemStack(Material.COMPASS);
         compass.editMeta(meta -> {
-            meta.displayName(text("Поиск шахтёра"));
+            meta.displayName(text(I18n.tr("party.rounds.miners.compass.name")));
             meta.getPersistentDataContainer().set(COMPASS, PersistentDataType.BYTE, (byte) 1);
         });
-        inv.setItem(7, compass);
+        inv.setItem(7, I18n.item(compass, p));
         inv.setHeldItemSlot(0);
         p.addPotionEffect(new PotionEffect(PotionEffectType.NIGHT_VISION, 60000, 0, true, false));
         p.addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 60000, 0, true, false));
         teleport(p, arena.spawn(cells.get(p.getUniqueId())));
         freeze.freeze(p);
         for (MinersOre ore : MinersOre.values())
-            p.sendMessage(Component.text(ore.description, NamedTextColor.GRAY));
-        p.sendMessage(
-                text(
-                        "Лут выпадает на землю: подбирай и надевай сам. Камень даёт булыжник, запас"
-                                + " до 128."));
+            p.sendMessage(ore.description.color(NamedTextColor.GRAY));
+        p.sendMessage(text(I18n.tr("party.rounds.miners.loot.instructions")));
     }
 
     private void tickGame() {
@@ -332,19 +330,19 @@ final class MinersSession implements PartyRoundSession {
         if (previous != round.phase()) {
             if (round.phase() == MinersRound.Phase.MINING) {
                 freeze.releaseAll();
-                say("Добыча началась! В каждой коробке одинаковое число руд, но находки случайны.");
+                say(I18n.tr("party.rounds.miners.mining_started"));
             }
             if (round.phase() == MinersRound.Phase.FIGHT) {
                 world.setGameRule(GameRules.PVP, true);
-                announce("Шахты открыты!", "PvP включено • компас ищет ближайшего врага");
-                say(
-                        "Шахты открыты! Одна жизнь. Можно продолжать добычу и прокапываться к"
-                                + " соперникам.");
+                announce(I18n.tr("party.rounds.miners.open"),
+                        I18n.tr("party.rounds.miners.open.subtitle"));
+                say(I18n.tr("party.rounds.miners.open.instructions"));
             }
             if (round.phase() == MinersRound.Phase.FINALE) {
                 services.arena()
                         .applyBorder(world, arena.center(), arena.borderSize(), 3, finaleSeconds);
-                announce("Финал!", "Граница сужается, игроки подсвечены");
+                announce(I18n.tr("party.rounds.miners.finale"),
+                        I18n.tr("party.rounds.miners.finale.subtitle"));
             }
         }
         if (round.phase() == MinersRound.Phase.RESULT) {
@@ -382,11 +380,11 @@ final class MinersSession implements PartyRoundSession {
         }
     }
 
-    private void announce(String title, String subtitle) {
+    private void announce(Component title, Component subtitle) {
         Title message =
                 Title.title(
                         text(title),
-                        Component.text(subtitle, NamedTextColor.WHITE),
+                        subtitle.color(NamedTextColor.WHITE),
                         Title.Times.times(
                                 Duration.ofMillis(100),
                                 Duration.ofSeconds(3),
@@ -432,41 +430,31 @@ final class MinersSession implements PartyRoundSession {
 
     private void hud() {
         if (bar == null || round.phase() == MinersRound.Phase.DONE) return;
-        String line =
-                switch (round.phase()) {
-                    case BUILDING ->
-                            "Подготовка арены • " + Math.round(arena.progress() * 100) + "%";
-                    case COUNTDOWN -> "Старт через " + round.secondsLeft(tick) + " с";
-                    case MINING -> "Добыча • PvP через " + round.secondsLeft(tick) + " с";
-                    case FIGHT -> "PvP • финал через " + round.secondsLeft(tick) + " с";
-                    case FINALE ->
-                            round.pressure(tick) > 0
-                                    ? "Последний бой!"
-                                    : "Финал • " + round.secondsLeft(tick) + " с";
-                    case RESULT -> "Итоги • " + round.secondsLeft(tick) + " с";
-                    default -> "";
-                };
-        bar.name(text("Битва шахтёров • " + line));
+        Component line = switch (round.phase()) {
+            case BUILDING -> I18n.tr("party.rounds.miners.status.building", Math.round(arena.progress() * 100));
+            case COUNTDOWN -> I18n.tr("party.rounds.starts_in", round.secondsLeft(tick));
+            case MINING -> I18n.tr("party.rounds.miners.status.mining", round.secondsLeft(tick));
+            case FIGHT -> I18n.tr("party.rounds.miners.status.fight", round.secondsLeft(tick));
+            case FINALE -> round.pressure(tick) > 0
+                    ? I18n.tr("party.rounds.miners.status.last_fight")
+                    : I18n.tr("party.rounds.miners.status.finale", round.secondsLeft(tick));
+            case RESULT -> I18n.tr("party.rounds.miners.status.result", round.secondsLeft(tick));
+            default -> Component.empty();
+        };
+        bar.name(text(I18n.tr("party.rounds.status", PartyRoundFactory.title("miners"), line)));
         bar.progress(round.phase() == MinersRound.Phase.BUILDING ? arena.progress() : 1);
         for (Player p : services.session().audiencePlayers()) {
             p.showBossBar(bar);
             services.sidebar()
                     .update(
                             p,
-                            text("Битва шахтёров"),
+                            text(PartyRoundFactory.title("miners")),
                             List.of(
-                                    Component.text(line, NamedTextColor.YELLOW),
-                                    Component.text(
-                                            "В игре: "
-                                                    + standings.survivors().size()
-                                                    + "/"
-                                                    + names.size(),
-                                            NamedTextColor.WHITE),
-                                    Component.text(
-                                            "Золото: "
-                                                    + gold.count(p.getUniqueId())
-                                                    + "/8 • до 14 сердец",
-                                            NamedTextColor.GOLD)));
+                                    line.color(NamedTextColor.YELLOW),
+                                    I18n.tr("party.rounds.miners.in_game", standings.survivors().size(), names.size())
+                                            .color(NamedTextColor.WHITE),
+                                    I18n.tr("party.rounds.miners.gold.status", gold.count(p.getUniqueId()))
+                                            .color(NamedTextColor.GOLD)));
         }
     }
 
@@ -517,7 +505,7 @@ final class MinersSession implements PartyRoundSession {
     private void collectGold(Player p) {
         int before = gold.level(p.getUniqueId());
         if (!gold.collect(p.getUniqueId())) {
-            p.sendActionBar(text("Максимум: 14 сердец"));
+            p.sendActionBar(text(I18n.tr("party.rounds.miners.gold.maximum")));
             return;
         }
         int level = gold.level(p.getUniqueId());
@@ -527,9 +515,9 @@ final class MinersSession implements PartyRoundSession {
             var max = p.getAttribute(Attribute.MAX_HEALTH);
             if (max != null) p.setHealth(Math.min(max.getValue(), p.getHealth() + 4));
             p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.4f);
-            p.sendMessage(text("+2 максимальных сердца! Теперь " + (10 + level * 2) + "."));
+            p.sendMessage(text(I18n.tr("party.rounds.miners.gold.increased", 10 + level * 2)));
         } else
-            p.sendActionBar(text("Золото: " + gold.count(p.getUniqueId()) % 4 + "/4 до +2 сердец"));
+            p.sendActionBar(text(I18n.tr("party.rounds.miners.gold.progress", gold.count(p.getUniqueId()) % 4)));
     }
 
     private void giveCobble(Player p) {
@@ -608,12 +596,14 @@ final class MinersSession implements PartyRoundSession {
         UUID killer = hit != null && tick - hit.tick() <= 160 ? hit.attacker() : null;
         event.deathMessage(null);
         event.deathScreenMessageOverride(
-                text(killer == null ? "Вы погибли" : "Вас убил " + name(killer)));
+                I18n.render(text(killer == null ? I18n.tr("party.rounds.miners.death")
+                        : I18n.tr("party.rounds.miners.killed_by", name(killer))), p));
         event.getDrops().clear();
         event.setKeepInventory(true);
         event.setKeepLevel(true);
         event.setDroppedExp(0);
-        say(killer == null ? p.getName() + " погиб" : name(killer) + " убил " + p.getName());
+        say(killer == null ? I18n.tr("party.rounds.miners.died", p.getName())
+                : I18n.tr("party.rounds.miners.killed", name(killer), p.getName()));
         out(p);
     }
 
@@ -656,14 +646,12 @@ final class MinersSession implements PartyRoundSession {
         bombs.clear();
         drops.clear();
         freeze.releaseAll();
-        say(
-                champions.isEmpty()
-                        ? "Ничья — никто не выжил."
-                        : "Победитель: " + name(champions.getFirst()));
+        say(champions.isEmpty() ? I18n.tr("party.rounds.draw")
+                : I18n.tr("common.summary.winner", name(champions.getFirst())));
         List<Component> lines = new ArrayList<>();
         int place = 0;
         for (UUID id : standings.ranking(names.keySet(), tick))
-            lines.add(text(++place + ". " + name(id)));
+            lines.add(text(I18n.tr("party.rounds.miners.result", ++place, name(id))));
         result = List.copyOf(lines);
         for (Player p : survivors()) freeze.freeze(p);
         hud();
@@ -770,17 +758,11 @@ final class MinersSession implements PartyRoundSession {
         if (isCompass(event.getItem()) && event.getAction().isRightClick()) {
             event.setCancelled(true);
             Player target = round.fighting() ? nearest(p) : null;
-            p.sendActionBar(
-                    text(
-                            target == null
-                                    ? "После открытия шахт компас укажет ближайшего врага"
-                                    : name(target.getUniqueId())
-                                            + " • "
-                                            + Math.round(
-                                                    target.getLocation().distance(p.getLocation()))
-                                            + " м • высота "
-                                            + (target.getLocation().getBlockY()
-                                                    - p.getLocation().getBlockY())));
+            p.sendActionBar(text(target == null
+                    ? I18n.tr("party.rounds.miners.compass.wait")
+                    : I18n.tr("party.rounds.miners.compass.target", name(target.getUniqueId()),
+                            Math.round(target.getLocation().distance(p.getLocation())),
+                            target.getLocation().getBlockY() - p.getLocation().getBlockY())));
             return;
         }
         if (!round.fighting()
@@ -804,7 +786,7 @@ final class MinersSession implements PartyRoundSession {
         Location at = hit == null ? origin.clone().add(direction.clone().multiply(.35)) : origin;
         if (!arena.chargeFits(at)) at = origin;
         if (arena.chargeFits(at)) bombs.use(p, at, true, services.plugin());
-        else p.sendActionBar(text("Нет места для TNT: отойди немного от стены"));
+        else p.sendActionBar(text(I18n.tr("party.rounds.miners.tnt.no_space")));
     }
 
     @Override
@@ -866,7 +848,13 @@ final class MinersSession implements PartyRoundSession {
     @Override
     public void onDropItem(PlayerDropItemEvent event) {
         if (!playing(event.getPlayer())) event.setCancelled(true);
-        else drops.track(event.getItemDrop());
+        else {
+            ItemStack dropped = drops.unrendered(event.getItemDrop().getItemStack());
+            if (isCompass(dropped))
+                dropped.editMeta(meta -> meta.displayName(text(I18n.tr("party.rounds.miners.compass.name"))));
+            event.getItemDrop().setItemStack(dropped);
+            drops.track(event.getItemDrop());
+        }
     }
 
     @Override
@@ -876,6 +864,8 @@ final class MinersSession implements PartyRoundSession {
                 || !round.fighting()
                         && !arena.owns(event.getItem().getLocation(), cells.get(p.getUniqueId())))
             event.setCancelled(true);
+        else
+            event.getItem().setItemStack(drops.forViewer(event.getItem().getItemStack(), p));
     }
 
     @Override
@@ -946,6 +936,6 @@ final class MinersSession implements PartyRoundSession {
     public Component globalResult() {
         return champions.isEmpty()
                 ? null
-                : text(name(champions.getFirst()) + " победил в Битве шахтёров!");
+                : text(I18n.tr("party.rounds.miners.victory", name(champions.getFirst())));
     }
 }

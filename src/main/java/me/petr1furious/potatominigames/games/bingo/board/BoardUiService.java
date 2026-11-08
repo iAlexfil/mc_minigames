@@ -1,8 +1,9 @@
 package me.petr1furious.potatominigames.games.bingo.board;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.IntUnaryOperator;
@@ -49,7 +50,6 @@ public final class BoardUiService {
         }
     }
 
-    private static final String BOARD_TITLE = "Bingo Board";
     private static final int[] BOARD_SLOTS = {
             2, 3, 4, 5, 6,
             11, 12, 13, 14, 15,
@@ -70,7 +70,7 @@ public final class BoardUiService {
     public ItemStack createCard() {
         ItemStack card = new ItemStack(Material.PAPER, 1);
         ItemMeta meta = card.getItemMeta();
-        meta.displayName(Component.text("Bingo Card", NamedTextColor.GOLD)
+        meta.displayName(I18n.tr("bingo.card.name").color(NamedTextColor.GOLD)
                 .decorate(TextDecoration.BOLD)
                 .decoration(TextDecoration.ITALIC, false));
         meta.addEnchant(org.bukkit.enchantments.Enchantment.INFINITY, 1, true);
@@ -98,7 +98,7 @@ public final class BoardUiService {
             GameDifficulty difficulty,
             IntUnaryOperator rewardForIndex, TeamColor[] owners) {
         Inventory inventory = Bukkit.createInventory(new BoardViewHolder(), 45,
-                Component.text(BOARD_TITLE, NamedTextColor.GOLD));
+                I18n.render(I18n.tr("bingo.board.title").color(NamedTextColor.GOLD), player));
         fillBoard(inventory, player, board, team, mode, difficulty, rewardForIndex, owners);
         player.openInventory(inventory);
     }
@@ -145,23 +145,23 @@ public final class BoardUiService {
             }
             TeamColor owner = owners == null ? null : owners[i];
             if (owner != null && owner != team.color()) {
-                inventory.setItem(slot, claimedCell(entry, owner));
+                inventory.setItem(slot, I18n.item(claimedCell(entry, owner), player));
                 continue;
             }
             boolean collected = team.collected()[i];
-            inventory.setItem(slot, boardCell(entry, collected, board.effectiveDifficulties()[i], displayMode,
-                    mode, rewardForIndex.applyAsInt(i)));
+            inventory.setItem(slot, I18n.item(boardCell(entry, collected, board.effectiveDifficulties()[i], displayMode,
+                    mode, rewardForIndex.applyAsInt(i)), player));
         }
-        inventory.setItem(TOGGLE_SLOT, toggleItem(displayMode));
-        inventory.setItem(STATUS_SLOT, statusItem(mode, difficulty));
+        inventory.setItem(TOGGLE_SLOT, I18n.item(toggleItem(displayMode), player));
+        inventory.setItem(STATUS_SLOT, I18n.item(statusItem(mode, difficulty), player));
     }
 
     private static ItemStack toggleItem(int displayMode) {
         ItemStack stack = new ItemStack(Material.DEBUG_STICK, 1);
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(Component.text("Change display mode", NamedTextColor.YELLOW)
+        meta.displayName(I18n.tr("bingo.board.change_display").color(NamedTextColor.YELLOW)
                 .decoration(TextDecoration.ITALIC, false));
-        meta.lore(List.of(Component.text("Current: " + displayModeName(displayMode), NamedTextColor.GRAY)
+        meta.lore(List.of(I18n.tr("bingo.board.current_display", displayModeName(displayMode)).color(NamedTextColor.GRAY)
                 .decoration(TextDecoration.ITALIC, false)));
         stack.setItemMeta(meta);
         return stack;
@@ -176,9 +176,9 @@ public final class BoardUiService {
         };
         ItemStack stack = new ItemStack(icon, 1);
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(Component.text("Mode: " + mode.key(), NamedTextColor.GOLD)
+        meta.displayName(I18n.tr("bingo.board.mode", mode.displayName()).color(NamedTextColor.GOLD)
                 .decoration(TextDecoration.ITALIC, false));
-        meta.lore(List.of(Component.text("Difficulty: " + difficulty.key(), NamedTextColor.YELLOW)
+        meta.lore(List.of(I18n.tr("bingo.board.difficulty", difficulty.displayName()).color(NamedTextColor.YELLOW)
                 .decoration(TextDecoration.ITALIC, false)));
         stack.setItemMeta(meta);
         return stack;
@@ -188,10 +188,9 @@ public final class BoardUiService {
     private static ItemStack claimedCell(BoardEntry entry, TeamColor owner) {
         ItemStack stack = new ItemStack(owner.woolMaterial(), 1);
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(Component.text("Claimed by ", NamedTextColor.GRAY)
-                .append(owner.displayNameComponent())
+        meta.displayName(I18n.tr("bingo.board.claimed", owner.displayNameComponent()).color(NamedTextColor.GRAY)
                 .decoration(TextDecoration.ITALIC, false));
-        meta.lore(List.of(Component.text(prettify(entry.id()), NamedTextColor.DARK_GRAY)
+        meta.lore(List.of(entryName(entry).color(NamedTextColor.DARK_GRAY)
                 .decoration(TextDecoration.ITALIC, false)));
         stack.setItemMeta(meta);
         return stack;
@@ -202,7 +201,7 @@ public final class BoardUiService {
         if (collected && displayMode != 3) {
             ItemStack stack = new ItemStack(Material.BARRIER, 1);
             ItemMeta meta = stack.getItemMeta();
-            meta.displayName(Component.text("Completed", NamedTextColor.GREEN)
+            meta.displayName(I18n.tr("bingo.board.completed").color(NamedTextColor.GREEN)
                     .decoration(TextDecoration.ITALIC, false));
             stack.setItemMeta(meta);
             return stack;
@@ -213,10 +212,10 @@ public final class BoardUiService {
         ItemMeta meta = stack.getItemMeta();
         if (displayMode == 3) {
             meta.displayName(
-                    Component.text(prettify(entry.id()), collected ? NamedTextColor.GREEN : NamedTextColor.WHITE)
+                    entryName(entry).color(collected ? NamedTextColor.GREEN : NamedTextColor.WHITE)
                             .decoration(TextDecoration.ITALIC, false));
             if (collected) {
-                meta.lore(List.of(Component.text("Completed", NamedTextColor.GREEN)
+                meta.lore(List.of(I18n.tr("bingo.board.completed").color(NamedTextColor.GREEN)
                         .decoration(TextDecoration.ITALIC, false)));
             }
             stack.setItemMeta(meta);
@@ -228,28 +227,43 @@ public final class BoardUiService {
         }
         if (displayMode == 1) {
             meta.displayName(
-                    Component.text(prettify(entry.id()) + " [" + effectiveDifficulty + "]", NamedTextColor.WHITE)
+                    I18n.tr("bingo.board.item_difficulty", entryName(entry), effectiveDifficulty).color(NamedTextColor.WHITE)
                             .decoration(TextDecoration.ITALIC, false));
         } else if (displayMode == 2) {
             int shown = mode == GameMode.BUTFAST ? rewardPoints : effectiveDifficulty;
-            meta.displayName(Component.text(prettify(entry.id()) + " (" + shown + ")", NamedTextColor.WHITE)
+            meta.displayName(I18n.tr("bingo.board.item_reward", entryName(entry), shown).color(NamedTextColor.WHITE)
                     .decoration(TextDecoration.ITALIC, false));
         }
         stack.setItemMeta(meta);
         return stack;
     }
 
-    private static String displayModeName(int mode) {
-        return switch (mode) {
-            case 1 -> "difficulty";
-            case 2 -> "reward";
-            case 3 -> "all items";
-            default -> "name";
-        };
+    private static Component displayModeName(int mode) {
+        return I18n.tr(switch (mode) {
+            case 1 -> "bingo.board.display.difficulty";
+            case 2 -> "bingo.board.display.reward";
+            case 3 -> "bingo.board.display.all";
+            default -> "bingo.board.display.name";
+        });
     }
 
-    private static String prettify(String raw) {
-        return raw.toLowerCase(Locale.ROOT).replace('_', ' ');
+    private static Component entryName(BoardEntry entry) {
+        switch (entry.id()) {
+            case "planks_any", "wooden_buttons_any", "wooden_doors_any", "wooden_pressure_plates_any",
+                    "wooden_slabs_any", "wooden_stairs_any", "wooden_trapdoors_any", "fences_any",
+                    "fence_gates_any", "boats_any", "chest_boats_any", "signs_any", "hanging_signs_any",
+                    "wooden_shelves_any", "beds_any", "banners_any", "wool_carpets_any", "harnesses_any",
+                    "logs_burnable", "wool", "crimson_stems", "warped_stems" -> {
+                return I18n.tr("bingo.entry." + entry.id());
+            }
+            default -> {
+                // Native material IDs use Minecraft's labels; custom IDs remain literal.
+            }
+        }
+        Material material = entry.displayMaterial();
+        return material != null && material.name().equalsIgnoreCase(entry.id())
+                ? Component.translatable(material.translationKey())
+                : Component.text(entry.id().toLowerCase(java.util.Locale.ROOT).replace('_', ' '));
     }
 
     private static final class BoardViewHolder implements InventoryHolder {

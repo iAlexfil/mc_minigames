@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.*;
 
 final class PartyGamesState {
@@ -28,11 +30,11 @@ final class PartyGamesState {
 
     PartyGamesState(List<UUID> roster, List<String> modes, Random random) {
         if (roster.isEmpty() || roster.size() > 12 || new HashSet<>(roster).size() != roster.size())
-            throw new IllegalArgumentException("Нужно 1–12 разных участников");
+            throw I18n.exception("party.rounds.party_games.error.roster");
         if (modes.isEmpty()
                 || !MODES.containsAll(modes)
                 || new HashSet<>(modes).size() != modes.size())
-            throw new IllegalArgumentException("Некорректный список игр Party Games");
+            throw I18n.exception("party.rounds.party_games.error.modes");
         List<String> shuffled = new ArrayList<>(modes);
         Collections.shuffle(shuffled, random);
         schedule = List.copyOf(shuffled);

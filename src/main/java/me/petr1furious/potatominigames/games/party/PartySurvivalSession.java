@@ -6,6 +6,7 @@ import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.game.EndReason;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
@@ -60,7 +61,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     final PartyConfig config;
     final Random random = new Random();
     final String id;
-    final String title;
+    final Component title;
     final Map<UUID, String> names = new LinkedHashMap<>();
     final Set<UUID> connected = new LinkedHashSet<>();
     private final CountdownFreeze countdownFreeze = new CountdownFreeze();
@@ -78,21 +79,16 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     private List<UUID> champions = List.of();
     private List<Component> result = List.of();
 
-    PartySurvivalSession(SessionServices services, PartyConfig config, String id, String title) {
-        this(services, config, id, title, PartyRoundContext.standalone(services));
-    }
-
     PartySurvivalSession(
             SessionServices services,
             PartyConfig config,
             String id,
-            String title,
             PartyRoundContext context) {
         this.context = context;
         this.services = context.services();
         this.config = config;
         this.id = id;
-        this.title = title;
+        this.title = PartyRoundFactory.title(id);
     }
 
     abstract void buildArena();
@@ -105,11 +101,11 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     abstract int durationSeconds();
 
-    abstract String instructions();
+    abstract Component instructions();
 
     abstract void playTick(long elapsed);
 
-    abstract String status();
+    abstract Component status();
 
     void beginPlay() {}
 
@@ -123,7 +119,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
             names.put(participant.id(), participant.name());
             connected.add(participant.id());
         }
-        if (names.isEmpty()) throw new CommandFailure("Нужны участники.");
+        if (names.isEmpty()) throw new CommandFailure(I18n.tr("party.rounds.error.participants"));
         standings = new SurvivalStandings(names.keySet());
         countdownEnd =
                 Math.clamp(
@@ -162,7 +158,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
             player.showBossBar(bar);
         }
         say(instructions());
-        if (services.isTest()) say("Тестовая игра: без очков. /party stop — закончить.");
+        if (services.isTest()) say(I18n.tr("party.rounds.test"));
         hud();
         ticker =
                 Bukkit.getScheduler()
@@ -185,11 +181,11 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
                                 1L);
     }
 
-    static Component text(String value) {
-        return Component.text(value, NamedTextColor.GOLD);
+    static Component text(Component value) {
+        return value.color(NamedTextColor.GOLD);
     }
 
-    final void say(String value) {
+    final void say(Component value) {
         services.messages().broadcast(text(value));
     }
 
@@ -230,11 +226,11 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         player.setVelocity(new org.bukkit.util.Vector());
     }
 
-    final void announceTitle(String main, String subtitle, int seconds) {
+    final void announceTitle(Component main, Component subtitle, int seconds) {
         Title message =
                 Title.title(
                         text(main),
-                        Component.text(subtitle, NamedTextColor.WHITE),
+                        subtitle.color(NamedTextColor.WHITE),
                         Title.Times.times(
                                 Duration.ofMillis(100),
                                 Duration.ofSeconds(seconds),
@@ -253,7 +249,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
             countdownFreeze.releaseAll();
             playing = true;
             startedAt = tick;
-            announceTitle("Поехали!", title, 1);
+            announceTitle(I18n.tr("party.rounds.go"), title, 1);
             PartySounds.play(
                     services.session().audiencePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, .7f, 1.6f);
             beginPlay();
@@ -287,7 +283,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         if (tick % 20 == 0) {
             if (!playing) {
                 announceTitle(
-                        Long.toString(Math.max(1, (countdownEnd - tick + 19) / 20)), title, 1);
+                        Component.text(Math.max(1, (countdownEnd - tick + 19) / 20)), title, 1);
                 for (Player player : alivePlayers())
                     player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, .5f, 1);
             }
@@ -300,11 +296,8 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         countdownFreeze.release(player.getUniqueId());
         playerOut(player);
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, .8f, .6f);
-        say(player.getName() + " выбывает! Осталось: " + standings.survivors().size());
-        player.sendMessage(
-                Component.text(
-                        "Ты выбыл и можешь наблюдать за оставшимися игроками.",
-                        NamedTextColor.GRAY));
+        say(I18n.tr("party.rounds.eliminated", player.getName(), standings.survivors().size()));
+        player.sendMessage(I18n.tr("party.rounds.spectate").color(NamedTextColor.GRAY));
         spectate(player);
     }
 
@@ -326,39 +319,22 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
                         ? (podium.places().isEmpty() ? List.of() : podium.places().getFirst())
                         : List.copyOf(winners);
         List<Component> lines = new ArrayList<>();
-        lines.add(
-                text(
-                        champions.isEmpty()
-                                ? "Ничья — никто не выжил."
-                                : "Победители: "
-                                        + String.join(
-                                                ", ",
-                                                champions.stream().map(names::get).toList())));
+        lines.add(text(champions.isEmpty()
+                ? I18n.tr("party.rounds.draw")
+                : I18n.tr("common.summary.winners",
+                        String.join(", ", champions.stream().map(names::get).toList()))));
         int place = 0;
         for (UUID id : standings.ranking(names.keySet(), tick)) {
-            lines.add(
-                    Component.text(
-                            ++place
-                                    + ". "
-                                    + names.get(id)
-                                    + " • "
-                                    + TimeFormat.clock(
-                                            Math.max(0, standings.survived(id, tick) - startedAt)
-                                                    / 20),
-                            NamedTextColor.GRAY));
+            lines.add(I18n.tr("party.rounds.survival.result", ++place, names.get(id),
+                    TimeFormat.clock(Math.max(0, standings.survived(id, tick) - startedAt) / 20))
+                    .color(NamedTextColor.GRAY));
         }
         if (podiumAwards()) {
             lines.clear();
             for (var group : podium.places())
                 for (UUID id : group)
-                    lines.add(
-                            text(
-                                    podium.place(id)
-                                            + ". "
-                                            + names.get(id)
-                                            + " • +"
-                                            + podium.awards().get(id)
-                                            + " очк."));
+                    lines.add(text(I18n.tr("party.rounds.points.result",
+                            podium.place(id), names.get(id), podium.awards().get(id))));
         }
         result = List.copyOf(lines);
         if (!context.embedded())
@@ -388,11 +364,10 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     private void hud() {
         if (bar == null || done) return;
-        String line =
-                !playing
-                        ? "Старт через " + Math.max(1, (countdownEnd - tick + 19) / 20) + " с"
-                        : status();
-        bar.name(text(title + " • " + line));
+        Component line = !playing
+                ? I18n.tr("party.rounds.starts_in", Math.max(1, (countdownEnd - tick + 19) / 20))
+                : status();
+        bar.name(text(I18n.tr("party.rounds.status", title, line)));
         bar.progress(
                 playing
                         ? Math.clamp(1f - (float) elapsed() / durationTicks, 0, 1)
@@ -404,16 +379,11 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
                             player,
                             text(title),
                             List.of(
-                                    Component.text(
-                                            "Осталось: "
-                                                    + standings.survivors().size()
-                                                    + "/"
-                                                    + names.size(),
-                                            NamedTextColor.WHITE),
-                                    Component.text(line, NamedTextColor.YELLOW),
-                                    Component.text(
-                                            "Время: " + TimeFormat.clock(elapsed() / 20),
-                                            NamedTextColor.GRAY)));
+                                    I18n.tr("party.rounds.remaining", standings.survivors().size(), names.size())
+                                            .color(NamedTextColor.WHITE),
+                                    line.color(NamedTextColor.YELLOW),
+                                    I18n.tr("party.rounds.time", TimeFormat.clock(elapsed() / 20))
+                                            .color(NamedTextColor.GRAY)));
         }
     }
 
@@ -445,13 +415,9 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     @Override
     public final Component globalResult() {
-        return champions.isEmpty()
-                ? null
-                : text(
-                        String.join(", ", champions.stream().map(names::get).toList())
-                                + " — победа в "
-                                + title
-                                + "!");
+        return champions.isEmpty() ? null
+                : text(I18n.tr("party.rounds.victory",
+                        String.join(", ", champions.stream().map(names::get).toList()), title));
     }
 
     @Override

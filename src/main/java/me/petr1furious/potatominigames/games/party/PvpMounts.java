@@ -41,7 +41,7 @@ final class PvpMounts {
             mount.setCanPickupItems(false);
             mount.setBreed(false);
             mount.setLootTable(null);
-            mount.customName(Component.text("Конь • " + owner.getName()));
+            mount.customName(Component.translatable("entity.minecraft.horse").append(Component.text(" • " + owner.getName())));
             mount.getAttribute(Attribute.MAX_HEALTH).setBaseValue(HEALTH);
             mount.setHealth(HEALTH);
             mount.getAttribute(Attribute.MOVEMENT_SPEED).setBaseValue(SPEED);

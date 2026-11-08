@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 final class PartyRoundFactory {
     static PartyRoundSession create(
@@ -21,21 +23,12 @@ final class PartyRoundFactory {
         };
     }
 
-    static String title(String mode) {
+    static Component title(String mode) {
         return switch (mode) {
-            case "hole_in_the_wall" -> "Дырка в стене";
-            case "pvp" -> "PvP";
-            case "sumo" -> "Сумо";
-            case "arms_race" -> "Гонка вооружений";
-            case "tnt_run" -> "TNT Run";
-            case "mob_count" -> "Пересчёт";
-            case "rhino" -> "Носорожий переполох";
-            case "miners" -> "Битва шахтёров";
-            case "color_floor" -> "Цветной пол";
-            case "anvils" -> "Наковальни";
-            case "build_memory" -> "Повтори постройку";
-            case "tool_race" -> "Гонка инструментов";
-            default -> mode;
+            case "hole_in_the_wall", "pvp", "sumo", "arms_race", "tnt_run", "mob_count",
+                    "rhino", "miners", "color_floor", "anvils", "build_memory", "tool_race" ->
+                    I18n.tr("party.rounds.mode." + mode);
+            default -> Component.text(mode);
         };
     }
 }

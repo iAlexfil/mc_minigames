@@ -53,6 +53,7 @@ import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.game.StartOption;
 import me.petr1furious.potatominigames.core.queue.QueueService;
 import me.petr1furious.potatominigames.core.world.SlimeWorldService;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import static me.petr1furious.potatominigames.core.command.GameCommands.requirePlayer;
 import static me.petr1furious.potatominigames.core.command.GameCommands.run;
@@ -115,7 +116,7 @@ public final class PillarsGame implements Minigame, Listener {
 
     @Override
     public Component displayName() {
-        return Component.text("Pillars", NamedTextColor.LIGHT_PURPLE);
+        return I18n.tr("pillars.play.name").color(NamedTextColor.LIGHT_PURPLE);
     }
 
     @Override
@@ -133,30 +134,25 @@ public final class PillarsGame implements Minigame, Listener {
         return Material.BEDROCK;
     }
 
-    @Override public String modeTitle(String mode) { return mode.equals("perks") ? "Перки" : mode; }
+    @Override
+    public Component modeTitle(String mode) {
+        return PillarsConfig.MODES.contains(mode) ? I18n.tr("pillars.play.mode." + mode) : Component.text(mode);
+    }
+
+    Component modifierLabels(List<String> modifiers) {
+        return modifiers.isEmpty() ? I18n.tr("pillars.play.modifiers.plain")
+                : Component.join(net.kyori.adventure.text.JoinConfiguration.separator(Component.text(" + ")),
+                        modifiers.stream().map(modifier -> modeTitle(modifier.equals("shuffle") ? "item-shuffle" : modifier)).toList());
+    }
     @Override public Material icon(String mode) { return mode.equals("perks") ? Material.FEATHER : icon(); }
 
     @Override
     public Component description(String mode) {
         PillarsPresets.Preset preset = presets.find(mode);
         if (preset != null) {
-            return Component.text("By " + preset.ownerName() + ": "
-                    + (preset.modifiers().isEmpty() ? "plain pillars" : String.join(" + ", preset.modifiers())));
+            return I18n.tr("pillars.play.description.preset", preset.ownerName(), modifierLabels(preset.modifiers()));
         }
-        return Component.text(switch (mode) {
-            case "chaos" -> "Randomized pillar layout, fast item cooldown";
-            case "item-shuffle" -> "Items replaced every 10s (9 new items)";
-            case "lucky" -> "Pillars made of lucky blocks, random items as usual";
-            case "tactical" -> "Everyone gets the same random items: skill over luck";
-            case "big_house" -> "Pillars 2.5x further apart, items as fast as chaos";
-            case "sniper_duel" -> "Pillars 1.5x apart: five logs, a plain crossbow, then arrows, fireworks or random loot";
-            case "party" -> "Random events, about one a minute";
-            case "rave" -> "Random events twice as often, items as fast as chaos";
-            case "adhd" -> "СДВГ: каждые ~2 минуты — 30 секунд шафла ×3 и рейва ×3";
-            case "perks" -> "Перки: 16 особых предметов в случайной выдаче, включая редкие легендарные";
-            case "fusion" -> "A random mix of chaos, shuffle, tactical, big house, ADHD, perks and party/rave";
-            default -> "Random items on pillars, last one standing wins";
-        });
+        return I18n.tr("pillars.play.description." + (PillarsConfig.MODES.contains(mode) ? mode : "original"));
     }
 
     @Override
@@ -248,7 +244,7 @@ public final class PillarsGame implements Minigame, Listener {
 
     private PillarsSession requireSession() throws CommandFailure {
         if (activeSession == null) {
-            throw new CommandFailure("No pillars game is running.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.no_session"));
         }
         return activeSession;
     }
@@ -288,7 +284,7 @@ public final class PillarsGame implements Minigame, Listener {
                         .suggests(Suggest.strings(java.util.Arrays.stream(PerkType.values()).map(PerkType::id).toList()))
                         .executes(ctx -> run(ctx, c -> {
                             if (!requireSession().givePerk(requirePlayer(c), c.getArgument("type", String.class)))
-                                throw new CommandFailure("Запусти pillars perks и выбери доступный перк после отсчёта.");
+                                throw new CommandFailure(I18n.tr("pillars.play.error.perk_unavailable"));
                         }))));
 
         root.then(Commands.literal("respawn")
@@ -340,14 +336,12 @@ public final class PillarsGame implements Minigame, Listener {
 
     private void listPresets(CommandContext<CommandSourceStack> ctx) {
         CommandSender sender = ctx.getSource().getSender();
-        sender.sendMessage(Component.text("Pillars presets (up to " + PillarsPresets.LIMIT
-                + " per player): /pillars preset save <name> [modifiers...]", NamedTextColor.GOLD));
-        sender.sendMessage(Component.text("Modifiers: " + String.join(", ", PillarsPresets.MODIFIERS)
-                + ". Pick party or rave, not both. Delete: /pillars preset delete <name>.", NamedTextColor.GRAY));
+        sender.sendMessage(I18n.tr("pillars.play.presets.help", PillarsPresets.LIMIT).color(NamedTextColor.GOLD));
+        sender.sendMessage(I18n.tr("pillars.play.presets.modifiers", String.join(", ", PillarsPresets.MODIFIERS))
+                .color(NamedTextColor.GRAY));
         for (PillarsPresets.Preset preset : presets.all()) {
-            sender.sendMessage(Component.text(preset.name() + " by " + preset.ownerName() + ": "
-                    + (preset.modifiers().isEmpty() ? "plain pillars" : String.join(" + ", preset.modifiers()))
-                    + " — /play pillars " + preset.name(), NamedTextColor.AQUA)
+            sender.sendMessage(I18n.tr("pillars.play.presets.entry", preset.name(), preset.ownerName(),
+                    modifierLabels(preset.modifiers()), "/play pillars " + preset.name()).color(NamedTextColor.AQUA)
                     .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/play pillars " + preset.name())));
         }
     }
@@ -355,7 +349,7 @@ public final class PillarsGame implements Minigame, Listener {
     private void requirePresetIdle(String name) throws CommandFailure {
         PillarsPresets.Preset preset = presets.find(name);
         if (preset != null && queues.isModeInUse(this, preset.name())) {
-            throw new CommandFailure("That preset is queued or being played. Try again after the game.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.preset_busy"));
         }
     }
 
@@ -366,15 +360,14 @@ public final class PillarsGame implements Minigame, Listener {
         try {
             PillarsPresets.Preset preset = presets.save(player.getUniqueId(), player.getName(), name, modifiers);
             refreshPresetModes();
-            player.sendMessage(Component.text("Saved " + preset.name() + ": "
-                    + (preset.modifiers().isEmpty() ? "plain pillars" : String.join(" + ", preset.modifiers()))
-                    + ". Join with /play pillars " + preset.name(), NamedTextColor.GREEN)
+            player.sendMessage(I18n.tr("pillars.play.presets.saved", preset.name(),
+                    modifierLabels(preset.modifiers()), "/play pillars " + preset.name()).color(NamedTextColor.GREEN)
                     .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/play pillars " + preset.name())));
         } catch (IllegalArgumentException exception) {
-            throw new CommandFailure(exception.getMessage());
+            throw new CommandFailure(I18n.message(exception));
         } catch (IOException exception) {
             plugin.getLogger().log(Level.WARNING, "Could not save Pillars preset", exception);
-            throw new CommandFailure("Could not save the preset. Existing presets have not been changed.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.preset_save"));
         }
     }
 
@@ -385,22 +378,21 @@ public final class PillarsGame implements Minigame, Listener {
         try {
             presets.delete(player.getUniqueId(), name);
             refreshPresetModes();
-            player.sendMessage(Component.text("Deleted Pillars preset " + name + ".", NamedTextColor.GREEN));
+            player.sendMessage(I18n.tr("pillars.play.presets.deleted", name).color(NamedTextColor.GREEN));
         } catch (IllegalArgumentException exception) {
-            throw new CommandFailure(exception.getMessage());
+            throw new CommandFailure(I18n.message(exception));
         } catch (IOException exception) {
             plugin.getLogger().log(Level.WARNING, "Could not delete Pillars preset", exception);
-            throw new CommandFailure("Could not delete the preset. Existing presets have not been changed.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.preset_delete"));
         }
     }
 
     private void respawn(CommandContext<CommandSourceStack> ctx, Player target) throws CommandFailure {
         if (!requireSession().respawn(target)) {
-            throw new CommandFailure("Cannot respawn " + target.getName()
-                    + ": not in this game, offline, or game ending.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.respawn", target.getName()));
         }
         ctx.getSource().getSender().sendMessage(
-                Component.text("Respawned " + target.getName(), NamedTextColor.GREEN));
+                I18n.tr("pillars.play.command.respawned", target.getName()).color(NamedTextColor.GREEN));
     }
 
     private void changeTime(CommandContext<CommandSourceStack> ctx, String operation) throws CommandFailure {
@@ -408,35 +400,37 @@ public final class PillarsGame implements Minigame, Listener {
         String raw = ctx.getArgument("time", String.class);
         Long seconds = PillarsConfig.parseDuration(raw);
         if (seconds == null) {
-            throw new CommandFailure("Not a time: " + raw + " (try 30s, 2min, 1h)");
+            throw new CommandFailure(I18n.tr("pillars.play.error.time", raw));
         }
         switch (operation) {
             case "add" -> session.addTime(seconds);
             case "remove" -> session.removeTime(seconds);
             default -> session.setTime(seconds);
         }
-        ctx.getSource().getSender().sendMessage(Component.text("Time left: "
-                + me.petr1furious.potatominigames.core.text.TimeFormat.words(session.timeLeft()), NamedTextColor.GREEN));
+        ctx.getSource().getSender().sendMessage(I18n.tr("pillars.play.command.time_left",
+                me.petr1furious.potatominigames.core.text.TimeFormat.words(session.timeLeft())).color(NamedTextColor.GREEN));
     }
 
     private void listArenas(CommandContext<CommandSourceStack> ctx) {
         CommandSender sender = ctx.getSource().getSender();
         List<PillarsArena> arenas = config.arenas();
         if (arenas.isEmpty()) {
-            sender.sendMessage(Component.text("No arenas in games/pillars.yml.", NamedTextColor.RED));
+            sender.sendMessage(I18n.tr("pillars.play.arena.none").color(NamedTextColor.RED));
             return;
         }
-        sender.sendMessage(Component.text("Arenas (green = imported):", NamedTextColor.GRAY));
+        sender.sendMessage(I18n.tr("pillars.play.arena.header").color(NamedTextColor.GRAY));
         for (PillarsArena arena : arenas) {
             boolean ready = slimeWorlds.templateExists(arena.template());
-            sender.sendMessage(Component.text()
-                    .append(Component.text("| ", NamedTextColor.DARK_GRAY))
-                    .append(Component.text(arena.name(), ready ? NamedTextColor.GREEN : NamedTextColor.RED))
-                    .append(Component.text(" - " + arena.template() + " @ " + arena.x() + "/" + arena.z()
-                            + (arena.time() != null ? ", time " + arena.time() : "")
-                            + (arena.gameRules().isEmpty() ? "" : ", rules " + arena.gameRules()),
-                            NamedTextColor.GRAY))
-                    .build());
+            Component details = I18n.tr("pillars.play.arena.entry",
+                    Component.text(arena.name(), ready ? NamedTextColor.GREEN : NamedTextColor.RED),
+                    arena.template(), arena.x(), arena.z()).color(NamedTextColor.GRAY);
+            if (arena.time() != null) {
+                details = details.append(I18n.tr("pillars.play.arena.time", arena.time()));
+            }
+            if (!arena.gameRules().isEmpty()) {
+                details = details.append(I18n.tr("pillars.play.arena.rules", arena.gameRules().toString()));
+            }
+            sender.sendMessage(details);
         }
     }
 
@@ -448,11 +442,11 @@ public final class PillarsGame implements Minigame, Listener {
                 .filter(arena -> which.equalsIgnoreCase("all") || arena.name().equalsIgnoreCase(which))
                 .toList();
         if (arenas.isEmpty()) {
-            throw new CommandFailure("No arena called " + which + " in games/pillars.yml.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.arena", which));
         }
         File source = worldFolder(worldName);
         if (source == null) {
-            throw new CommandFailure("Cannot find the world " + worldName + ".");
+            throw new CommandFailure(I18n.tr("pillars.play.error.world", worldName));
         }
         int spawnY = (int) Math.floor(config.platformHeight.get()) + 1;
         for (PillarsArena arena : arenas) {
@@ -472,13 +466,14 @@ public final class PillarsGame implements Minigame, Listener {
                 if (chunks == 0) {
                     slimeWorlds.createEmptyTemplate(arena.template(), (int) arena.x(), spawnY, (int) arena.z());
                 }
-                sender.sendMessage(Component.text("Imported " + arena.name() + " as " + arena.template() + " ("
-                        + (chunks == 0 ? "empty" : chunks + " chunks") + ")", NamedTextColor.GREEN));
+                sender.sendMessage(I18n.tr("pillars.play.arena.imported", arena.name(), arena.template(),
+                        chunks == 0 ? I18n.tr("pillars.play.arena.empty") : I18n.tr("pillars.play.arena.chunks", chunks))
+                        .color(NamedTextColor.GREEN));
             } catch (Exception exception) {
                 plugin.getLogger().log(java.util.logging.Level.WARNING, "Could not import arena " + arena.name(),
                         exception);
-                sender.sendMessage(Component.text("Could not import " + arena.name() + ": " + exception,
-                        NamedTextColor.RED));
+                sender.sendMessage(I18n.tr("pillars.play.arena.import_failed", arena.name(), I18n.message(exception))
+                        .color(NamedTextColor.RED));
             } finally {
                 try {
                     ArenaImporter.deleteRecursively(work);
@@ -519,7 +514,7 @@ public final class PillarsGame implements Minigame, Listener {
             }
         }
         if (levelData == null) {
-            throw new java.io.FileNotFoundException("no level.dat above " + source);
+            throw I18n.exception("pillars.play.error.level_data", source.toString());
         }
         Files.copy(levelData.toPath(), new File(work, "level.dat").toPath(), StandardCopyOption.REPLACE_EXISTING);
     }

@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
@@ -19,7 +21,7 @@ final class HoleWallSession extends PartySurvivalSession {
     private int wallNumber, warnedRadius = 8, warnedArmRadius = 2;
 
     HoleWallSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
-        super(services, config, "hole_in_the_wall", "Дырка в стене", context);
+        super(services, config, "hole_in_the_wall", context);
         seconds = config.holeWallSeconds.get();
     }
 
@@ -50,9 +52,8 @@ final class HoleWallSession extends PartySurvivalSession {
         return true;
     }
 
-    String instructions() {
-        return "Стены идут с разных сторон одновременно! Проходи в отверстия и прыгай через"
-                + " барьеры. Не упади с платформы-плюса: она сужается.";
+    Component instructions() {
+        return I18n.tr("party.rounds.hole_wall.instructions");
     }
 
     void playTick(long elapsed) {
@@ -70,10 +71,8 @@ final class HoleWallSession extends PartySurvivalSession {
             warnedRadius = frame.warningRadius();
             warnedArmRadius = frame.warningArmRadius();
             announceTitle(
-                    narrowing ? "Платформа станет уже!" : "Край исчезнет!",
-                    narrowing
-                            ? "Рукава сузятся до 3 блоков через 3 секунды"
-                            : "Красные концы платформы обрушатся через 3 секунды",
+                    I18n.tr(narrowing ? "party.rounds.hole_wall.narrow" : "party.rounds.hole_wall.edge"),
+                    I18n.tr(narrowing ? "party.rounds.hole_wall.narrow_warning" : "party.rounds.hole_wall.edge_warning"),
                     2);
             PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, .6f);
         }
@@ -88,7 +87,7 @@ final class HoleWallSession extends PartySurvivalSession {
             wallNumber = wall.number;
             if (!newWarning)
                 announceTitle(
-                        wall.direction.title, wall.pattern.title() + " • стена " + wallNumber, 1);
+                        wall.direction.title, I18n.tr("party.rounds.hole_wall.wall", wall.pattern.title(), wallNumber), 1);
             PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, .6f, 1.2f);
         }
         var walls = flow.active();
@@ -159,14 +158,9 @@ final class HoleWallSession extends PartySurvivalSession {
         player.setVelocity(velocity);
     }
 
-    String status() {
-        return "Стена "
-                + wallNumber
-                + " • на поле: "
-                + displays.size()
-                + " • осталось "
-                + Math.max(0, seconds - elapsed() / 20)
-                + " с";
+    Component status() {
+        return I18n.tr("party.rounds.hole_wall.status", wallNumber, displays.size(),
+                Math.max(0, seconds - elapsed() / 20));
     }
 
     void playerOut(Player player) {

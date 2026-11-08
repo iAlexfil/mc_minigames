@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.bingo;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -72,8 +74,7 @@ public final class BingoConfig {
     public GameDifficulty requireDifficulty(String key) throws CommandFailure {
         GameDifficulty found = difficultiesByKey.get(key.toLowerCase(Locale.ROOT));
         if (found == null) {
-            throw new CommandFailure("Unknown difficulty: " + key + " (options: "
-                    + String.join(", ", difficultyKeys()) + ")");
+            throw new CommandFailure(I18n.tr("bingo.difficulty.unknown", key, String.join(", ", difficultyKeys())));
         }
         return found;
     }

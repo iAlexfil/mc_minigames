@@ -13,6 +13,7 @@ import io.papermc.paper.datacomponent.item.consumable.ItemUseAnimation;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 /** Charges travel with the actual item, including theft, storage and dropping. */
 final class PerkItems {
@@ -59,17 +60,23 @@ final class PerkItems {
         item.editMeta(meta -> meta.getPersistentDataContainer().set(CHARGES, PersistentDataType.INTEGER, Math.max(0, count)));
         describe(item);
     }
+    static ItemStack forPlayer(ItemStack item, org.bukkit.entity.Player player) {
+        if (type(item) != null) describe(item);
+        return I18n.item(item, player);
+    }
     private static void describe(ItemStack item) {
         PerkType type = type(item);
         item.editMeta(meta -> {
             var color = type.legendary ? NamedTextColor.GOLD : NamedTextColor.LIGHT_PURPLE;
-            meta.displayName(Component.text((type.legendary ? "★ " : "") + type.title, color).decoration(TextDecoration.ITALIC, false));
+            Component title = type.legendary ? I18n.tr("pillars.effects.item.legendary", type.title) : type.title;
+            meta.displayName(title.color(color).decoration(TextDecoration.ITALIC, false));
             List<Component> lore = new ArrayList<>();
-            for (String line : type.instructions) lore.add(Component.text(line, NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
-            lore.add(Component.text(type == PerkType.GRAVITY ? "Многоразовый" : "Заряды: " + charges(item), NamedTextColor.YELLOW)
+            for (Component line : type.instructions) lore.add(line.color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
+            lore.add((type == PerkType.GRAVITY ? I18n.tr("pillars.effects.item.reusable")
+                    : I18n.tr("pillars.effects.item.charges", charges(item))).color(NamedTextColor.YELLOW)
                     .decoration(TextDecoration.ITALIC, false));
             if (type == PerkType.PLANKS && number(item, STARTED, 0) != 0)
-                lore.add(Component.text("Уже активированы • повторно не запустить", NamedTextColor.RED));
+                lore.add(I18n.tr("pillars.effects.item.planks_started").color(NamedTextColor.RED));
             meta.lore(lore);
         });
     }
@@ -79,7 +86,7 @@ final class PerkItems {
     static ItemStack cursedPumpkin() {
         ItemStack item = new ItemStack(org.bukkit.Material.CARVED_PUMPKIN);
         item.editMeta(meta -> {
-            meta.displayName(Component.text("Проклятая тыква", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false));
+            meta.displayName(PerkType.PUMPKIN.title.color(NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false));
             meta.addEnchant(Enchantment.BINDING_CURSE, 1, true);
         });
         return item;

@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.warfare;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,7 +54,7 @@ public final class WarfareGame implements Minigame {
 
     @Override
     public Component displayName() {
-        return Component.text("Warfare", NamedTextColor.DARK_RED);
+        return I18n.tr("warfare.name").color(NamedTextColor.DARK_RED);
     }
 
     @Override
@@ -114,15 +116,22 @@ public final class WarfareGame implements Minigame {
     }
 
     @Override
+    public Component modeTitle(String mode) {
+        return switch (mode) {
+            case "classic", "team_beacon" -> I18n.tr("warfare.mode." + mode);
+            default -> Component.text(mode);
+        };
+    }
+
+    @Override
     public Material icon() {
         return Material.TNT;
     }
 
     @Override
     public Component description(String mode) {
-        return Component.text(mode.equals("team_beacon")
-                ? "Defend your team's beacon, respawn until it falls"
-                : "Invisible free-for-all with gadgets");
+        return I18n.tr(mode.equals("team_beacon")
+                ? "warfare.description.team_beacon" : "warfare.description.classic");
     }
 
     @Override
@@ -142,9 +151,8 @@ public final class WarfareGame implements Minigame {
                     configs.set("war", "gameCenter", player.getLocation().getX() + " "
                             + player.getLocation().getY() + " " + player.getLocation().getZ());
                     configs.set("war", "gameWorld", player.getWorld().getName());
-                    c.getSource().getSender().sendMessage(Component.text(
-                            "Game center set to your position in " + player.getWorld().getName(),
-                            NamedTextColor.GREEN));
+                    c.getSource().getSender().sendMessage(I18n.tr("warfare.center_set",
+                            player.getWorld().getName()).color(NamedTextColor.GREEN));
                 })));
 
         root.then(Commands.literal("map")
@@ -163,8 +171,8 @@ public final class WarfareGame implements Minigame {
                                 .executes(ctx -> run(ctx, c -> {
                                     WarfareMap map = requireMap(c.getArgument("name", String.class));
                                     config.removeMap(map.name());
-                                    c.getSource().getSender().sendMessage(Component.text(
-                                            "Map " + map.name() + " removed", NamedTextColor.GREEN));
+                                    c.getSource().getSender().sendMessage(I18n.tr("warfare.map.removed",
+                                            map.name()).color(NamedTextColor.GREEN));
                                 })))));
 
         root.then(Commands.literal("beacon")
@@ -185,13 +193,12 @@ public final class WarfareGame implements Minigame {
                                     } else {
                                         config.setBeacon(team, location);
                                     }
-                                    c.getSource().getSender().sendMessage(Component.text()
-                                            .append(team.displayNameComponent())
-                                            .append(Component.text(" beacon set at " + location.getBlockX() + " "
-                                                    + location.getBlockY() + " " + location.getBlockZ()
-                                                    + (map != null ? " on " + map.name() : ""),
-                                                    NamedTextColor.GREEN))
-                                            .build());
+                                    c.getSource().getSender().sendMessage((map != null
+                                            ? I18n.tr("warfare.beacon.set_on_map", team.displayNameComponent(),
+                                                    location.getBlockX(), location.getBlockY(), location.getBlockZ(), map.name())
+                                            : I18n.tr("warfare.beacon.set", team.displayNameComponent(),
+                                                    location.getBlockX(), location.getBlockY(), location.getBlockZ()))
+                                            .color(NamedTextColor.GREEN));
                                 }))))
                 .then(Commands.literal("clear")
                         .then(Commands.argument("team", StringArgumentType.word())
@@ -205,10 +212,10 @@ public final class WarfareGame implements Minigame {
                                     } else {
                                         config.setBeacon(team, null);
                                     }
-                                    c.getSource().getSender().sendMessage(Component.text(
-                                            team.displayName() + " beacon cleared"
-                                                    + (map != null ? " on " + map.name() : ""),
-                                            NamedTextColor.GREEN));
+                                    c.getSource().getSender().sendMessage((map != null
+                                            ? I18n.tr("warfare.beacon.cleared_on_map", team.displayNameComponent(), map.name())
+                                            : I18n.tr("warfare.beacon.cleared", team.displayNameComponent()))
+                                            .color(NamedTextColor.GREEN));
                                 }))))
                 .then(Commands.literal("info")
                         .executes(ctx -> run(ctx, c -> {
@@ -219,7 +226,7 @@ public final class WarfareGame implements Minigame {
                             var teams = config.teamsWithBeacons();
                             if (teams.isEmpty()) {
                                 c.getSource().getSender().sendMessage(
-                                        Component.text("No beacons configured.", NamedTextColor.GRAY));
+                                        I18n.tr("warfare.beacon.none_configured").color(NamedTextColor.GRAY));
                                 return;
                             }
                             for (TeamColor team : teams) {
@@ -240,18 +247,24 @@ public final class WarfareGame implements Minigame {
                             Player player = requirePlayer(c);
                             config.saveGameInventory(player.getInventory().getContents());
                             c.getSource().getSender().sendMessage(
-                                    Component.text("Warfare kit saved from your inventory.", NamedTextColor.GREEN));
+                                    I18n.tr("warfare.kit.saved").color(NamedTextColor.GREEN));
                         })))
                 .then(Commands.literal("load")
                         .executes(ctx -> run(ctx, c -> {
                             Player player = requirePlayer(c);
                             var kit = config.gameInventory();
                             if (kit == null) {
-                                throw new CommandFailure("No warfare kit saved.");
+                                throw new CommandFailure(I18n.tr("warfare.kit.missing"));
                             }
-                            player.getInventory().setContents(kit.clone());
+                            var contents = kit.clone();
+                            for (int i = 0; i < contents.length; i++) {
+                                if (contents[i] != null) {
+                                    contents[i] = I18n.item(contents[i].clone(), player);
+                                }
+                            }
+                            player.getInventory().setContents(contents);
                             c.getSource().getSender().sendMessage(
-                                    Component.text("Warfare kit loaded.", NamedTextColor.GREEN));
+                                    I18n.tr("warfare.kit.loaded").color(NamedTextColor.GREEN));
                         }))));
     }
 
@@ -270,8 +283,7 @@ public final class WarfareGame implements Minigame {
         }
         WarfareMap map = mapAt(player);
         if (map == null) {
-            throw new CommandFailure("Stand in a map to set its beacons: /swp goto <template> (maps: "
-                    + String.join(", ", mapNames()) + ").");
+            throw new CommandFailure(I18n.tr("warfare.map.stand_in_map", String.join(", ", mapNames())));
         }
         return map;
     }
@@ -283,7 +295,7 @@ public final class WarfareGame implements Minigame {
     private WarfareMap requireMap(String name) throws CommandFailure {
         WarfareMap map = config.map(name);
         if (map == null) {
-            throw new CommandFailure("Unknown map: " + name + " (maps: " + String.join(", ", mapNames()) + ")");
+            throw new CommandFailure(I18n.tr("warfare.map.unknown", name, String.join(", ", mapNames())));
         }
         return map;
     }
@@ -296,49 +308,46 @@ public final class WarfareGame implements Minigame {
         String template = existing != null && existing.isWorldOf(player.getWorld()) ? existing.template()
                 : player.getWorld().getName();
         if (player.getWorld().equals(org.bukkit.Bukkit.getWorlds().getFirst())) {
-            throw new CommandFailure("Stand in the map's slime template first: /swp goto <template>.");
+            throw new CommandFailure(I18n.tr("warfare.map.stand_in_template"));
         }
         Location location = player.getLocation();
         int chosenRadius = radius != null ? radius : existing != null ? existing.radius() : config.gameRadius.get();
         config.saveMap(existing != null ? existing.name() : name, template,
                 new Vector(location.getBlockX(), location.getBlockY(), location.getBlockZ()), chosenRadius);
-        ctx.getSource().getSender().sendMessage(Component.text("Map " + name + " (template " + template
-                + ") centered on you, radius " + chosenRadius, NamedTextColor.GREEN));
+        ctx.getSource().getSender().sendMessage(I18n.tr("warfare.map.saved", name, template, chosenRadius)
+                .color(NamedTextColor.GREEN));
     }
 
     private void listMaps(CommandContext<CommandSourceStack> ctx) {
         var sender = ctx.getSource().getSender();
         List<WarfareMap> maps = config.maps();
         if (maps.isEmpty()) {
-            sender.sendMessage(Component.text("No maps; the game plays in " + config.gameWorld.get()
-                    + ". Add one with /war map add <name> standing in its slime template.", NamedTextColor.GRAY));
+            sender.sendMessage(I18n.tr("warfare.map.none", config.gameWorld.get()).color(NamedTextColor.GRAY));
             return;
         }
         for (WarfareMap map : maps) {
             Vector center = map.center();
-            var line = Component.text()
-                    .append(Component.text(map.name(), NamedTextColor.WHITE))
-                    .append(Component.text(" — template " + map.template() + ", center " + center.getBlockX() + " "
-                            + center.getBlockY() + " " + center.getBlockZ() + ", radius " + map.radius()
-                            + ", beacons: ", NamedTextColor.GRAY));
             List<TeamColor> teams = map.beaconTeams();
+            var teamNames = Component.text();
             if (teams.isEmpty()) {
-                line.append(Component.text("none", NamedTextColor.DARK_GRAY));
+                teamNames.append(I18n.tr("common.choice.none").color(NamedTextColor.DARK_GRAY));
             }
             for (int i = 0; i < teams.size(); i++) {
-                line.append(teams.get(i).displayNameComponent());
+                teamNames.append(teams.get(i).displayNameComponent());
                 if (i + 1 < teams.size()) {
-                    line.append(Component.text(", ", NamedTextColor.GRAY));
+                    teamNames.append(Component.text(", ", NamedTextColor.GRAY));
                 }
             }
-            sender.sendMessage(line.build());
+            sender.sendMessage(I18n.tr("warfare.map.info",
+                    Component.text(map.name(), NamedTextColor.WHITE), map.template(), center.getBlockX(),
+                    center.getBlockY(), center.getBlockZ(), map.radius(), teamNames.build()).color(NamedTextColor.GRAY));
         }
     }
 
     private static TeamColor parseTeam(String value) throws CommandFailure {
         TeamColor team = TeamColor.fromId(value);
         if (team == null) {
-            throw new CommandFailure("Unknown team color: " + value);
+            throw new CommandFailure(I18n.tr("warfare.team.unknown", value));
         }
         return team;
     }

@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 
+import net.kyori.adventure.text.Component;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -10,12 +12,15 @@ import java.util.Random;
 /** Distinct counts ensure that the announced number has exactly one correct species. */
 record MobCountRound(int number, Map<Species, Integer> counts, List<Species> platforms, Species answer) {
     enum Species {
-        ZOMBIE("Зомби", "ZOMBIE_HEAD"), SKELETON("Скелет", "SKELETON_SKULL"),
-        CREEPER("Крипер", "CREEPER_HEAD"), PIGLIN("Пиглин", "PIGLIN_HEAD"),
-        WITHER_SKELETON("Визер-скелет", "WITHER_SKELETON_SKULL");
-        final String title;
+        ZOMBIE("ZOMBIE_HEAD"), SKELETON("SKELETON_SKULL"),
+        CREEPER("CREEPER_HEAD"), PIGLIN("PIGLIN_HEAD"),
+        WITHER_SKELETON("WITHER_SKELETON_SKULL");
+        final Component title;
         final String head;
-        Species(String title, String head) { this.title = title; this.head = head; }
+        Species(String head) {
+            this.title = Component.translatable("entity.minecraft." + name().toLowerCase(java.util.Locale.ROOT));
+            this.head = head;
+        }
     }
     MobCountRound {
         counts = Map.copyOf(counts);

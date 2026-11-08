@@ -29,7 +29,8 @@ public final class GroupCombatCheck {
         for (String mode : List.of("pvp_ffa", "sumo_ffa")) {
             check(game.createSession(null, mode) instanceof DuelSession, "Group modes share the tested class/combat engine");
             check(game.minPlayers(mode) == 2 && game.maxPlayers(mode) == 16, "Public group battles accept two to sixteen players");
-            check(game.modeTitle(mode).contains("Массовое"), "Menu has a clear Russian group-mode name");
+            check(me.petr1furious.potatominigames.i18n.I18n.plain(game.modeTitle(mode), java.util.Locale.forLanguageTag("ru")).contains("Массовое"), "Russian group-mode menu is localized");
+            check(me.petr1furious.potatominigames.i18n.I18n.plain(game.modeTitle(mode), java.util.Locale.ENGLISH).contains("Group"), "English group-mode menu is localized");
         }
         check(game.maxPlayers("pvp") == 12 && game.maxPlayers("sumo") == 12, "Tournament limits remain intact");
         var queues = YamlConfiguration.loadConfiguration(new InputStreamReader(GroupCombatCheck.class.getResourceAsStream("/config.yml"), StandardCharsets.UTF_8));

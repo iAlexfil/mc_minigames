@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
 import net.kyori.adventure.text.Component;
@@ -42,14 +44,14 @@ public class LocatorGadget extends AbstractGadget {
             return;
         int remaining = getRemainingCooldownSeconds(player);
         if (remaining > 0) {
-            player.sendActionBar(Component.text("Locator: " + remaining + "s").color(NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("gadgets.locator.cooldown", remaining).color(NamedTextColor.RED));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 0.5f); // fail
             return;
         }
 
         Player nearest = findNearest(player);
         if (nearest == null) {
-            player.sendActionBar(Component.text("No players").color(NamedTextColor.GRAY));
+            player.sendActionBar(I18n.tr("gadgets.locator.no_players").color(NamedTextColor.GRAY));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 0.7f); // not found
             return;
         }
@@ -58,7 +60,7 @@ public class LocatorGadget extends AbstractGadget {
         double dy = nearest.getLocation().getY() - player.getLocation().getY();
         String arrows = buildArrows(dy);
         Component msg = (context.hideTargetNames(player)
-                ? Component.text("Enemy").color(NamedTextColor.AQUA)
+                ? I18n.tr("gadgets.enemy").color(NamedTextColor.AQUA)
                 : Component.text(nearest.getName()).color(NamedTextColor.AQUA))
                 .append(Component.text(" "))
                 .append(Component.text(arrows).color(NamedTextColor.GOLD));
@@ -110,7 +112,7 @@ public class LocatorGadget extends AbstractGadget {
         GadgetItems.addTag(item, TAG);
         var meta = item.getItemMeta();
         meta.displayName(
-                Component.text("Locator").color(NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false));
+                I18n.tr("gadgets.locator.name").color(NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false));
         meta.setEnchantmentGlintOverride(true);
         item.setItemMeta(meta);
         item.setAmount(count);

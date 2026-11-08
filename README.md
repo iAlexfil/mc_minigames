@@ -942,6 +942,62 @@ pillars `items.groups` and `items.custom`, bingo `difficulty-levels`, warfare `m
 (`/war map`), `beacons` (`/war beacon`) and `gameInventory` (`/war kit`). Each game declares its hidden prefixes
 with `ConfigRegistry.hide` next to its config registration.
 
+## Localization and contributor rules
+
+The built-in interface supports **English and Russian** without a resource pack.
+Russian client locales use Russian; other client languages and the console use
+English. User-authored names, command identifiers and configuration values remain
+unchanged.
+
+All localization infrastructure lives in **`i18n/`**: Java code in `i18n/java`,
+checks in `i18n/checks`, and UTF-8 catalogs in `i18n/locales/en` and
+`i18n/locales/ru`. `i18n/locales/catalogs.txt` declares the domains; for example,
+`party.rounds` maps to `en/party/rounds.yml` and `ru/party/rounds.yml`.
+
+**Every contribution that adds or changes built-in player text must update both
+language catalogs in the same change.** This includes command errors/help, chat,
+titles, action bars, boss bars, sidebars, menus, item names/lore and summaries.
+
+Use stable semantic keys and full sentences with MiniMessage component arguments:
+
+```java
+I18n.tr("common.summary.winner", player.displayName())
+        .color(NamedTextColor.GREEN);
+```
+
+```yaml
+# i18n/locales/en/common.yml
+summary.winner: "Winner: <arg:0>"
+# i18n/locales/ru/common.yml
+summary.winner: "Победитель: <arg:0>"
+```
+
+- Use flat YAML keys and quote text values. Keep the same keys and argument indices
+  in both languages; indices start at zero without gaps. Translations may reorder
+  arguments. Close MiniMessage formatting tags explicitly.
+- Pass numbers, user text and rich Components as arguments. Do not concatenate or
+  stringify translated Components, parse user input as MiniMessage, or add new
+  built-in prose with `Component.text("...")`.
+- Keep command/config/PDC IDs and player/preset/map names literal. For vanilla
+  item or entity labels, use native Minecraft translation keys. Server-free model
+  initializers must not call registry-dependent `Material.translationKey()`.
+- Default item-component definitions can use
+  `{translate:"potatominigames.<domain>.<key>"}` for names; Java calls to `I18n.tr`
+  omit the internal `potatominigames.` prefix.
+- Paper renders translated chat, titles, action bars and boss bars per recipient.
+  Render inventory titles with `I18n.render(title, viewer)` and fresh item metadata
+  with `I18n.item(item, viewer)`. Never render a shared template in one player's
+  language. Rebuild item views from canonical templates on recipient handoffs.
+- Pass untranslated Components into `SidebarService`: it localizes each player
+  and spectator independently. Shared logical boards must still have per-viewer
+  inventory presentations.
+- For localized validation errors use `I18n.exception(key, args)` and preserve the
+  Component with `I18n.message(error)` when reporting it.
+
+Run `sh ./gradlew checkI18n` and the affected gameplay checks before submitting.
+The normal `build` includes the i18n gate: catalog parity, placeholder integrity,
+locale fallback, safe rich arguments and malformed-catalog rejection.
+
 ## Building
 
 ```

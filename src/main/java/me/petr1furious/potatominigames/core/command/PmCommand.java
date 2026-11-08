@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.command;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -69,10 +70,10 @@ public final class PmCommand {
                         .requires(source -> source.getSender().hasPermission(GameCommands.ADMIN_PERMISSION))
                         .executes(ctx -> run(ctx, c -> {
                             if (sessions.activeSessions().isEmpty()) {
-                                throw new CommandFailure("No game is active.");
+                                throw new CommandFailure(I18n.tr("core.session.no_active"));
                             }
                             sessions.stopAll(EndReason.ABORTED);
-                            messages.broadcast(Component.text("All games stopped.", NamedTextColor.RED));
+                            messages.broadcast(I18n.tr("core.session.all_stopped").color(NamedTextColor.RED));
                         }))
                         .then(Commands.argument("game", StringArgumentType.word())
                                 .suggests(Suggest.dynamic(() -> sessions.activeSessions().stream()
@@ -80,17 +81,16 @@ public final class PmCommand {
                                 .executes(ctx -> run(ctx, c -> {
                                     Minigame game = requireGame(c.getArgument("game", String.class));
                                     var session = sessions.sessionOf(game)
-                                            .orElseThrow(() -> new CommandFailure(game.id() + " is not running."));
+                                            .orElseThrow(() -> new CommandFailure(I18n.tr("core.session.no_running_game", game.displayName())));
                                     session.stopNow(EndReason.ABORTED);
-                                    messages.broadcast(Component.text().append(session.displayName())
-                                            .append(Component.text(" stopped.", NamedTextColor.RED)).build());
+                                    messages.broadcast(I18n.tr("core.session.stopped", session.displayName()).color(NamedTextColor.RED));
                                 }))))
                 .then(buildForceStart())
                 .then(Commands.literal("reload")
                         .requires(source -> source.getSender().hasPermission(GameCommands.ADMIN_PERMISSION))
                         .executes(ctx -> run(ctx, c -> {
                             configs.reloadAll();
-                            c.getSource().getSender().sendMessage(messages.success("Configuration reloaded."));
+                            c.getSource().getSender().sendMessage(messages.success(I18n.tr("core.config.reloaded")));
                         })))
                 .then(buildInventorySubtree())
                 .then(new ConfigCommand("pm", new ConfigEditor(configs)
@@ -103,28 +103,20 @@ public final class PmCommand {
         var sender = ctx.getSource().getSender();
         var running = sessions.activeSessions();
         if (running.isEmpty()) {
-            sender.sendMessage(Component.text(
-                    "PotatoMinigames " + plugin.getPluginMeta().getVersion() + " — no game running.",
-                    NamedTextColor.GRAY));
+            sender.sendMessage(I18n.tr("core.command.plugin_idle", plugin.getPluginMeta().getVersion())
+                    .color(NamedTextColor.GRAY));
         }
         for (var session : running) {
-            sender.sendMessage(Component.text()
-                    .append(Component.text("PotatoMinigames: ", NamedTextColor.GRAY))
-                    .append(session.displayName())
-                    .append(Component.text(" is " + session.phase().name().toLowerCase() + " with "
-                            + Messages.count(session.participants().size(), "player") + " and "
-                            + Messages.count(session.spectatorIds().size(), "spectator") + ".", NamedTextColor.GRAY))
-                    .build());
+            sender.sendMessage(I18n.tr("core.command.plugin_status", session.displayName(),
+                    session.phase().displayName(), session.participants().size(), session.spectatorIds().size())
+                    .color(NamedTextColor.GRAY));
         }
         for (var queue : queues.visibleQueues()) {
             if (queue.size() > 0) {
-                sender.sendMessage(Component.text()
-                        .append(Component.text("Queue ", NamedTextColor.GRAY))
-                        .append(queue.displayName())
-                        .append(Component.text(": " + queue.countText()
-                                + (queue.countdown() != null ? ", starts in " + queue.countdown() + "s" : ""),
-                                NamedTextColor.GRAY))
-                        .build());
+                sender.sendMessage((queue.countdown() != null
+                        ? I18n.tr("core.command.queue_countdown", queue.displayName(), queue.countText(), queue.countdown())
+                        : I18n.tr("core.command.queue_status", queue.displayName(), queue.countText()))
+                        .color(NamedTextColor.GRAY));
             }
         }
     }
@@ -153,20 +145,20 @@ public final class PmCommand {
             var fullest = queues.queuesOf(game).stream()
                     .max(java.util.Comparator.comparingInt(QueueService.Queue::size));
             if (fullest.isEmpty()) {
-                throw new CommandFailure(game.id() + " has no open queues.");
+                throw new CommandFailure(I18n.tr("core.queue.no_open", game.displayName()));
             }
             queues.forceStart(fullest.get());
             return;
         }
         var queue = queues.find(game, mode)
-                .orElseThrow(() -> new CommandFailure("Unknown mode for " + game.id() + ": " + mode));
+                .orElseThrow(() -> new CommandFailure(I18n.tr("core.command.game_unknown_mode", game.displayName(), mode)));
         queues.forceStart(queue);
     }
 
     private Minigame requireGame(String id) throws CommandFailure {
         Minigame game = sessions.game(id);
         if (game == null) {
-            throw new CommandFailure("Unknown game: " + id);
+            throw new CommandFailure(I18n.tr("core.command.unknown_game", id));
         }
         return game;
     }
@@ -180,8 +172,7 @@ public final class PmCommand {
                                     Player player = requirePlayer(c);
                                     saveKit(c.getArgument("name", String.class),
                                             player.getInventory().getContents());
-                                    player.sendMessage(messages.success("Inventory saved as '"
-                                            + c.getArgument("name", String.class) + "'."));
+                                    player.sendMessage(messages.success(I18n.tr("core.inventory.saved", c.getArgument("name", String.class))));
                                 }))))
                 .then(Commands.literal("load")
                         .then(Commands.argument("name", StringArgumentType.word())
@@ -189,7 +180,7 @@ public final class PmCommand {
                                 .executes(ctx -> run(ctx, c -> {
                                     Player player = requirePlayer(c);
                                     loadKit(c.getArgument("name", String.class), List.of(player));
-                                    player.sendMessage(messages.success("Inventory loaded."));
+                                    player.sendMessage(messages.success(I18n.tr("core.inventory.loaded")));
                                 }))
                                 .then(Commands.argument("targets", ArgumentTypes.players())
                                         .executes(ctx -> run(ctx, c -> {
@@ -198,7 +189,7 @@ public final class PmCommand {
                                                     .resolve(c.getSource());
                                             loadKit(c.getArgument("name", String.class), targets);
                                             c.getSource().getSender().sendMessage(messages.success(
-                                                    "Inventory loaded for " + targets.size() + " players."));
+                                                    I18n.tr("core.inventory.loaded_targets", targets.size())));
                                         })))))
                 .then(Commands.literal("copy")
                         .then(Commands.argument("source", ArgumentTypes.player())
@@ -215,7 +206,7 @@ public final class PmCommand {
                                                         .setContents(source.getInventory().getContents());
                                             }
                                             c.getSource().getSender()
-                                                    .sendMessage(messages.success("Copied inventory."));
+                                                    .sendMessage(messages.success(I18n.tr("core.inventory.copied")));
                                         })))));
     }
 
@@ -232,7 +223,7 @@ public final class PmCommand {
             kitsFile.getParentFile().mkdirs();
             config.save(kitsFile);
         } catch (IOException exception) {
-            throw new CommandFailure("Failed to save inventory: " + exception.getMessage());
+            throw new CommandFailure(I18n.tr("core.inventory.save_failed", I18n.message(exception)));
         }
     }
 
@@ -240,7 +231,7 @@ public final class PmCommand {
         YamlConfiguration config = YamlConfiguration.loadConfiguration(kitsFile);
         List<?> stored = config.getList("kits." + name);
         if (stored == null) {
-            throw new CommandFailure("No saved inventory named '" + name + "'.");
+            throw new CommandFailure(I18n.tr("core.inventory.not_found", name));
         }
         ItemStack[] contents = stored.stream()
                 .map(item -> item instanceof ItemStack stack ? stack : null)

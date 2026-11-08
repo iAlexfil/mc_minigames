@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -20,11 +21,11 @@ final class SumoCombat {
     static void equip(Player player) {
         ItemStack stick = new ItemStack(Material.STICK);
         stick.editMeta(meta -> {
-            meta.displayName(Component.text("Палка сумо", NamedTextColor.GOLD));
+            meta.displayName(I18n.tr("party.duels.sumo.stick").color(NamedTextColor.GOLD));
             meta.addEnchant(Enchantment.KNOCKBACK, 1, true);
-            meta.lore(List.of(Component.text("Отталкивает без урона • спринт усиливает удар", NamedTextColor.GRAY)));
+            meta.lore(List.of(I18n.tr("party.duels.sumo.stick_lore").color(NamedTextColor.GRAY)));
         });
-        player.getInventory().setItem(0, stick);
+        player.getInventory().setItem(0, I18n.item(stick, player));
         player.getInventory().setHeldItemSlot(0);
     }
 

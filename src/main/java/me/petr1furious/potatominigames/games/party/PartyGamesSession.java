@@ -4,6 +4,7 @@ import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 
 import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.game.*;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -44,8 +45,8 @@ final class PartyGamesSession extends PartyRoundForwarder {
         this.config = config;
     }
 
-    private static Component text(String s) {
-        return Component.text(s, NamedTextColor.GOLD);
+    private static Component text(Component s) {
+        return s.color(NamedTextColor.GOLD);
     }
 
     @Override
@@ -98,7 +99,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
                                     1);
         } catch (RuntimeException e) {
             onEnd(EndReason.ABORTED);
-            throw new CommandFailure("Не удалось подготовить Party Games: " + e.getMessage());
+            throw new CommandFailure(I18n.tr("party.rounds.party_games.error.prepare", I18n.message(e)));
         }
     }
 
@@ -141,13 +142,8 @@ final class PartyGamesSession extends PartyRoundForwarder {
         phase = Phase.ACTIVE;
         services.messages()
                 .broadcast(
-                        text(
-                                "Party Games • "
-                                        + (index + 1)
-                                        + "/"
-                                        + roundCount
-                                        + " • "
-                                        + PartyRoundFactory.title(state.schedule().get(index))));
+                        text(I18n.tr("party.rounds.party_games.round_start", index + 1, roundCount,
+                                PartyRoundFactory.title(state.schedule().get(index)))));
         try {
             child.onStart();
         } catch (CommandFailure | RuntimeException e) {
@@ -172,17 +168,13 @@ final class PartyGamesSession extends PartyRoundForwarder {
         phase = Phase.TRANSITION;
         PartySounds.play(
                 services.session().audiencePlayers(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.2f);
-        services.messages().broadcast(text("Результаты раунда:"));
+        services.messages().broadcast(text(I18n.tr("party.rounds.party_games.round_results")));
         for (var group : result.places())
             for (UUID id : group)
                 services.messages()
                         .broadcast(
-                                text(
-                                        result.place(id)
-                                                + ". "
-                                                + names.get(id)
-                                                + " • +"
-                                                + result.awards().get(id)));
+                                text(I18n.tr("party.rounds.party_games.round_result",
+                                        result.place(id), names.get(id), result.awards().get(id))));
         // Never reset players or unload a world while inside its death/damage callback.
         transition =
                 Bukkit.getScheduler()
@@ -225,9 +217,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
                 if (tick - aloneSince >= 300) {
                     services.messages()
                             .broadcast(
-                                    text(
-                                            "Матч завершён досрочно: недостаточно игроков. Очки не"
-                                                    + " сохранены."));
+                                    text(I18n.tr("party.rounds.party_games.insufficient_players")));
                     services.session().endGame(EndReason.ABORTED);
                     return;
                 }
@@ -241,7 +231,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
     private void fail(Exception e) {
         services.plugin().getLogger().log(java.util.logging.Level.SEVERE, "Party Games failed", e);
         services.messages()
-                .broadcast(text("Party Games остановлен из-за ошибки. Очки не сохранены."));
+                .broadcast(text(I18n.tr("party.rounds.party_games.error.stopped")));
         services.session().endGame(EndReason.ABORTED);
     }
 
@@ -259,29 +249,23 @@ final class PartyGamesSession extends PartyRoundForwarder {
     private void hud() {
         if (state == null || phase != Phase.BREAK) return;
         List<Component> lines = new ArrayList<>();
-        lines.add(text("Раунд " + (index + 1) + "/" + roundCount));
-        lines.add(
-                Component.text(
-                        phase == Phase.ACTIVE
-                                ? PartyRoundFactory.title(state.schedule().get(index))
-                                : aloneSince >= 0
-                                        ? "Ждём игроков: "
-                                                + Math.max(0, (300 - (tick - aloneSince) + 19) / 20)
-                                                + " с"
-                                        : "Следующая игра: "
-                                                + Math.max(0, (deadline - tick + 19) / 20)
-                                                + " с",
-                        NamedTextColor.AQUA));
+        lines.add(text(I18n.tr("party.rounds.party_games.round", index + 1, roundCount)));
+        lines.add((phase == Phase.ACTIVE
+                ? PartyRoundFactory.title(state.schedule().get(index))
+                : aloneSince >= 0
+                        ? I18n.tr("party.rounds.party_games.waiting",
+                                Math.max(0, (300 - (tick - aloneSince) + 19) / 20))
+                        : I18n.tr("party.rounds.party_games.next",
+                                Math.max(0, (deadline - tick + 19) / 20)))
+                .color(NamedTextColor.AQUA));
         for (var group : state.score().standings())
             for (UUID id : group) {
                 if (lines.size() >= 14) break;
-                lines.add(
-                        Component.text(
-                                names.get(id) + ": " + state.score().points(id),
-                                NamedTextColor.WHITE));
+                lines.add(I18n.tr("party.rounds.party_games.score", names.get(id), state.score().points(id))
+                        .color(NamedTextColor.WHITE));
             }
         for (Player p : services.session().audiencePlayers())
-            services.sidebar().update(p, text("Party Games"), lines);
+            services.sidebar().update(p, text(I18n.tr("party.rounds.mode.party_games")), lines);
     }
 
     @Override
@@ -296,21 +280,13 @@ final class PartyGamesSession extends PartyRoundForwarder {
         if (state != null)
             endStep(() -> {
                 List<Component> lines = new ArrayList<>();
-                lines.add(
-                        text(
-                                complete
-                                        ? "Итоги Party Games"
-                                        : "Промежуточный счёт • очки не сохранены"));
+                lines.add(text(I18n.tr(complete ? "party.rounds.party_games.final"
+                        : "party.rounds.party_games.intermediate")));
                 int place = 1;
                 for (var group : state.score().standings()) {
                     for (UUID id : group)
-                        lines.add(
-                                text(
-                                        place
-                                                + ". "
-                                                + names.get(id)
-                                                + " • "
-                                                + state.score().points(id)));
+                        lines.add(text(I18n.tr("party.rounds.party_games.result",
+                                place, names.get(id), state.score().points(id))));
                     place += group.size();
                 }
                 summary = List.copyOf(lines);
@@ -349,14 +325,10 @@ final class PartyGamesSession extends PartyRoundForwarder {
     @Override
     public Component globalResult() {
         return complete
-                ? text(
-                        "Party Games завершён! Победители: "
-                                + String.join(
-                                        ", ",
-                                        state.score().standings().getFirst().stream()
-                                                .map(names::get)
-                                                .toList()))
-                : text("Party Games остановлен");
+                ? text(I18n.tr("party.rounds.party_games.completed",
+                        String.join(", ", state.score().standings().getFirst().stream()
+                                .map(names::get).toList())))
+                : text(I18n.tr("party.rounds.party_games.stopped"));
     }
 
     @Override

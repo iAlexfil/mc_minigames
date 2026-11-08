@@ -9,6 +9,7 @@ import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.game.EndReason;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
@@ -100,7 +101,7 @@ final class DuelSession implements PartyRoundSession {
     private final PartyConfig config;
     private final boolean sumo;
     private final boolean freeForAll;
-    private final String title;
+    private final Component title;
     private final Set<UUID> fighters = new HashSet<>();
     private final SumoCombat sumoCombat = new SumoCombat();
     private final CountdownFreeze countdownFreeze = new CountdownFreeze();
@@ -168,7 +169,7 @@ final class DuelSession implements PartyRoundSession {
         this.services = context.services();
         this.config = config;
         this.sumo = sumo;
-        title = freeForAll ? sumo ? "Массовое сумо" : "Массовое PvP" : sumo ? "Сумо" : "PvP";
+        title = I18n.tr(freeForAll ? sumo ? "party.rounds.mode.sumo_ffa" : "party.rounds.mode.pvp_ffa" : sumo ? "party.duels.sumo.title" : "party.duels.pvp.title");
     }
 
     @Override
@@ -194,15 +195,15 @@ final class DuelSession implements PartyRoundSession {
             roster.add(participant.id());
             names.put(participant.id(), participant.name());
         }
-        if (roster.isEmpty()) throw new CommandFailure("Нужны участники.");
+        if (roster.isEmpty()) throw new CommandFailure(I18n.tr("party.duels.tournament.participants_required"));
         try {
             selectedKits = PvpDuelKits.fromOptions(services.options());
         } catch (IllegalArgumentException failure) {
-            throw new CommandFailure(failure.getMessage());
+            throw new CommandFailure(I18n.message(failure));
         }
         if (selectedKits != null && (ffa || sumo || !selectedKits.matches(roster)))
-            throw new CommandFailure("Заданные классы можно использовать только в PvP BO3 для двух выбранных игроков.");
-        if (freeForAll && roster.size() > 16) throw new CommandFailure("В массовом бою может участвовать до 16 игроков.");
+            throw new CommandFailure(I18n.tr("party.duels.duel.invalid_mode"));
+        if (freeForAll && roster.size() > 16) throw new CommandFailure(I18n.tr("party.duels.ffa.player_limit", 16));
         training = roster.size() == 1;
         Collections.shuffle(roster, random);
         if (ffa) standings = new SurvivalStandings(roster);
@@ -241,52 +242,34 @@ final class DuelSession implements PartyRoundSession {
         bar =
                 services.bossBars()
                         .create(
-                                text(
-                                        title + (ffa ? " • Все против всех" : " • BO3"),
-                                        NamedTextColor.GOLD),
+                                text(ffa ? "tournament.ffa_bar" : "tournament.bo3_bar",
+                                        NamedTextColor.GOLD, title),
                                 BossBar.Color.YELLOW,
                                 BossBar.Overlay.PROGRESS);
         services.messages()
                 .broadcast(
-                        text(
-                                freeForAll
-                                        ? title + ": все против всех, одна жизнь. Последний выживший получает 3 очка."
-                                        : ffa
-                                        ? title
-                                                + ": все против всех, одна жизнь. Призовые места: 3"
-                                                + " / 2 / 1 очко."
-                                        : title
-                                                + ": каждый с каждым, матч до двух побед. Победа в"
-                                                + " матче — 3 очка.",
-                                NamedTextColor.GOLD));
-        services.messages()
-                .broadcast(
-                        text(
-                                sumo
-                                        ? "Столкни соперника с платформы! Удары отбрасывают без"
-                                                + " потери здоровья. Строить нельзя."
-                                        : selectedKits != null ? "Раунд 1: заданные классы; раунд 2: обмен классами; раунд 3: одинаковый случайный класс."
-                                        : "Раунд 1: случайные классы; раунд 2: обмен классами;"
-                                                + " раунд 3: одинаковый случайный класс.",
-                                NamedTextColor.GRAY));
+                        text(freeForAll ? "ffa.rules" : ffa ? "tournament.ffa_rules" : "tournament.bo3_rules", NamedTextColor.GOLD, title));
+        services.messages().broadcast(text(sumo ? "sumo.rules" : selectedKits != null ? "pvp.selected_round_rules" : "pvp.round_rules", NamedTextColor.GRAY));
         if (ffa) prepareRound();
         else if (training) {
             services.messages()
                     .broadcast(
-                            text(
-                                    "Тренировка: один игрок, без турнирных очков. /party stop —"
-                                            + " закончить.",
-                                    NamedTextColor.YELLOW));
+                            text("tournament.training_rules", NamedTextColor.YELLOW));
             prepareRound();
         } else nextMatch();
     }
 
-    private static Component text(String s, NamedTextColor color) {
-        return Component.text(s, color);
+    private static Component text(String key, NamedTextColor color, Object... args) {
+        return I18n.tr("party.duels." + key, args).color(color);
     }
 
-    private String name(UUID id) {
-        return names.getOrDefault(id, "Игрок");
+    private static Component text(Component value, NamedTextColor color) {
+        return value.color(color);
+    }
+
+    private Component name(UUID id) {
+        String value = names.get(id);
+        return value == null ? I18n.tr("party.duels.player") : Component.text(value);
     }
 
     private Player player(UUID id) {
@@ -368,10 +351,7 @@ final class DuelSession implements PartyRoundSession {
                 playoffs.addAll(shuffled);
                 services.messages()
                         .broadcast(
-                                text(
-                                        "Равенство очков и личных встреч: дополнительные BO3 за"
-                                                + " первое место!",
-                                        NamedTextColor.GOLD));
+                                text("tournament.tie_announcement", NamedTextColor.GOLD));
                 nextMatch();
                 return;
             }
@@ -383,8 +363,7 @@ final class DuelSession implements PartyRoundSession {
             opening = selectedKits == null ? PvpClass.opening(random) : selectedKits.opening(match.pair(), random);
             decider = PvpClass.random(random);
             if (selectedKits != null)
-                services.messages().broadcast(text("Начальные классы: " + name(match.pair().first()) + " — " + opening.getFirst().title
-                        + "; " + name(match.pair().second()) + " — " + opening.getLast().title, NamedTextColor.GREEN));
+                services.messages().broadcast(text("duel.opening", NamedTextColor.GREEN, name(match.pair().first()), opening.getFirst().title, name(match.pair().second()), opening.getLast().title));
         }
         // Forfeits are processed on the next tick, avoiding recursive traversal of the schedule.
         phase = Phase.BREAK;
@@ -392,18 +371,12 @@ final class DuelSession implements PartyRoundSession {
         if (player(match.pair().first()) != null && player(match.pair().second()) != null) {
             services.messages()
                     .broadcast(
-                            text(
-                                    (playoff
-                                                    ? "Тай-брейк: "
-                                                    : "Матч "
-                                                            + scheduleIndex
-                                                            + "/"
-                                                            + tournament.schedule().size()
-                                                            + ": ")
-                                            + name(match.pair().first())
-                                            + " vs "
-                                            + name(match.pair().second()),
-                                    NamedTextColor.AQUA));
+                            text(playoff ? "tournament.playoff_match" : "tournament.match",
+                                    NamedTextColor.AQUA,
+                                    playoff
+                                            ? new Object[] {name(match.pair().first()), name(match.pair().second())}
+                                            : new Object[] {scheduleIndex, tournament.schedule().size(),
+                                                    name(match.pair().first()), name(match.pair().second())}));
             prepareRound();
         }
     }
@@ -476,45 +449,23 @@ final class DuelSession implements PartyRoundSession {
                             : arena.spawn(east));
             if (kit != null) {
                 p.sendMessage(
-                        text(
-                                "Класс: " + kit.title + " — " + kit.description,
-                                NamedTextColor.GREEN));
+                        text("pvp.class_details", NamedTextColor.GREEN, kit.title, kit.description));
                 p.sendMessage(text(kit.passiveDescription(), NamedTextColor.AQUA));
                 if (kit == PvpClass.DEMOLITIONIST)
                     p.sendMessage(
-                            text(
-                                    "TNT в слоте 4: ПКМ по блоку ставит зажжённый заряд, ЛКМ"
-                                            + " бросает раз в секунду. Порох в слоте 8: наведи на квадрат и нажми ПКМ — налёт и +4 TNT.",
-                                    NamedTextColor.GOLD));
+                            text("pvp.tnt_help", NamedTextColor.GOLD));
                 if (kit == PvpClass.RANGER)
                     p.sendMessage(
-                            text(
-                                    "Особые стрелы: 10 моментального урона I, 10 замедления I (4 с), 10 яда I (4 с),"
-                                            + " 10 слабости I (5 с), 10 тошноты (8 с), 10 спектральных. Не пополняются.",
-                                    NamedTextColor.GRAY));
+                            text("pvp.arrow_help", NamedTextColor.GRAY));
                 p.sendMessage(
-                        text(
-                                kit.ability
-                                        + ": "
-                                        + kit.abilityDescription()
-                                        + " • "
-                                        + kit.cooldown
-                                        + " с",
-                                NamedTextColor.GOLD));
+                        text("pvp.ability_details", NamedTextColor.GOLD,
+                                kit.ability, kit.abilityDescription(), kit.cooldown));
                 p.sendMessage(
-                        text(
-                                (kit == PvpClass.SHADOW
-                                                ? "Палка в слоте 8: ударь соперника; ПКМ её не"
-                                                        + " активирует. "
-                                                : "Способность в слоте 8: ПКМ. ")
-                                        + "Ломать можно только поставленные игроками блоки.",
+                        text(kit == PvpClass.SHADOW ? "pvp.shadow_controls" : "pvp.ability_controls",
                                 NamedTextColor.GRAY));
             } else
                 p.sendMessage(
-                        text(
-                                "Сумо: палка с Отдачей I, урона нет. Спринт усиливает удар; держись"
-                                        + " подальше от края.",
-                                NamedTextColor.GREEN));
+                        text("sumo.kit_help", NamedTextColor.GREEN));
         }
         for (Player player : services.participants().onlinePlayers())
             countdownFreeze.freeze(player);
@@ -552,7 +503,7 @@ final class DuelSession implements PartyRoundSession {
             countdownFreeze.releaseAll();
             phase = Phase.FIGHT;
             fightStarted = now;
-            services.messages().broadcast(text("Бой!", NamedTextColor.RED));
+            services.messages().broadcast(text("fight", NamedTextColor.RED));
             for (UUID id : fighters) {
                 Player p = player(id);
                 if (p != null) {
@@ -596,14 +547,7 @@ final class DuelSession implements PartyRoundSession {
                             .applyBorder(world, arena.center(), PvpArena.BORDER_SIZE, freeForAll ? 1 : 7, 30);
                 services.messages()
                         .broadcast(
-                                text(
-                                        sumo
-                                                ? "Овертайм! Края платформы исчезают каждые 3"
-                                                        + " секунды."
-                                                : freeForAll ? "Овертайм! Граница сужается до центра, бой до последнего выжившего."
-                                                : "Овертайм! Граница сужается, через 30 секунд"
-                                                        + " сравним оставшееся здоровье.",
-                                        NamedTextColor.RED));
+                                text(sumo ? "sumo.overtime" : freeForAll ? "ffa.overtime" : "pvp.overtime", NamedTextColor.RED));
             }
             if (!freeForAll && elapsed >= roundLength + 30) {
                 if (ffa) {
@@ -656,22 +600,14 @@ final class DuelSession implements PartyRoundSession {
         if (winner == null)
             services.messages()
                     .broadcast(
-                            text(
-                                    sumo
-                                            ? "Ничья в раунде — переигровка."
-                                            : "Ничья в раунде — переигровка с теми же классами.",
-                                    NamedTextColor.YELLOW));
+                            text(sumo ? "sumo.round_draw" : "pvp.round_draw", NamedTextColor.YELLOW));
         else {
             match.winRound(winner);
             services.messages()
                     .broadcast(
-                            text(
-                                    name(winner)
-                                            + " берёт раунд! "
-                                            + match.wins(match.pair().first())
-                                            + ":"
-                                            + match.wins(match.pair().second()),
-                                    NamedTextColor.GREEN));
+                            text("tournament.round_won", NamedTextColor.GREEN,
+                                    name(winner), match.wins(match.pair().first()),
+                                    match.wins(match.pair().second())));
             if (match.winner() != null) completeMatch(match.winner());
         }
     }
@@ -696,11 +632,10 @@ final class DuelSession implements PartyRoundSession {
         if (winner != null) {
             services.messages()
                     .broadcast(
-                            text(
-                                    name(winner)
-                                            + (forfeit ? " • техническая победа" : " выиграл BO3")
-                                            + (playoff ? "!" : " • +3 очка"),
-                                    NamedTextColor.GOLD));
+                            text(forfeit
+                                            ? playoff ? "tournament.playoff_forfeit" : "tournament.match_forfeit"
+                                            : playoff ? "tournament.playoff_won" : "tournament.match_won",
+                                    NamedTextColor.GOLD, name(winner)));
         }
         phase = Phase.BREAK;
         deadline = now + intermission;
@@ -724,15 +659,9 @@ final class DuelSession implements PartyRoundSession {
         for (int i = 0; i < ordered.size(); i++) {
             UUID id = ordered.get(i);
             lines.add(
-                    text(
-                            (i + 1)
-                                    + ". "
-                                    + name(id)
-                                    + " — "
-                                    + tournament.points(id)
-                                    + " очков"
-                                    + (withdrawn.contains(id) ? " (выбыл)" : ""),
-                            i == 0 ? NamedTextColor.GOLD : NamedTextColor.GRAY));
+                    text(withdrawn.contains(id) ? "tournament.standing_withdrawn" : "tournament.standing",
+                            i == 0 ? NamedTextColor.GOLD : NamedTextColor.GRAY,
+                            i + 1, name(id), tournament.points(id)));
         }
         result = List.copyOf(lines);
         services.session().endGame(EndReason.FINISHED);
@@ -772,7 +701,7 @@ final class DuelSession implements PartyRoundSession {
     public Component globalResult() {
         return champion == null
                 ? null
-                : text(name(champion) + (freeForAll ? " — последний выживший в «" : " выиграл турнир «") + title + "»!", NamedTextColor.GOLD);
+                : text(freeForAll ? "ffa.global_winner" : "tournament.winner", NamedTextColor.GOLD, name(champion), title);
     }
 
     private void updateHud() {
@@ -785,17 +714,17 @@ final class DuelSession implements PartyRoundSession {
                                         0,
                                         roundLength + (suddenDeath ? 30 : 0) - (now - fightStarted))
                                 : Math.max(0, deadline - now);
-        String barTitle =
+        Component barTitle =
                 phase == Phase.COUNTDOWN
-                        ? "Бой через " + remaining + " с"
+                        ? text("hud.fight_countdown", NamedTextColor.GOLD, remaining)
                         : phase == Phase.BREAK
-                                ? "Следующий раунд через " + remaining + " с"
+                                ? text("hud.round_countdown", NamedTextColor.GOLD, remaining)
                                 : phase == Phase.RESULT
-                                        ? (ffa ? "Бой окончен • " : "Раунд окончен • ") + remaining + " с"
-                                        : ffa && suddenDeath ? "Овертайм • до последнего выжившего"
-                                        : (suddenDeath ? "Овертайм • " : title + " • ")
-                                                + TimeFormat.clock(remaining);
-        bar.name(text(barTitle, NamedTextColor.GOLD));
+                                        ? text(ffa ? "hud.fight_over" : "hud.round_over", NamedTextColor.GOLD, remaining)
+                                        : ffa && suddenDeath ? text("hud.ffa_overtime", NamedTextColor.GOLD)
+                                        : suddenDeath ? text("hud.overtime", NamedTextColor.GOLD, TimeFormat.clock(remaining))
+                                        : text("hud.timer", NamedTextColor.GOLD, title, TimeFormat.clock(remaining));
+        bar.name(barTitle);
         bar.progress(ffa && phase == Phase.FIGHT ? (float) standings.survivors().size() / names.size() :
                 Math.clamp(
                         (float) remaining
@@ -806,53 +735,40 @@ final class DuelSession implements PartyRoundSession {
                         1));
         List<Component> lines = new ArrayList<>();
         if (ffa) {
-            lines.add(text("Осталось: " + standings.survivors().size() + "/" + names.size(), NamedTextColor.AQUA));
-            lines.add(text("Одна жизнь • последний выживший", NamedTextColor.WHITE));
-            for (UUID id : standings.survivors().stream().limit(8).toList()) lines.add(text(name(id), NamedTextColor.GRAY));
+            lines.add(text("hud.remaining", NamedTextColor.AQUA, standings.survivors().size(), names.size()));
+            lines.add(text("hud.ffa_rules", NamedTextColor.WHITE));
+            for (UUID id : standings.survivors().stream().limit(8).toList()) lines.add(name(id).color(NamedTextColor.GRAY));
         }
         else if (!training && match != null) {
             lines.add(
-                    text(
-                            (playoff
-                                            ? "Тай-брейк"
-                                            : "Матч "
-                                                    + scheduleIndex
-                                                    + "/"
-                                                    + tournament.schedule().size())
-                                    + " • BO3",
-                            NamedTextColor.AQUA));
+                    playoff
+                            ? text("hud.playoff", NamedTextColor.AQUA)
+                            : text("hud.match", NamedTextColor.AQUA, scheduleIndex, tournament.schedule().size()));
             lines.add(
-                    text(
-                            name(match.pair().first())
-                                    + " "
-                                    + match.wins(match.pair().first())
-                                    + ":"
-                                    + match.wins(match.pair().second())
-                                    + " "
-                                    + name(match.pair().second()),
-                            NamedTextColor.WHITE));
+                    text("hud.score", NamedTextColor.WHITE, name(match.pair().first()),
+                            match.wins(match.pair().first()), match.wins(match.pair().second()),
+                            name(match.pair().second())));
             for (UUID id : tournament.standings().stream().limit(8).toList()) {
-                lines.add(text(name(id) + ": " + tournament.points(id), NamedTextColor.GRAY));
+                lines.add(text("hud.points", NamedTextColor.GRAY, name(id), tournament.points(id)));
             }
-        } else lines.add(text("Тренировка", NamedTextColor.YELLOW));
+        } else lines.add(text("hud.training", NamedTextColor.YELLOW));
         for (Player p : services.participants().onlinePlayers()) {
             List<Component> own = new ArrayList<>(lines);
             PvpClass kit = kits.get(p.getUniqueId());
             if (kit != null) {
-                own.add(text("Класс: " + kit.title, NamedTextColor.GREEN));
+                own.add(text("hud.class", NamedTextColor.GREEN, kit.title));
                 long cooldown =
                         kit == PvpClass.SHADOW
                                 ? combat.shadowRemaining(p.getUniqueId(), now)
                                 : Math.max(0, readyAt.getOrDefault(p.getUniqueId(), 0L) - now);
                 own.add(
-                        text(
-                                (kit == PvpClass.SHADOW ? "Палка: " : "ПКМ: ")
-                                        + (cooldown == 0 ? "готово" : cooldown + " с"),
-                                NamedTextColor.GOLD));
+                        text(kit == PvpClass.SHADOW
+                                        ? cooldown == 0 ? "hud.wand_ready" : "hud.wand_cooldown"
+                                        : cooldown == 0 ? "hud.ability_ready" : "hud.ability_cooldown",
+                                NamedTextColor.GOLD, cooldown == 0 ? new Object[0] : new Object[] {cooldown}));
             }
-            if (sumo) own.add(text("Столкни соперника вниз!", NamedTextColor.GREEN));
-            services.sidebar()
-                    .update(p, text("Вечеринка • " + title, NamedTextColor.LIGHT_PURPLE), own);
+            if (sumo) own.add(text("sumo.objective", NamedTextColor.GREEN));
+            services.sidebar().update(p, text("hud.title", NamedTextColor.LIGHT_PURPLE, title), own);
             p.showBossBar(bar);
         }
     }
@@ -902,17 +818,13 @@ final class DuelSession implements PartyRoundSession {
         if (phase == Phase.DONE || !names.containsKey(p.getUniqueId())) return;
         withdrawn.add(p.getUniqueId());
         if (ffa) {
-            services.messages().broadcast(text(p.getName() + " покинул бой и выбыл.", NamedTextColor.YELLOW));
+            services.messages().broadcast(text("ffa.withdrawn", NamedTextColor.YELLOW, p.getName()));
             scheduleFfaResolution();
             return;
         }
         services.messages()
                 .broadcast(
-                        text(
-                                p.getName()
-                                        + " выбыл из турнира; оставшиеся матчи — технические"
-                                        + " поражения.",
-                                NamedTextColor.YELLOW));
+                        text("tournament.withdrawn", NamedTextColor.YELLOW, p.getName()));
     }
 
     @Override
@@ -922,7 +834,7 @@ final class DuelSession implements PartyRoundSession {
         spectator(p);
         if (phase == Phase.COUNTDOWN) countdownFreeze.freeze(p);
         p.sendMessage(
-                text(ffa ? "Вы выбыли из этого боя и можете наблюдать." : "Вы выбыли из этого турнира и можете наблюдать.", NamedTextColor.YELLOW));
+                text(ffa ? "ffa.spectating" : "tournament.spectating", NamedTextColor.YELLOW));
     }
 
     @Override
@@ -1011,9 +923,7 @@ final class DuelSession implements PartyRoundSession {
                 event.setCancelled(true);
                 mounts.remove(owner.getUniqueId());
                 owner.sendMessage(
-                        text(
-                                "Конь выбыл до конца раунда. Копьё и запасной меч остаются у тебя.",
-                                NamedTextColor.YELLOW));
+                        text("pvp.horse_lost", NamedTextColor.YELLOW));
             }
             return;
         }
@@ -1074,17 +984,14 @@ final class DuelSession implements PartyRoundSession {
                             new PotionEffect(
                                     PotionEffectType.SLOWNESS, PvpCombat.SHADOW_SLOWNESS_TICKS, 1));
                     p.sendActionBar(
-                            text("Палка мрака: слепота и замедление", NamedTextColor.DARK_PURPLE));
+                            text("pvp.shadow_hit", NamedTextColor.DARK_PURPLE));
                     attacker.sendActionBar(
-                            text("Палка мрака • перезарядка 20 с", NamedTextColor.GOLD));
+                            text("pvp.shadow_used", NamedTextColor.GOLD));
                     p.playSound(p.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, .5f, .7f);
                 } else if (landed)
                     attacker.sendActionBar(
-                            text(
-                                    "Палка мрака: "
-                                            + combat.shadowRemaining(attacker.getUniqueId(), now)
-                                            + " с",
-                                    NamedTextColor.RED));
+                            text("pvp.shadow_cooldown", NamedTextColor.RED,
+                                    combat.shadowRemaining(attacker.getUniqueId(), now)));
                 return;
             }
         }
@@ -1111,7 +1018,7 @@ final class DuelSession implements PartyRoundSession {
                                     .toVector()
                                     .subtract(p.getLocation().toVector()))) {
                 event.setDamage(event.getDamage() + 2);
-                attacker.sendActionBar(text("Удар в спину!", NamedTextColor.GOLD));
+                attacker.sendActionBar(text("pvp.backstab", NamedTextColor.GOLD));
                 attacker.playSound(
                         attacker.getLocation(), Sound.ENTITY_PLAYER_ATTACK_CRIT, .7f, 1.2f);
             }
@@ -1131,7 +1038,7 @@ final class DuelSession implements PartyRoundSession {
                                 .3,
                                 .2,
                                 0);
-                attacker.sendActionBar(text("Статика: враг подсвечен на 3 с", NamedTextColor.AQUA));
+                attacker.sendActionBar(text("pvp.static", NamedTextColor.AQUA));
             }
             if (kit == PvpClass.BERSERKER && combat.leech(attacker.getUniqueId(), now))
                 PvpCombat.heal(attacker, 1);
@@ -1166,21 +1073,17 @@ final class DuelSession implements PartyRoundSession {
     private void announceDeath(Player victim, UUID killer, boolean ringOut) {
         services.messages()
                 .broadcast(
-                        text(
-                                killer == null
-                                        ? name(victim.getUniqueId())
-                                                + (ringOut ? " выбыл с платформы" : " погиб")
-                                        : name(killer)
-                                                + (ringOut ? " вытолкнул " : " убил ")
-                                                + name(victim.getUniqueId()),
-                                NamedTextColor.RED));
+                        text(killer == null
+                                        ? ringOut ? "death.fell" : "death.died"
+                                        : ringOut ? "death.pushed" : "death.killed",
+                                NamedTextColor.RED,
+                                killer == null ? new Object[] {name(victim.getUniqueId())}
+                                        : new Object[] {name(killer), name(victim.getUniqueId())}));
         Player winner = killer == null ? null : player(killer);
         if (winner != null && !winner.isDead())
             winner.showTitle(
                     Title.title(
-                            text(
-                                    ringOut ? "Вы вытолкнули соперника" : "Вы убили соперника",
-                                    NamedTextColor.GOLD),
+                            text(ringOut ? "death.you_pushed" : "death.you_killed", NamedTextColor.GOLD),
                             text(name(victim.getUniqueId()), NamedTextColor.WHITE),
                             Title.Times.times(
                                     Duration.ZERO, Duration.ofSeconds(3), Duration.ofMillis(300))));
@@ -1192,12 +1095,10 @@ final class DuelSession implements PartyRoundSession {
         announceDeath(player, killer, true);
         player.showTitle(
                 Title.title(
-                        text("Вы выбыли", NamedTextColor.RED),
-                        text(
-                                killer == null
-                                        ? "Вы упали с платформы"
-                                        : "Вас вытолкнул " + name(killer),
-                                NamedTextColor.WHITE),
+                        text("death.eliminated", NamedTextColor.RED),
+                        killer == null
+                                ? text("death.you_fell", NamedTextColor.WHITE)
+                                : text("death.pushed_by", NamedTextColor.WHITE, name(killer)),
                         Title.Times.times(
                                 Duration.ZERO, Duration.ofSeconds(3), Duration.ofMillis(300))));
         eliminate(player);
@@ -1215,7 +1116,7 @@ final class DuelSession implements PartyRoundSession {
         bombs.eliminate(p.getUniqueId());
         if (!p.isDead() && sumo) p.setGameMode(GameMode.SPECTATOR);
         if (ffa) {
-            services.messages().broadcast(text("Осталось бойцов: " + standings.survivors().size(), NamedTextColor.YELLOW));
+            services.messages().broadcast(text("ffa.remaining", NamedTextColor.YELLOW, standings.survivors().size()));
             if (sumo) {
                 spectator(p);
                 scheduleFfaResolution();
@@ -1328,10 +1229,10 @@ final class DuelSession implements PartyRoundSession {
             List<UUID> alive = standings.survivors();
             champion = alive.size() == 1 ? alive.getFirst() : null;
             List<Component> lines = new ArrayList<>();
-            lines.add(text(champion == null ? "Ничья — никто не выжил." : name(champion) + " — последний выживший!", NamedTextColor.GOLD));
+            lines.add(text(champion == null ? "ffa.draw" : "ffa.winner", NamedTextColor.GOLD, champion == null ? new Object[0] : new Object[] {name(champion)}));
             int place = 0;
             for (UUID id : standings.ranking(names.keySet(), Bukkit.getCurrentTick()))
-                lines.add(text(++place + ". " + name(id) + (id.equals(champion) ? " • +3 очка" : " • выбыл"), NamedTextColor.GRAY));
+                lines.add(text(id.equals(champion) ? "ffa.standing_winner" : "ffa.standing_out", NamedTextColor.GRAY, ++place, name(id)));
             result = List.copyOf(lines);
             context.finish(EndReason.FINISHED, roundResult());
             return;
@@ -1342,13 +1243,8 @@ final class DuelSession implements PartyRoundSession {
                         .flatMap(List::stream)
                         .map(id ->
                                 (Component)
-                                        text(
-                                                ranking.place(id)
-                                                        + ". "
-                                                        + name(id)
-                                                        + " • +"
-                                                        + ranking.awards().get(id),
-                                                NamedTextColor.GOLD))
+                                        text("tournament.ffa_standing", NamedTextColor.GOLD,
+                                                ranking.place(id), name(id), ranking.awards().get(id)))
                         .toList();
         context.finish(EndReason.FINISHED, ranking);
     }
@@ -1367,9 +1263,8 @@ final class DuelSession implements PartyRoundSession {
         UUID killer = recentKiller(p);
         event.deathMessage(null);
         event.deathScreenMessageOverride(
-                text(
-                        killer == null ? "Вы погибли" : "Вас убил " + name(killer),
-                        NamedTextColor.RED));
+                I18n.render(killer == null ? text("death.you_died", NamedTextColor.RED)
+                        : text("death.killed_by", NamedTextColor.RED, name(killer)), p));
         event.getDrops().clear();
         event.setDroppedExp(0);
         event.setKeepInventory(true);
@@ -1451,7 +1346,7 @@ final class DuelSession implements PartyRoundSession {
         Player p = event.getPlayer();
         long remaining = readyAt.getOrDefault(p.getUniqueId(), 0L) - now;
         if (remaining > 0) {
-            p.sendActionBar(text("Перезарядка: " + remaining + " с", NamedTextColor.RED));
+            p.sendActionBar(text("ability.cooldown", NamedTextColor.RED, remaining));
             return;
         }
         PvpClass kit = kits.get(p.getUniqueId());
@@ -1466,9 +1361,7 @@ final class DuelSession implements PartyRoundSession {
             PvpThunder.Aim aim = PvpThunder.aim(p);
             if (aim == null || !arena.contains(aim.point())) {
                 p.sendActionBar(
-                        text(
-                                "Наведи жезл на блок арены не дальше 48 блоков",
-                                NamedTextColor.YELLOW));
+                        text("ability.thunder_aim", NamedTextColor.YELLOW));
                 return;
             }
             if (!thunder.start(
@@ -1477,18 +1370,16 @@ final class DuelSession implements PartyRoundSession {
         } else if (kit == PvpClass.DEMOLITIONIST) {
             PvpThunder.Aim aim = PvpThunder.aim(p);
             if (aim == null || !PvpAirstrike.validTarget(aim.point(), arena::contains)) {
-                p.sendActionBar(text("Наведи порох на квадрат 7×7 внутри арены, до 48 блоков", NamedTextColor.YELLOW));
+                p.sendActionBar(text("ability.airstrike_aim", NamedTextColor.YELLOW));
                 return;
             }
             if (!airstrike.start(p, aim.point(), services.plugin(), this::fighting, arena::contains, bombs)) return;
             int added = PvpBombs.replenish(p);
-            p.sendActionBar(text("Налёт вызван • +" + added + " TNT в запас", NamedTextColor.GOLD));
+            p.sendActionBar(text("ability.airstrike_used", NamedTextColor.GOLD, added));
         } else if (kit == PvpClass.HARPOONER) {
             if (!harpoon.start(p, services.plugin(), this::fighting)) {
                 p.sendActionBar(
-                        text(
-                                "Для Тягуна нужен трезубец в инвентаре; дождись его возвращения",
-                                NamedTextColor.YELLOW));
+                        text("ability.trident_required", NamedTextColor.YELLOW));
                 return;
             }
         } else if (!(kit == PvpClass.LANCER && mounts.boost(p, now)) && !kit.activate(p, opponent))
@@ -1498,7 +1389,7 @@ final class DuelSession implements PartyRoundSession {
         readyAt.put(p.getUniqueId(), now + kit.cooldown);
         p.playSound(p.getLocation(), Sound.BLOCK_BEACON_POWER_SELECT, 1, 1.5f);
         services.messages()
-                .broadcast(text(p.getName() + " • " + kit.ability, NamedTextColor.YELLOW));
+                .broadcast(text("ability.used", NamedTextColor.YELLOW, p.getName(), kit.ability));
     }
 
     @Override
@@ -1525,7 +1416,7 @@ final class DuelSession implements PartyRoundSession {
         Player player = event.getPlayer();
         if (event.getClickedBlock() == null) {
             player.sendActionBar(
-                    text("ПКМ по блоку — установка, ЛКМ — бросок TNT", NamedTextColor.YELLOW));
+                    text("bomb.controls", NamedTextColor.YELLOW));
             return;
         }
         var block = event.getClickedBlock().getRelative(event.getBlockFace());
@@ -1533,7 +1424,7 @@ final class DuelSession implements PartyRoundSession {
                 || !block.getType().isAir()
                 || event.getClickedBlock().getLocation().distanceSquared(player.getEyeLocation())
                         > 36) {
-            player.sendActionBar(text("Здесь нельзя поставить TNT", NamedTextColor.RED));
+            player.sendActionBar(text("bomb.cannot_place", NamedTextColor.RED));
             return;
         }
         bombs.use(player, block.getLocation().add(.5, 0, .5), false, services.plugin());

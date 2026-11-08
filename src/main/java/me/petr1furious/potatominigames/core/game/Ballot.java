@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.core.game;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -20,6 +22,29 @@ public record Ballot(String key, String title, Supplier<List<String>> choices, S
 
     /** {@code /play <key> any} drops the vote. */
     public static final String ANY = "any";
+
+    /** Built-in ballot labels are localized; extension-provided labels remain literal. */
+    public Component titleComponent() {
+        return switch (key) {
+            case "difficulty" -> I18n.tr("core.ballot.difficulty");
+            case "map" -> I18n.tr("core.ballot.map");
+            default -> Component.text(title);
+        };
+    }
+
+    /** Localize only built-in difficulty labels; map and custom difficulty names stay literal. */
+    public Component choiceComponent(String choice) {
+        if (choice == null) {
+            return I18n.tr("core.ballot.any");
+        }
+        if (key.equals("difficulty")) {
+            return switch (choice) {
+                case "baby", "easy", "medium", "hard", "insane" -> I18n.tr("core.ballot.choice." + choice);
+                default -> Component.text(choice);
+            };
+        }
+        return Component.text(choice);
+    }
 
     /** Spread over the levels, easiest first. */
     private static final List<Material> DIFFICULTY_ICONS = List.of(Material.LIME_CONCRETE, Material.YELLOW_CONCRETE,

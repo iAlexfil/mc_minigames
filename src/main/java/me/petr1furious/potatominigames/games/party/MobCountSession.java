@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.Location;
 import org.bukkit.Sound;
@@ -36,7 +38,7 @@ final class MobCountSession extends PartySurvivalSession {
     }
 
     MobCountSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
-        super(services, config, "mob_count", "Пересчёт", context);
+        super(services, config, "mob_count", context);
         countSeconds = Math.clamp(config.mobCountSeconds.get(), 6, 30);
         answerSeconds = Math.clamp(config.mobCountAnswerSeconds.get(), 4, 20);
         rounds = Math.clamp(config.mobCountRounds.get(), 2, 30);
@@ -70,10 +72,8 @@ final class MobCountSession extends PartySurvivalSession {
     }
 
     @Override
-    String instructions() {
-        return "Пересчёт: запомни, сколько мобов каждого вида! Затем выбери за "
-                + answerSeconds
-                + " секунд платформу с головой того, кого было указанное число. Ошибка — вылет.";
+    Component instructions() {
+        return I18n.tr("party.rounds.mob_count.instructions", answerSeconds);
     }
 
     @Override
@@ -120,7 +120,8 @@ final class MobCountSession extends PartySurvivalSession {
                 entity.setPersistent(true);
                 mobs.add(entity);
             }
-        announceTitle("Раунд " + round.number(), "Считай мобов каждого вида!", 2);
+        announceTitle(I18n.tr("party.rounds.mob_count.round", round.number()),
+                I18n.tr("party.rounds.mob_count.count"), 2);
     }
 
     @Override
@@ -137,15 +138,10 @@ final class MobCountSession extends PartySurvivalSession {
                 phase = Phase.ANSWER;
                 phaseEnd = elapsed + answerSeconds * 20L;
                 announceTitle(
-                        "" + round.target(),
-                        "Кого было столько? Прыгай на нужную голову!",
+                        Component.text(round.target()),
+                        I18n.tr("party.rounds.mob_count.choose"),
                         answerSeconds);
-                say(
-                        "Кого было "
-                                + round.target()
-                                + "? Выбери платформу за "
-                                + answerSeconds
-                                + " с!");
+                say(I18n.tr("party.rounds.mob_count.question", round.target(), answerSeconds));
             }
             case ANSWER -> {
                 standings.holdResults(true);
@@ -162,8 +158,8 @@ final class MobCountSession extends PartySurvivalSession {
                 phase = Phase.DROP;
                 phaseEnd = elapsed + 60;
                 announceTitle(
-                        round.answer().title + " — " + round.target(),
-                        "Неверные платформы исчезают!",
+                        I18n.tr("party.rounds.mob_count.answer", round.answer().title, round.target()),
+                        I18n.tr("party.rounds.mob_count.wrong_disappear"),
                         2);
             }
             case DROP -> {
@@ -180,16 +176,13 @@ final class MobCountSession extends PartySurvivalSession {
     }
 
     @Override
-    String status() {
+    Component status() {
         long left = Math.max(0, (phaseEnd - elapsed() + 19) / 20);
-        return "Раунд "
-                + round.number()
-                + " • "
-                + switch (phase) {
-                    case COUNT -> "Считай! " + left + " с";
-                    case ANSWER -> "Число " + round.target() + " • " + left + " с";
-                    case DROP -> "Ответ: " + round.answer().title;
-                };
+        return switch (phase) {
+            case COUNT -> I18n.tr("party.rounds.mob_count.status.count", round.number(), left);
+            case ANSWER -> I18n.tr("party.rounds.mob_count.status.answer", round.number(), round.target(), left);
+            case DROP -> I18n.tr("party.rounds.mob_count.status.drop", round.number(), round.answer().title);
+        };
     }
 
     @Override

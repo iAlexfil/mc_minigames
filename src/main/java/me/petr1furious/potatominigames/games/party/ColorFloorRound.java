@@ -1,5 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+
 import org.bukkit.Material;
 
 import java.util.*;
@@ -14,7 +17,7 @@ final class ColorFloorRound {
         Material.PURPLE_CONCRETE
     };
     static final String[] TITLES = {
-        "Красный", "Синий", "Жёлтый", "Лаймовый", "Оранжевый", "Фиолетовый"
+        "red", "blue", "yellow", "lime", "orange", "purple"
     };
     private final Material[][] cells = new Material[21][21];
     private final int target;
@@ -105,8 +108,8 @@ final class ColorFloorRound {
         return COLORS[target];
     }
 
-    String title() {
-        return TITLES[target];
+    Component title() {
+        return I18n.tr("party.rounds.color_floor.color." + TITLES[target]);
     }
 
     Material material(int x, int z) {

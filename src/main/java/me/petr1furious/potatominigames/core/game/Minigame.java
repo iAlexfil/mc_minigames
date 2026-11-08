@@ -37,7 +37,7 @@ public interface Minigame {
     }
 
     /** Player-facing mode label; the command/queue identifier stays unchanged. */
-    default String modeTitle(String mode) { return mode; }
+    default Component modeTitle(String mode) { return Component.text(mode); }
 
     default Material icon(String mode) { return icon(); }
 

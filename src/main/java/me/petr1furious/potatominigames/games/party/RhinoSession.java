@@ -1,6 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -16,6 +17,9 @@ import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Ravager;
 import org.bukkit.entity.SplashPotion;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Display;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -43,6 +47,7 @@ final class RhinoSession extends PartySurvivalSession {
     private static final class Rhino {
         final Ravager entity;
         final Set<UUID> hit = new HashSet<>();
+        final Map<UUID, TextDisplay> labels = new LinkedHashMap<>();
         Charge phase = Charge.IDLE;
         long until;
         UUID target;
@@ -60,6 +65,7 @@ final class RhinoSession extends PartySurvivalSession {
         Location location;
         Item ground;
         SplashPotion thrown;
+        final Map<UUID, TextDisplay> labels = new LinkedHashMap<>();
 
         Mine(TimedMine state, Location location) {
             this.state = state;
@@ -82,7 +88,7 @@ final class RhinoSession extends PartySurvivalSession {
     }
 
     RhinoSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
-        super(services, config, "rhino", "Носорожий переполох", context);
+        super(services, config, "rhino", context);
         mineKey = new NamespacedKey(services.plugin(), "party_rhino_mine");
         duration = Math.clamp(config.rhinoSeconds.get(), 30, 600);
         initialRhinos = Math.clamp(config.rhinoCount.get(), 1, 6);
@@ -118,12 +124,8 @@ final class RhinoSession extends PartySurvivalSession {
     }
 
     @Override
-    String instructions() {
-        return "Носорожий переполох: разоритель светится перед рывком — уклоняйся! Арена сужается,"
-                + " дыр становится больше. Подбери мину и брось ПКМ. Она взорвётся через "
-                + fuseSeconds
-                + " секунд от появления, даже в руках. Урон — только отбрасывание; падение означает"
-                + " вылет.";
+    Component instructions() {
+        return I18n.tr("party.rounds.rhino.instructions", fuseSeconds);
     }
 
     @Override
@@ -145,7 +147,6 @@ final class RhinoSession extends PartySurvivalSession {
         entity.setSilent(true);
         entity.setPersistent(true);
         entity.setRemoveWhenFarAway(false);
-        entity.customName(text("Носорог"));
         rhinos.add(new Rhino(entity, elapsed() + 20L + index * 20L));
     }
     private List<Location> otherRhinoLocations(Rhino excluded) {
@@ -173,18 +174,54 @@ final class RhinoSession extends PartySurvivalSession {
         arena.resize(nextRadius, stage);
         if (radius != nextRadius) {
             radius = nextRadius;
-            say("Арена сужается! Радиус: " + radius);
+            say(I18n.tr("party.rounds.rhino.shrinking", radius));
         }
         int desired = Math.min(6, initialRhinos + stage / 2);
         while (rhinos.size() < desired) addRhino(rhinos.size());
         List<Player> players = alivePlayers();
-        for (Rhino rhino : rhinos) tickRhino(rhino, players, elapsed, stage);
+        for (Rhino rhino : rhinos) {
+            tickRhino(rhino, players, elapsed, stage);
+            if (tick % 5 == 0)
+                labels(rhino.labels, rhino.entity,
+                        text(I18n.tr("party.rounds.rhino.entity")), true);
+        }
         if (elapsed >= nextMine) {
             for (int i = 0; i < RhinoHazards.mineBatch(stage) && mines.size() < 30; i++)
                 spawnMine();
             nextMine = elapsed + RhinoHazards.mineInterval(mineSpawnSeconds, stage);
         }
         for (Mine mine : List.copyOf(mines.values())) tickMine(mine);
+    }
+
+    private void labels(Map<UUID, TextDisplay> labels, Entity owner, Component message, boolean pointed) {
+        Set<UUID> viewers = new HashSet<>();
+        for (Player viewer : services.session().audiencePlayers()) {
+            if (!viewer.getWorld().equals(world)) continue;
+            viewers.add(viewer.getUniqueId());
+            TextDisplay label = labels.computeIfAbsent(viewer.getUniqueId(), id -> {
+                TextDisplay created = world.spawn(owner.getLocation(), TextDisplay.class, display -> {
+                    display.setVisibleByDefault(false);
+                    display.setPersistent(false);
+                    display.setBillboard(Display.Billboard.CENTER);
+                    display.setShadowed(true);
+                });
+                viewer.showEntity(services.plugin(), created);
+                return created;
+            });
+            label.teleport(owner.getLocation().add(0, owner.getHeight() + .3, 0));
+            label.text(pointed && !owner.equals(viewer.getTargetEntity(64))
+                    ? Component.empty() : I18n.render(message, viewer));
+        }
+        labels.entrySet().removeIf(entry -> {
+            if (viewers.contains(entry.getKey())) return false;
+            entry.getValue().remove();
+            return true;
+        });
+    }
+
+    private static void clearLabels(Map<UUID, TextDisplay> labels) {
+        labels.values().forEach(Entity::remove);
+        labels.clear();
     }
 
     private void tickRhino(Rhino rhino, List<Player> players, long elapsed, int stage) {
@@ -256,12 +293,8 @@ final class RhinoSession extends PartySurvivalSession {
                 PotionMeta.class,
                 meta -> {
                     meta.setColor(Color.ORANGE);
-                    meta.displayName(Component.text("Мина • ПКМ — бросить", NamedTextColor.RED));
-                    meta.lore(
-                            List.of(
-                                    Component.text(
-                                            "Таймер идёт от появления, подбор не продлевает его!",
-                                            NamedTextColor.GRAY)));
+                    meta.displayName(I18n.tr("party.rounds.rhino.mine.name").color(NamedTextColor.RED));
+                    meta.lore(List.of(I18n.tr("party.rounds.rhino.mine.lore").color(NamedTextColor.GRAY)));
                     meta.getPersistentDataContainer()
                             .set(mineKey, PersistentDataType.LONG, mine.state.id);
                 });
@@ -295,11 +328,12 @@ final class RhinoSession extends PartySurvivalSession {
         mine.ground.setCanMobPickup(false);
         mine.ground.setInvulnerable(true);
         mine.ground.setGlowing(true);
-        mine.ground.setCustomNameVisible(true);
+        mine.ground.setCustomNameVisible(false);
         groundIds.put(mine.ground.getUniqueId(), mine.state.id);
     }
 
     private void clearGround(Mine mine) {
+        clearLabels(mine.labels);
         if (mine.ground == null) return;
         groundIds.remove(mine.ground.getUniqueId());
         mine.ground.remove();
@@ -324,29 +358,21 @@ final class RhinoSession extends PartySurvivalSession {
                 mine.location = carrier.getLocation().add(0, .5, 0);
                 if (tick % 5 == 0)
                     carrier.sendActionBar(
-                            Component.text(
-                                    "Мина: "
-                                            + String.format(
-                                                    java.util.Locale.ROOT,
-                                                    "%.1f",
-                                                    Math.max(0, mine.state.expiresAt - tick) / 20.0)
-                                            + " с • ПКМ — бросить!",
-                                    NamedTextColor.RED));
+                            I18n.tr("party.rounds.rhino.mine.carried",
+                                    String.format(java.util.Locale.ROOT, "%.1f",
+                                            Math.max(0, mine.state.expiresAt - tick) / 20.0))
+                                    .color(NamedTextColor.RED));
             }
         } else if (mine.thrown != null && mine.thrown.isValid())
             mine.location = mine.thrown.getLocation();
         else if (mine.ground != null && mine.ground.isValid())
             mine.location = mine.ground.getLocation();
         if (mine.ground != null && tick % 5 == 0)
-            mine.ground.customName(
-                    Component.text(
-                            "Мина: "
-                                    + String.format(
-                                            java.util.Locale.ROOT,
-                                            "%.1f",
-                                            Math.max(0, mine.state.expiresAt - tick) / 20.0)
-                                    + " с",
-                            NamedTextColor.RED));
+            labels(mine.labels, mine.ground,
+                    I18n.tr("party.rounds.rhino.mine.timer",
+                            String.format(java.util.Locale.ROOT, "%.1f",
+                                    Math.max(0, mine.state.expiresAt - tick) / 20.0))
+                            .color(NamedTextColor.RED), false);
         if (!mine.state.expire(tick)) return;
         clearGround(mine);
         clearCarried(mine);
@@ -383,7 +409,7 @@ final class RhinoSession extends PartySurvivalSession {
         Mine mine = mines.get(id);
         if (mine == null || !mine.state.pickup(player.getUniqueId(), tick)) return;
         clearGround(mine);
-        player.getInventory().setItem(0, item(mine));
+        player.getInventory().setItem(0, I18n.item(item(mine), player));
         player.getInventory().setHeldItemSlot(0);
     }
 
@@ -448,8 +474,8 @@ final class RhinoSession extends PartySurvivalSession {
     }
 
     @Override
-    String status() {
-        return "Радиус " + radius + " • носороги " + rhinos.size() + " • мины " + mines.size();
+    Component status() {
+        return I18n.tr("party.rounds.rhino.status", radius, rhinos.size(), mines.size());
     }
 
     @Override
@@ -461,7 +487,10 @@ final class RhinoSession extends PartySurvivalSession {
         }
         mines.clear();
         groundIds.clear();
-        rhinos.forEach(r -> r.entity.remove());
+        rhinos.forEach(r -> {
+            clearLabels(r.labels);
+            r.entity.remove();
+        });
         rhinos.clear();
     }
 }

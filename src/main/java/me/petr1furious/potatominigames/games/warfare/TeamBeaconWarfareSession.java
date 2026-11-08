@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.warfare;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -100,7 +102,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
         List<TeamColor> participatingTeams = services.teams().activeTeams();
         // A test game may be one team alone.
         if (participatingTeams.size() < (services.isTest() ? 1 : 2)) {
-            throw new CommandFailure("Team beacon mode needs players on at least two teams.");
+            throw new CommandFailure(I18n.tr("warfare.beacon.teams_required"));
         }
         // Beacon locations need the arena world to exist first.
         setupArena();
@@ -109,7 +111,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
             for (TeamColor team : participatingTeams) {
                 Location beaconLocation = map != null ? map.beacon(team, gameWorld()) : config.getBeacon(team);
                 if (beaconLocation == null || beaconLocation.getWorld() == null) {
-                    throw new CommandFailure(team.displayName() + " team has no configured beacon.");
+                    throw new CommandFailure(I18n.tr("warfare.beacon.team_missing", team.displayNameComponent()));
                 }
                 placeBeacon(team, beaconLocation);
             }
@@ -150,8 +152,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
         BeaconState beacon = team == null ? null : beacons.get(team);
         if (beacon == null || beacon.destroyed) {
             services.playerState().makeSpectator(player, 0);
-            player.sendMessage(Component.text("Your team's beacon is gone. Spectating.",
-                    NamedTextColor.YELLOW));
+            player.sendMessage(I18n.tr("warfare.beacon.spectating").color(NamedTextColor.YELLOW));
         } else {
             services.sidebar().setNameColor(player, team);
             spawnPlayerAtTeamBeacon(player, team);
@@ -349,10 +350,8 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
 
         if (beacon.health > 0) {
             beacon.location.getWorld().playSound(beacon.location, Sound.BLOCK_ANVIL_LAND, 200.0f, 0.8f);
-            breaker.sendActionBar(Component
-                    .text(beacon.team.displayName() + " beacon: " + beacon.health + "/"
-                            + config.beaconMaxHealth.get())
-                    .color(beacon.team.textColor()));
+            breaker.sendActionBar(I18n.tr("warfare.beacon.health", beacon.team.displayNameComponent(),
+                    beacon.health, config.beaconMaxHealth.get()).color(beacon.team.textColor()));
             updateHud();
             return;
         }
@@ -361,8 +360,8 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
         removeGlow(beacon);
         beacon.location.getBlock().setType(Material.AIR, false);
         beacon.location.getWorld().playSound(beacon.location, Sound.BLOCK_BEACON_DEACTIVATE, 200.0f, 0.6f);
-        services.messages().broadcast(Component.text(beacon.team.displayName(), beacon.team.textColor())
-                .append(Component.text(" beacon destroyed", NamedTextColor.RED)));
+        services.messages().broadcast(I18n.tr("warfare.beacon.destroyed", beacon.team.displayNameComponent())
+                .color(NamedTextColor.RED));
         cancelPendingRespawnsForTeam(beacon.team);
         updateBossBar(beacon);
         updateArenaBorder();
@@ -413,7 +412,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
         block.setType(team.woolMaterial(), false);
         int maxHealth = config.beaconMaxHealth.get();
         BossBar bossBar = services.bossBars().create(
-                Component.text(team.displayName() + " Beacon " + maxHealth + "/" + maxHealth, team.textColor()),
+                I18n.tr("warfare.beacon.bar", team.displayNameComponent(), maxHealth, maxHealth).color(team.textColor()),
                 team.bossBarColor(), BossBar.Overlay.PROGRESS);
         BeaconState beacon = new BeaconState(team, block.getLocation(), replacedState, bossBar, maxHealth);
         beacons.put(team, beacon);
@@ -471,8 +470,8 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
         int maxHealth = config.beaconMaxHealth.get();
         float progress = Math.max(0.0f, Math.min(1.0f, beacon.health / (float) maxHealth));
         beacon.bossBar.progress(progress);
-        beacon.bossBar.name(Component.text(
-                beacon.team.displayName() + " Beacon " + beacon.health + "/" + maxHealth, beacon.team.textColor()));
+        beacon.bossBar.name(I18n.tr("warfare.beacon.bar", beacon.team.displayNameComponent(), beacon.health, maxHealth)
+                .color(beacon.team.textColor()));
     }
 
     private void cancelPendingRespawn(UUID playerId) {
@@ -615,7 +614,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
                             config.arenaBorderInitialSize.get() - config.arenaBorderFinalSize.get()) / seconds;
             services.arena().applyBorder(world, center, initialSize, finalSize, shrinkSeconds(initialSize, finalSize));
             borderActive = true;
-            services.messages().broadcast(Component.text("The arena border is closing in", NamedTextColor.RED));
+            services.messages().broadcast(I18n.tr("warfare.border_closing").color(NamedTextColor.RED));
             return;
         }
 
@@ -728,8 +727,9 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
         if (activeTeams.size() == 1 && !services.isTest()) {
             ended = true;
             TeamColor winner = activeTeams.getFirst();
-            summary.add(Component.text().append(Component.text("Winner: ", NamedTextColor.GREEN))
-                    .append(Component.text(winner.displayName() + " team", winner.textColor())).build());
+            summary.add(I18n.tr("common.summary.winner",
+                    I18n.tr("warfare.team.label", winner.displayNameComponent()).color(winner.textColor()))
+                    .color(NamedTextColor.GREEN));
             for (Player player : services.participants().onlinePlayers()) {
                 if (teamOf(player) == winner) {
                     services.award("war", player.getUniqueId(), 1);
@@ -738,7 +738,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
             services.session().endGame(EndReason.FINISHED);
         } else if (activeTeams.isEmpty()) {
             ended = true;
-            summary.add(Component.text("No teams left", NamedTextColor.YELLOW));
+            summary.add(I18n.tr("warfare.no_teams_left").color(NamedTextColor.YELLOW));
             services.session().endGame(EndReason.FINISHED);
         }
     }
@@ -753,7 +753,7 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
 
     @Override
     protected Component hudTitle(Player viewer) {
-        return Component.text(shouldHidePerPlayerDistances() ? "Teams" : "Distances", NamedTextColor.GOLD);
+        return I18n.tr(shouldHidePerPlayerDistances() ? "warfare.hud.teams" : "warfare.hud.distances").color(NamedTextColor.GOLD);
     }
 
     @Override
@@ -782,14 +782,14 @@ final class TeamBeaconWarfareSession extends WarfareSessionBase {
             Component status = !state.destroyed ? Component.text(" ✔", NamedTextColor.GRAY)
                     : alive > 0 ? Component.text(" " + alive, NamedTextColor.GRAY)
                             : Component.text(" ✘", NamedTextColor.GRAY);
-            lines.add(Component.text(state.team.displayName(), state.team.textColor()).append(status));
+            lines.add(state.team.displayNameComponent().append(status));
         }
 
         PendingRespawn pendingRespawn = pendingRespawns.get(viewer.getUniqueId());
         if (pendingRespawn != null) {
             long millisLeft = Math.max(0L, pendingRespawn.respawnAtMillis - System.currentTimeMillis());
             int secondsLeft = (int) Math.ceil(millisLeft / 1000.0);
-            lines.add(Component.text("Respawn: " + secondsLeft + "s", NamedTextColor.GREEN));
+            lines.add(I18n.tr("warfare.hud.respawn", secondsLeft).color(NamedTextColor.GREEN));
         }
         return lines;
     }

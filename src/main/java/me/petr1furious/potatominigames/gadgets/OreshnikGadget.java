@@ -1,9 +1,10 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
 import me.petr1furious.potatominigames.core.world.Locations;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.GameMode;
@@ -57,7 +58,7 @@ public class OreshnikGadget extends AbstractGadget {
         setCooldown(player);
         var targetBlock = player.getTargetBlockExact(256);
         if (targetBlock == null) {
-            player.sendActionBar(Component.text("Too far").color(NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("gadgets.oreshnik.too_far").color(NamedTextColor.RED));
             return;
         }
         spawnArrowWaves(targetBlock.getLocation(), wavesCount.get(), arrowsCount.get(), player);
@@ -132,7 +133,7 @@ public class OreshnikGadget extends AbstractGadget {
         GadgetItems.addTag(item, TAG);
         var meta = item.getItemMeta();
         meta.displayName(
-                Component.text("ОРЕШНИК").color(NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
+                I18n.tr("gadgets.oreshnik.name").color(NamedTextColor.DARK_PURPLE).decoration(TextDecoration.ITALIC, false));
         meta.setEnchantmentGlintOverride(true);
         item.setItemMeta(meta);
         item.setAmount(count);

@@ -1,10 +1,13 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+
 import org.bukkit.Material;
 
 import java.util.*;
 
-record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
+record BuildMemoryPattern(Component title, Map<Cell, Material> blocks) {
     record Cell(int x, int y, int z) {}
 
     BuildMemoryPattern {
@@ -12,7 +15,7 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
     }
 
     BuildMemoryPattern(Map<Cell, Material> blocks) {
-        this("Постройка", blocks);
+        this(I18n.tr("party.rounds.build_memory.model.generic"), blocks);
     }
 
     static BuildMemoryPattern generate(int stage, Random random) {
@@ -20,10 +23,10 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
         Material wood = random.nextBoolean() ? Material.OAK_PLANKS : Material.SPRUCE_PLANKS;
         Material stone = random.nextBoolean() ? Material.STONE_BRICKS : Material.BRICKS;
         var b = new LinkedHashMap<Cell, Material>();
-        String title;
+        Component title;
         switch (level) {
             case 3 -> {
-                title = "Дерево";
+                title = I18n.tr("party.rounds.build_memory.model.tree");
                 for (int y = 0; y < 3; y++) put(b, wood, 2, y, 2);
                 put(b, wood, 1, 0, 2);
                 for (var c :
@@ -35,14 +38,14 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
                                 new Cell(2, 3, 2))) b.put(c, Material.GREEN_WOOL);
             }
             case 4 -> {
-                title = "Арка";
+                title = I18n.tr("party.rounds.build_memory.model.arch");
                 for (int x : new int[] {1, 3}) for (int y = 0; y < 3; y++) put(b, stone, x, y, 2);
                 for (int x = 1; x <= 3; x++) put(b, wood, x, 3, 2);
                 put(b, stone, 0, 0, 2);
                 put(b, stone, 4, 0, 2);
             }
             case 5 -> {
-                title = "Колодец";
+                title = I18n.tr("party.rounds.build_memory.model.well");
                 for (int x = 1; x <= 3; x++)
                     for (int z = 1; z <= 3; z++) if (x != 2 || z != 2) put(b, stone, x, 0, z);
                 put(b, wood, 1, 1, 2);
@@ -50,7 +53,7 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
                 for (int x = 1; x <= 3; x++) put(b, wood, x, 2, 2);
             }
             case 6 -> {
-                title = "Мостик";
+                title = I18n.tr("party.rounds.build_memory.model.bridge");
                 for (int x : new int[] {0, 4})
                     for (int z : new int[] {1, 3}) {
                         put(b, stone, x, 0, z);
@@ -61,14 +64,14 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
                 put(b, stone, 4, 2, 1);
             }
             case 7 -> {
-                title = "Колоннада";
+                title = I18n.tr("party.rounds.build_memory.model.colonnade");
                 for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) put(b, stone, x, 0, z);
                 for (int x : new int[] {1, 3})
                     for (int z : new int[] {1, 3})
                         for (int y = 1; y <= 2; y++) put(b, Material.QUARTZ_BLOCK, x, y, z);
             }
             case 8 -> {
-                title = "Камин";
+                title = I18n.tr("party.rounds.build_memory.model.fireplace");
                 for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) put(b, stone, x, 0, z);
                 for (int x = 1; x <= 3; x++) for (int y = 1; y <= 2; y++) put(b, stone, x, y, 3);
                 put(b, Material.POLISHED_ANDESITE, 1, 1, 2);
@@ -77,7 +80,7 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
                 put(b, stone, 2, 3, 3);
             }
             case 9 -> {
-                title = "Ворота";
+                title = I18n.tr("party.rounds.build_memory.model.gate");
                 for (int x : new int[] {0, 4}) {
                     for (int y = 0; y < 4; y++) put(b, stone, x, y, 2);
                     for (int z : new int[] {1, 3})
@@ -87,7 +90,7 @@ record BuildMemoryPattern(String title, Map<Cell, Material> blocks) {
                 for (int x = 1; x <= 3; x++) put(b, wood, x, 3, 2);
             }
             default -> {
-                title = "Домик";
+                title = I18n.tr("party.rounds.build_memory.model.house");
                 for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) put(b, stone, x, 0, z);
                 for (int x = 1; x <= 3; x++) put(b, wood, x, 1, 3);
                 for (int x : new int[] {1, 3}) for (int z = 1; z <= 2; z++) put(b, wood, x, 1, z);

@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.chase;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import org.bukkit.Material;
 
 import net.kyori.adventure.text.Component;
@@ -27,7 +29,12 @@ public final class ChaseGame implements Minigame {
 
     @Override
     public Component displayName() {
-        return Component.text("Chase", NamedTextColor.AQUA);
+        return I18n.tr("chase.name").color(NamedTextColor.AQUA);
+    }
+
+    @Override
+    public Component modeTitle(String mode) {
+        return mode.equals("default") ? I18n.tr("chase.mode.default") : Component.text(mode);
     }
 
     @Override
@@ -42,7 +49,7 @@ public final class ChaseGame implements Minigame {
 
     @Override
     public Component description(String mode) {
-        return Component.text("Hunters track runners by compass");
+        return I18n.tr("chase.description");
     }
 
     @Override

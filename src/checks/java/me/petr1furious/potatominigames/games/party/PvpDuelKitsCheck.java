@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import java.util.HashMap;
+import java.util.Locale;
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -9,6 +11,7 @@ import java.util.UUID;
 /** Forced opening kits must survive shuffled player order without changing standard BO3 rules. */
 final class PvpDuelKitsCheck {
     static void run() {
+        localization();
         UUID a = new UUID(0, 1), b = new UUID(0, 2), other = new UUID(0, 3);
         PvpClass[] all = PvpClass.values();
         Random fixed = new Random(0) {
@@ -50,6 +53,21 @@ final class PvpDuelKitsCheck {
         match.winRound(a); check(!match.isComplete(), "The initial kits do not turn BO3 into one-life FFA");
         match.winRound(b); check(!match.isComplete() && match.roundsWon() == 2, "A tied BO3 still needs its deciding round");
         match.winRound(a); check(match.isComplete() && match.winner().equals(a), "Standard BO3 still ends at two wins");
+    }
+    private static void localization() {
+        for (int n = -1; n <= PvpDuelKits.classCount(); n++) {
+            if (n == 0) continue;
+            var label = PvpDuelKits.label(n);
+            check(!I18n.plain(label, Locale.ENGLISH).equals(I18n.plain(label, Locale.forLanguageTag("ru"))), "Class labels render for each recipient");
+        }
+        String name = "<red>literal player</red>";
+        var opening = I18n.tr("party.duels.duel.opening", name, PvpClass.LANCER.title, "B", PvpClass.SHADOW.title);
+        for (var locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+            String text = I18n.plain(opening, locale);
+            check(text.contains(name) && !text.contains("TranslatableComponent"), "Opening preserves literal player names and renders nested class labels");
+            for (int seconds : new int[] {1, 2})
+                check(I18n.plain(I18n.tr("party.duels.bomb.throw", seconds), locale).contains(Integer.toString(seconds)), "PvP and Miners TNT use their respective cooldowns");
+        }
     }
     private static void expectFailure(Runnable action) {
         try { action.run(); } catch (IllegalArgumentException expected) { return; }

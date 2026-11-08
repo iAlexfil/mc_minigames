@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.core.config;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,6 +55,21 @@ public final class ConfigEditor {
                 case Boolean ignored -> "boolean";
                 case null, default -> "text";
             };
+        }
+
+        public Component typeComponent() {
+            return declared != null ? declared.typeComponent()
+                    : template != null ? template.typeComponent() : Property.typeComponent(type());
+        }
+
+        public Component valueComponent() {
+            return (declared != null ? declared.get() == null : raw == null)
+                    ? I18n.tr("core.config.unset") : Component.text(value());
+        }
+
+        public Component defaultComponent() {
+            return declared != null && declared.defaultValue() == null
+                    ? I18n.tr("core.config.unset") : Component.text(defaultValue() != null ? defaultValue() : "");
         }
 
         /** Rendered code default; null for undeclared keys. */
@@ -143,7 +160,7 @@ public final class ConfigEditor {
 
     public void reset(Node node) {
         if (!node.isDeclared()) {
-            throw new IllegalArgumentException("not a declared setting, so it has no default");
+            throw I18n.exception("core.config.no_default");
         }
         registry.resetDeclared(node.fileName(), node.key());
     }
@@ -152,7 +169,7 @@ public final class ConfigEditor {
     public String listAdd(Node node, String entry) {
         List<String> entries = node.entries();
         if (find(entries, entry) != null) {
-            throw new IllegalArgumentException(entry + " is already listed");
+            throw I18n.exception("core.config.already_listed", entry);
         }
         entries.add(entry);
         registry.setRaw(node.fileName(), node.key(), entries);
@@ -164,8 +181,8 @@ public final class ConfigEditor {
         List<String> entries = node.entries();
         String found = find(entries, entry);
         if (found == null) {
-            throw new IllegalArgumentException(entry + " is not listed"
-                    + (entries.isEmpty() ? "" : " (entries: " + String.join(", ", entries) + ")"));
+            throw entries.isEmpty() ? I18n.exception("core.config.not_listed", entry)
+                    : I18n.exception("core.config.not_listed_entries", entry, String.join(", ", entries));
         }
         entries.remove(found);
         registry.setRaw(node.fileName(), node.key(), entries);
@@ -284,8 +301,9 @@ public final class ConfigEditor {
                 case null, default -> raw;
             };
         } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("expected " + (current instanceof Integer || current instanceof Long
-                    ? "int" : current instanceof Number ? "number" : "true or false"));
+            throw I18n.exception("core.config.expected", Property.typeComponent(
+                    current instanceof Integer || current instanceof Long ? "int"
+                            : current instanceof Number ? "number" : "boolean"));
         }
     }
 }

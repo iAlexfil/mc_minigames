@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.config;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -88,7 +89,7 @@ public interface PropertyCodec<T> {
             if (normalized.equals("false") || normalized.equals("no") || normalized.equals("off")) {
                 return false;
             }
-            throw new IllegalArgumentException("Expected true/false: " + raw);
+            throw I18n.exception("core.config.expected_boolean", raw);
         }
 
         public String render(Boolean value) {
@@ -127,7 +128,7 @@ public interface PropertyCodec<T> {
         public Material parse(String raw) {
             Material material = Material.matchMaterial(raw);
             if (material == null) {
-                throw new IllegalArgumentException("Unknown material: " + raw);
+                throw I18n.exception("core.config.unknown_material", raw);
             }
             return material;
         }
@@ -164,7 +165,7 @@ public interface PropertyCodec<T> {
         public Vector parse(String raw) {
             String[] parts = raw.trim().split("\\s+");
             if (parts.length != 3) {
-                throw new IllegalArgumentException("Expected 'x y z': " + raw);
+                throw I18n.exception("core.config.expected_vector", raw);
             }
             return new Vector(Double.parseDouble(parts[0]), Double.parseDouble(parts[1]),
                     Double.parseDouble(parts[2]));

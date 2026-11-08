@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.core.queue;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.JoinConfiguration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -77,7 +79,7 @@ public final class QueueMenu implements Listener {
         for (Minigame game : games) {
             entries.add(new Entry(viewer -> gameIcon(game, viewer), clicker -> pickGame(clicker, game)));
         }
-        show(player, Component.text("Play a game"), entries, null, null);
+        show(player, I18n.tr("core.menu.play"), entries, null, null);
     }
 
     /** The mode menu of one game. */
@@ -169,8 +171,8 @@ public final class QueueMenu implements Listener {
         }
         Entry any = new Entry(viewer -> anyChoiceIcon(queue, ballot, viewer),
                 clicker -> vote(clicker, queue, ballot, null, step));
-        Holder holder = show(player, Component.text("Vote for the " + ballot.title() + ": ")
-                .append(plain(queue.displayName())), entries, backFrom(queue, step), any);
+        Holder holder = show(player, I18n.tr("core.menu.vote_title", ballot.titleComponent(),
+                plain(queue.displayName())), entries, backFrom(queue, step), any);
         holder.queue = queue;
     }
 
@@ -197,7 +199,7 @@ public final class QueueMenu implements Listener {
             requireQueued(clicker, queue);
             queues.clearTeamPick(clicker);
         });
-        Holder holder = show(player, Component.text("Pick a team: ").append(plain(queue.displayName())),
+        Holder holder = show(player, I18n.tr("core.menu.team_title", plain(queue.displayName())),
                 entries, back, auto);
         holder.queue = queue;
     }
@@ -211,7 +213,7 @@ public final class QueueMenu implements Listener {
     private static void requireQueued(Player player, QueueService.Queue queue) throws CommandFailure {
         if (!queue.contains(player.getUniqueId())) {
             player.closeInventory();
-            throw new CommandFailure("You are no longer in that queue.");
+            throw new CommandFailure(I18n.tr("core.queue.no_longer_queued"));
         }
     }
 
@@ -231,8 +233,8 @@ public final class QueueMenu implements Listener {
         int rows = Math.min(6, contentRows + 2);
         Holder holder = new Holder();
         int pages = Math.max(1, (entries.size() + 27) / 28);
-        holder.inventory = Bukkit.createInventory(holder, rows * 9, pages > 1
-                ? title.append(Component.text(" [" + (page + 1) + "/" + pages + "]")) : title);
+        holder.inventory = Bukkit.createInventory(holder, rows * 9, I18n.render(pages > 1
+                ? I18n.tr("core.menu.page_title", title, page + 1, pages) : title, player));
         for (int i = 0; i < count; i++) {
             int row = 1 + i / perRow;
             int inRow = Math.min(perRow, count - (row - 1) * perRow);
@@ -254,13 +256,13 @@ public final class QueueMenu implements Listener {
             holder.entries.put(bottom + (back != null ? 5 : 4), extra);
         }
         if (page > 0) {
-            holder.entries.put(bottom, new Entry(viewer -> navigationIcon("Previous page"), clicker -> {
+            holder.entries.put(bottom, new Entry(viewer -> navigationIcon(I18n.tr("core.menu.previous_page")), clicker -> {
                 Holder previous = show(clicker, title, entries, back, extra, page - 1);
                 previous.queue = holder.queue;
             }));
         }
         if (page + 1 < pages) {
-            holder.entries.put(bottom + 8, new Entry(viewer -> navigationIcon("Next page"), clicker -> {
+            holder.entries.put(bottom + 8, new Entry(viewer -> navigationIcon(I18n.tr("core.menu.next_page")), clicker -> {
                 Holder next = show(clicker, title, entries, back, extra, page + 1);
                 next.queue = holder.queue;
             }));
@@ -271,7 +273,7 @@ public final class QueueMenu implements Listener {
     }
 
     private void render(Holder holder, Player viewer) {
-        holder.entries.forEach((slot, entry) -> holder.inventory.setItem(slot, entry.icon().apply(viewer)));
+        holder.entries.forEach((slot, entry) -> holder.inventory.setItem(slot, I18n.item(entry.icon().apply(viewer), viewer)));
     }
 
     private ItemStack gameIcon(Minigame game, Player viewer) {
@@ -285,17 +287,14 @@ public final class QueueMenu implements Listener {
             addDescription(lore, game.description(game.defaultMode()));
             lore.add(Component.empty());
             if (running.isPresent()) {
-                lore.add(plain(Component.text("Being played", NamedTextColor.YELLOW)));
-                lore.add(plain(Component.text("» Click to spectate", NamedTextColor.AQUA)));
+                lore.add(plain(I18n.tr("core.menu.being_played").color(NamedTextColor.YELLOW)));
+                lore.add(plain(I18n.tr("core.menu.click_spectate").color(NamedTextColor.AQUA)));
             } else {
                 if (game.showModes()) {
                     for (QueueService.Queue queue : gameQueues) {
-                        lore.add(plain(Component.text()
-                                .append(Component.text(" • ", NamedTextColor.DARK_GRAY))
-                                .append(Component.text(queue.mode(), NamedTextColor.GRAY))
-                                .append(Component.text(" " + queue.countText(), NamedTextColor.WHITE))
-                                .append(Component.text(leadingSummary(queue), NamedTextColor.DARK_GRAY))
-                                .build()));
+                        lore.add(plain(I18n.tr("core.menu.mode_status", queue.game().modeTitle(queue.mode()).colorIfAbsent(NamedTextColor.GRAY),
+                                Component.text(queue.countText(), NamedTextColor.WHITE),
+                                leadingSummary(queue).color(NamedTextColor.DARK_GRAY))));
                     }
                 } else if (!gameQueues.isEmpty()) {
                     queueStatus(lore, gameQueues.getFirst());
@@ -305,9 +304,8 @@ public final class QueueMenu implements Listener {
                 if (mine && queued.isPresent() && hasPicks(viewer, queued.get())) {
                     pickStatus(lore, queued.get(), viewer);
                 } else {
-                    lore.add(plain(mine ? Component.text("You are queued", NamedTextColor.GREEN)
-                            : Component.text(game.showModes() ? "» Click to pick a mode" : "» Click to join",
-                                    NamedTextColor.AQUA)));
+                    lore.add(plain(mine ? I18n.tr("core.menu.you_queued").color(NamedTextColor.GREEN)
+                            : I18n.tr(game.showModes() ? "core.menu.click_mode" : "core.menu.click_join").color(NamedTextColor.AQUA)));
                 }
             }
             meta.lore(lore);
@@ -326,19 +324,16 @@ public final class QueueMenu implements Listener {
             addDescription(lore, queue.game().description(queue.mode()));
             lore.add(Component.empty());
             if (running.isPresent()) {
-                lore.add(plain(Component.text()
-                        .append(running.get().displayName())
-                        .append(Component.text(" is being played", NamedTextColor.YELLOW)).build())
-                        .color(NamedTextColor.YELLOW));
-                lore.add(plain(Component.text("» Click to spectate", NamedTextColor.AQUA)));
+                lore.add(plain(I18n.tr("core.menu.session_played", running.get().displayName()).color(NamedTextColor.YELLOW)));
+                lore.add(plain(I18n.tr("core.menu.click_spectate").color(NamedTextColor.AQUA)));
             } else {
                 queueStatus(lore, queue);
                 lore.add(Component.empty());
                 if (hasPicks(viewer, queue)) {
                     pickStatus(lore, queue, viewer);
                 } else {
-                    lore.add(plain(mine ? Component.text("You are in this queue", NamedTextColor.GREEN)
-                            : Component.text("» Click to join", NamedTextColor.AQUA)));
+                    lore.add(plain(mine ? I18n.tr("core.menu.in_this_queue").color(NamedTextColor.GREEN)
+                            : I18n.tr("core.menu.click_join").color(NamedTextColor.AQUA)));
                 }
             }
             meta.lore(lore);
@@ -348,34 +343,29 @@ public final class QueueMenu implements Listener {
     }
 
     /** " (hard, mibc)": what each ballot would pick now; "" without ballots. */
-    private static String leadingSummary(QueueService.Queue queue) {
-        List<String> leading = queue.ballots().stream().map(queue::leadingText).toList();
-        return leading.isEmpty() ? "" : " (" + String.join(", ", leading) + ")";
+    private static Component leadingSummary(QueueService.Queue queue) {
+        List<Component> leading = queue.ballots().stream().map(queue::leadingComponent).toList();
+        return leading.isEmpty() ? Component.empty()
+                : I18n.tr("core.menu.leading_summary", Component.join(JoinConfiguration.separator(Component.text(", ")), leading));
     }
 
     /** Their votes and team, and where a click takes them. */
     private static void pickStatus(List<Component> lore, QueueService.Queue queue, Player viewer) {
-        List<String> what = new ArrayList<>();
+        List<Component> what = new ArrayList<>();
         for (Ballot ballot : queue.ballots()) {
             String vote = queue.vote(ballot.key(), viewer.getUniqueId());
-            lore.add(plain(Component.text()
-                    .append(Component.text("Your " + ballot.title() + ": ", NamedTextColor.GRAY))
-                    .append(Component.text(vote != null ? vote : Ballot.ANY, NamedTextColor.WHITE))
-                    .build()));
-            what.add(ballot.title());
+            lore.add(plain(I18n.tr("core.menu.your_ballot", ballot.titleComponent(),
+                    ballot.choiceComponent(vote).color(NamedTextColor.WHITE)).color(NamedTextColor.GRAY)));
+            what.add(ballot.titleComponent());
         }
         if (!queue.teamColors().isEmpty()) {
             TeamColor pick = queue.teamPick(viewer.getUniqueId());
-            lore.add(plain(Component.text()
-                    .append(Component.text("Your team: ", NamedTextColor.GRAY))
-                    .append(pick != null ? pick.displayNameComponent()
-                            : Component.text("auto", NamedTextColor.WHITE))
-                    .build()));
-            what.add("team");
+            lore.add(plain(I18n.tr("core.menu.your_team", pick != null ? pick.displayNameComponent()
+                    : I18n.tr("core.menu.auto").color(NamedTextColor.WHITE)).color(NamedTextColor.GRAY)));
+            what.add(I18n.tr("core.menu.team"));
         }
-        String joined = what.size() <= 1 ? String.join("", what)
-                : String.join(", ", what.subList(0, what.size() - 1)) + " and " + what.getLast();
-        lore.add(plain(Component.text("» Click to pick " + joined, NamedTextColor.AQUA)));
+        lore.add(plain(I18n.tr("core.menu.click_picks", Component.join(
+                JoinConfiguration.separator(Component.text(", ")), what)).color(NamedTextColor.AQUA)));
     }
 
     private ItemStack choiceIcon(QueueService.Queue queue, Ballot ballot, String choice, Material material,
@@ -384,19 +374,19 @@ public final class QueueMenu implements Listener {
         boolean mine = choice.equals(queue.vote(ballot.key(), viewer.getUniqueId()));
         List<Player> voters = queue.votedFor(ballot.key(), choice);
         item.editMeta(meta -> {
-            meta.displayName(plain(Component.text(choice, NamedTextColor.WHITE)).decorate(TextDecoration.BOLD));
+            meta.displayName(plain(ballot.choiceComponent(choice).color(NamedTextColor.WHITE)).decorate(TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
             if (choice.equals(queue.leading(ballot))) {
-                lore.add(plain(Component.text("Leading", NamedTextColor.GOLD)));
+                lore.add(plain(I18n.tr("core.menu.leading").color(NamedTextColor.GOLD)));
             }
             String fallback = ballot.fallback() == null ? null : ballot.fallback().get();
             if (choice.equals(fallback)) {
-                lore.add(plain(Component.text("Default, wins ties", NamedTextColor.DARK_GRAY)));
+                lore.add(plain(I18n.tr("core.menu.default_ties").color(NamedTextColor.DARK_GRAY)));
             }
             if (voters.isEmpty()) {
-                lore.add(plain(Component.text("No votes yet", NamedTextColor.DARK_GRAY)));
+                lore.add(plain(I18n.tr("core.menu.no_votes").color(NamedTextColor.DARK_GRAY)));
             } else {
-                lore.add(plain(Component.text("Votes (" + voters.size() + "):", NamedTextColor.GRAY)));
+                lore.add(plain(I18n.tr("core.menu.votes", voters.size()).color(NamedTextColor.GRAY)));
                 for (Player voter : voters) {
                     lore.add(plain(Component.text()
                             .append(Component.text(" • ", NamedTextColor.DARK_GRAY))
@@ -405,8 +395,8 @@ public final class QueueMenu implements Listener {
                 }
             }
             lore.add(Component.empty());
-            lore.add(plain(mine ? Component.text("Your vote", NamedTextColor.GREEN)
-                    : Component.text("» Click to vote", NamedTextColor.AQUA)));
+            lore.add(plain(mine ? I18n.tr("core.menu.your_vote").color(NamedTextColor.GREEN)
+                    : I18n.tr("core.menu.click_vote").color(NamedTextColor.AQUA)));
             meta.lore(lore);
             meta.setEnchantmentGlintOverride(mine);
         });
@@ -417,16 +407,14 @@ public final class QueueMenu implements Listener {
         ItemStack item = new ItemStack(Material.GLASS);
         boolean mine = queue.vote(ballot.key(), viewer.getUniqueId()) == null;
         item.editMeta(meta -> {
-            meta.displayName(plain(Component.text("Any", NamedTextColor.WHITE)).decorate(TextDecoration.BOLD));
+            meta.displayName(plain(I18n.tr("core.ballot.any").color(NamedTextColor.WHITE)).decorate(TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
-            lore.add(plain(Component.text("Leave it to the others' votes", NamedTextColor.GRAY)));
-            lore.add(plain(Component.text()
-                    .append(Component.text("Leading: ", NamedTextColor.GRAY))
-                    .append(Component.text(queue.leadingText(ballot), NamedTextColor.GOLD))
-                    .build()));
+            lore.add(plain(I18n.tr("core.menu.leave_votes").color(NamedTextColor.GRAY)));
+            lore.add(plain(I18n.tr("core.menu.leading_value", queue.leadingComponent(ballot).color(NamedTextColor.GOLD))
+                    .color(NamedTextColor.GRAY)));
             lore.add(Component.empty());
-            lore.add(plain(mine ? Component.text("Your choice", NamedTextColor.GREEN)
-                    : Component.text("» Click to clear your vote", NamedTextColor.AQUA)));
+            lore.add(plain(mine ? I18n.tr("core.menu.your_choice").color(NamedTextColor.GREEN)
+                    : I18n.tr("core.menu.clear_vote").color(NamedTextColor.AQUA)));
             meta.lore(lore);
             meta.setEnchantmentGlintOverride(mine);
         });
@@ -441,9 +429,9 @@ public final class QueueMenu implements Listener {
             meta.displayName(plain(color.displayNameComponent()).decorate(TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
             if (pickers.isEmpty()) {
-                lore.add(plain(Component.text("Nobody yet", NamedTextColor.DARK_GRAY)));
+                lore.add(plain(I18n.tr("core.menu.nobody").color(NamedTextColor.DARK_GRAY)));
             } else {
-                lore.add(plain(Component.text("Picked by:", NamedTextColor.GRAY)));
+                lore.add(plain(I18n.tr("core.menu.picked_by").color(NamedTextColor.GRAY)));
                 for (Player picker : pickers) {
                     lore.add(plain(Component.text()
                             .append(Component.text(" • ", NamedTextColor.DARK_GRAY))
@@ -452,8 +440,8 @@ public final class QueueMenu implements Listener {
                 }
             }
             lore.add(Component.empty());
-            lore.add(plain(mine ? Component.text("Your team", NamedTextColor.GREEN)
-                    : Component.text("» Click to pick", NamedTextColor.AQUA)));
+            lore.add(plain(mine ? I18n.tr("core.menu.team_picked").color(NamedTextColor.GREEN)
+                    : I18n.tr("core.menu.click_pick").color(NamedTextColor.AQUA)));
             meta.lore(lore);
             meta.setEnchantmentGlintOverride(mine);
         });
@@ -464,12 +452,12 @@ public final class QueueMenu implements Listener {
         ItemStack item = new ItemStack(Material.GLASS);
         boolean mine = queue.teamPick(viewer.getUniqueId()) == null;
         item.editMeta(meta -> {
-            meta.displayName(plain(Component.text("Auto", NamedTextColor.WHITE)).decorate(TextDecoration.BOLD));
+            meta.displayName(plain(I18n.tr("core.menu.auto").color(NamedTextColor.WHITE)).decorate(TextDecoration.BOLD));
             List<Component> lore = new ArrayList<>();
-            lore.add(plain(Component.text("Put on a team when the game starts", NamedTextColor.GRAY)));
+            lore.add(plain(I18n.tr("core.menu.auto_description").color(NamedTextColor.GRAY)));
             lore.add(Component.empty());
-            lore.add(plain(mine ? Component.text("Your choice", NamedTextColor.GREEN)
-                    : Component.text("» Click to clear your pick", NamedTextColor.AQUA)));
+            lore.add(plain(mine ? I18n.tr("core.menu.your_choice").color(NamedTextColor.GREEN)
+                    : I18n.tr("core.menu.clear_pick").color(NamedTextColor.AQUA)));
             meta.lore(lore);
             meta.setEnchantmentGlintOverride(mine);
         });
@@ -477,20 +465,14 @@ public final class QueueMenu implements Listener {
     }
 
     private static void queueStatus(List<Component> lore, QueueService.Queue queue) {
-        lore.add(plain(Component.text()
-                .append(Component.text("Queued: ", NamedTextColor.GRAY))
-                .append(Component.text(queue.countText(), NamedTextColor.WHITE))
-                .append(Component.text(" (needs " + queue.minPlayers() + ")", NamedTextColor.DARK_GRAY))
-                .build()));
+        lore.add(plain(I18n.tr("core.menu.queue_status", Component.text(queue.countText(), NamedTextColor.WHITE),
+                queue.minPlayers()).color(NamedTextColor.GRAY)));
         for (Ballot ballot : queue.ballots()) {
-            String title = ballot.title().substring(0, 1).toUpperCase(java.util.Locale.ROOT) + ballot.title().substring(1);
-            lore.add(plain(Component.text()
-                    .append(Component.text(title + ": ", NamedTextColor.GRAY))
-                    .append(Component.text(queue.leadingText(ballot), NamedTextColor.GOLD))
-                    .build()));
+            lore.add(plain(I18n.tr("core.menu.ballot_status", ballot.titleComponent(),
+                    queue.leadingComponent(ballot).color(NamedTextColor.GOLD)).color(NamedTextColor.GRAY)));
         }
         if (queue.countdown() != null) {
-            lore.add(plain(Component.text("Starts in " + queue.countdown() + "s", NamedTextColor.GREEN)));
+            lore.add(plain(I18n.tr("core.menu.starts_in", queue.countdown()).color(NamedTextColor.GREEN)));
         }
     }
 
@@ -501,12 +483,12 @@ public final class QueueMenu implements Listener {
     }
 
     private static ItemStack backIcon() {
-        return navigationIcon("Back");
+        return navigationIcon(I18n.tr("core.menu.back"));
     }
 
-    private static ItemStack navigationIcon(String label) {
+    private static ItemStack navigationIcon(Component label) {
         ItemStack item = new ItemStack(Material.ARROW);
-        item.editMeta(meta -> meta.displayName(plain(Component.text(label, NamedTextColor.GRAY))));
+        item.editMeta(meta -> meta.displayName(plain(label.color(NamedTextColor.GRAY))));
         return item;
     }
 

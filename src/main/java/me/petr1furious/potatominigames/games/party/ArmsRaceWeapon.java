@@ -27,6 +27,10 @@ enum ArmsRaceWeapon {
     ArmsRaceWeapon(Material material, String title) { this.material = material; this.title = title; }
     boolean ranged() { return this == BOW || this == CROSSBOW; }
     static ArmsRaceWeapon at(int stage) { return values()[stage]; }
+    static java.util.List<ArmsRaceWeapon> progression(boolean embedded) {
+        return embedded ? java.util.List.of(DIAMOND_SWORD, IRON_AXE, BOW, CROSSBOW, WOODEN_SWORD, GOLDEN_SHOVEL)
+                : java.util.List.of(values());
+    }
 
     void equip(Player player) {
         var inventory = player.getInventory();

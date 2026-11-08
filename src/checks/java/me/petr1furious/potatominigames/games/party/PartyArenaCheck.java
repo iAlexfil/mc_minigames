@@ -10,6 +10,9 @@ public final class PartyArenaCheck {
     public static void main(String[] args){
         WorldMap w=new WorldMap();List<UUID> ids=new ArrayList<>();for(int i=0;i<12;i++)ids.add(new UUID(0,i+1));
         BuildMemoryArena memory=new BuildMemoryArena(w.world,ids);memory.build();
+        for(UUID id:ids){var s=memory.spawn(id);int cx=s.getBlockX()-2,cz=s.getBlockZ()+3;
+            for(int x=0;x<5;x++)for(int z=0;z<5;z++)check(w.world.getBlockAt(cx+x,80,cz+z).getType()==Material.LIGHT_BLUE_CONCRETE,"Whole 5x5 footprint is marked");
+            check(w.world.getBlockAt(cx,80,cz-1).getType()==Material.SMOOTH_QUARTZ,"No isolated gold orientation marker");}
         var pattern=BuildMemoryPattern.generate(8,new Random(5));
         for(UUID id:ids)memory.show(id,pattern);
         for(UUID id:ids)check(memory.capture(id).equals(pattern.blocks()),"Twelve independent build workspaces");

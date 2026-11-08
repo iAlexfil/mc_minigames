@@ -22,7 +22,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 ### Party Games and new party games
 
 Join **Вечеринка → Party Games**, or run `/play party party_games`.
-The default match plays all eleven party games once in shuffled order, with
+The default match picks six distinct games at random from the eleven-game pool, with
 2–12 players. PvP and Sumo become simultaneous, one-life free-for-alls inside
 this match; their standalone modes retain the existing round-robin BO3 rules.
 Eliminated players spectate until the next game. Each completed game awards
@@ -32,17 +32,19 @@ Equal results share a place and skip occupied positions: `1, 2, 2, 4` awards
 `3, 2, 2, 0`. Simultaneous eliminations use server ticks; a failed color or
 building check is one shared elimination group. The final ranking compares
 points, then first places, then second places; exact ties share the title.
-Round results are followed by an eight-second break and a five-second start
-countdown after the next arena is ready. Arms Race uses a three-minute limit;
+Round results are followed by one four-second intermission, without a second
+countdown. The first game has a four-second countdown. The current game owns the
+sidebar during play; total points appear between games. Arms Race uses six weapon
+stages only inside Party Games (standalone keeps twelve), with a three-minute limit;
 Miners uses 60 seconds preparation, 90 seconds combat and a 30-second finale.
 
 Four games are also independently available:
 
 | Mode | Command | Rules |
 | --- | --- | --- |
-| Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, falling to two seconds; twelve stages. Each local neighborhood contains the target color. |
-| Наковальни | `/play party anvils` | Dodge staggered anvil rain or shelter under slabs. Each 12-second wave is followed by a four-second rain-free relocation period: old anvils disappear and a new random shelter layout appears. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves by default. |
-| Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize your model, then rebuild with exactly the required blocks. Models grow from 5 to 19 blocks over eight stages; memorization drops from 12 to 5 seconds and construction from 40 to 19 seconds. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying during construction. |
+| Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, falling to two seconds; twelve stages. Colors form patches of different sizes, with two rare colors. A target remains within eight blocks of every floor cell. |
+| Наковальни | `/play party anvils` | Dodge dense, staggered rain on a 21×21 platform or shelter under slabs. Each six-second wave is followed by five rain-free seconds to cross the larger arena: old anvils disappear and shelters move randomly. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves, at most 320 airborne anvils, with rate-limited impact sounds. |
+| Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize a recognizable model (stairs, bench, tree, arch, well, bridge, colonnade, fireplace), then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The exact kit grows from 5 to 19 blocks; memorization drops from 12 to 5 seconds and construction from 40 to 19 seconds. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
 
 The new standalone modes award the same podium points to `/party points`.

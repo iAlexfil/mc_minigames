@@ -63,6 +63,7 @@ final class ArmsRaceSession implements PartyRoundSession {
     private final PartyRoundContext context;
     private final PartyConfig config;
     private final NamespacedKey shotStageKey;
+    private final List<ArmsRaceWeapon> weapons;
     private final Random random = new Random();
     private final CountdownFreeze countdownFreeze = new CountdownFreeze();
     private final ArenaProjectiles projectiles = new ArenaProjectiles();
@@ -94,6 +95,7 @@ final class ArmsRaceSession implements PartyRoundSession {
     ArmsRaceSession(SessionServices services, PartyConfig config) { this(services, config, PartyRoundContext.standalone(services)); }
     ArmsRaceSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
         this.context=context;
+        this.weapons=ArmsRaceWeapon.progression(context.embedded());
         this.services = context.services();
         this.config = config;
         shotStageKey = new NamespacedKey(services.plugin(), "arms_race_shot_stage");
@@ -113,8 +115,8 @@ final class ArmsRaceSession implements PartyRoundSession {
             connected.add(participant.id());
         }
         if (names.isEmpty()) throw new CommandFailure("Для гонки вооружений нужны участники.");
-        state = new ArmsRaceState(names.keySet(), ArmsRaceWeapon.values().length);
-        countdownEnd = Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.armsRaceCountdownSeconds.get(), 3, 15) * 20L;
+        state = new ArmsRaceState(names.keySet(), weapons.size());
+        countdownEnd = Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.armsRaceCountdownSeconds.get(), context.embedded() ? 0 : 3, 15) * 20L;
         durationTicks = Math.clamp((context.embedded() ? context.options().armsRaceSeconds() : config.armsRaceSeconds.get()), 60, 1800) * 20;
         respawnTicks = Math.max(DeathPause.TICKS, Math.clamp(config.armsRaceRespawnSeconds.get(), 1, 10) * 20);
         protectionTicks = Math.clamp(config.armsRaceProtectionSeconds.get(), 1, 5) * 20;
@@ -135,7 +137,7 @@ final class ArmsRaceSession implements PartyRoundSession {
         bar = services.bossBars().create(text("Гонка вооружений", NamedTextColor.GOLD), BossBar.Color.RED, BossBar.Overlay.PROGRESS);
         for (Player player : services.participants().onlinePlayers()) spawn(player);
         services.messages().broadcast(text("Гонка вооружений: все против всех! Убийство текущим оружием открывает следующую ступень.", NamedTextColor.GOLD));
-        services.messages().broadcast(text("12 ступеней, финал — золотая лопата. После смерти оружие сохраняется. Строить нельзя.", NamedTextColor.GRAY));
+        services.messages().broadcast(text(weapons.size() + " ступеней, финал — золотая лопата. После смерти оружие сохраняется. Строить нельзя.", NamedTextColor.GRAY));
         if (services.isTest()) services.messages().broadcast(text("Тестовая игра: без сохранения очков. /party stop — закончить.", NamedTextColor.YELLOW));
         updateHud();
         ticker = Bukkit.getScheduler().runTaskTimer(services.plugin(), this::tick, 1L, 1L);
@@ -178,11 +180,11 @@ final class ArmsRaceSession implements PartyRoundSession {
         needsWeapon.remove(id);
         lastHit.remove(id);
         protectedUntil.put(id, (phase == Phase.COUNTDOWN ? countdownEnd : tick) + protectionTicks);
-        ArmsRaceWeapon.at(state.stage(id)).equip(player);
+        weapons.get(state.stage(id)).equip(player);
         teleport(player, arena.spawn(enemies, random));
         if (phase == Phase.COUNTDOWN) countdownFreeze.freeze(player);
         player.showBossBar(bar);
-        player.sendActionBar(text("Ступень " + (state.stage(id) + 1) + "/12 • " + ArmsRaceWeapon.at(state.stage(id)).title, NamedTextColor.GREEN));
+        player.sendActionBar(text("Ступень " + (state.stage(id) + 1) + "/" + weapons.size() + " • " + weapons.get(state.stage(id)).title, NamedTextColor.GREEN));
     }
     private void waitForRespawn(Player player) {
         if (player.isDead()) return; // The tick task respawns native deaths outside their event handler.
@@ -198,9 +200,11 @@ final class ArmsRaceSession implements PartyRoundSession {
         if (phase == Phase.DONE || !services.session().isRunning()) return;
         tick++;
         if (connected.isEmpty()) { context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty()); return; }
+        if (phase == Phase.COUNTDOWN) PartySounds.countdown(services.participants().onlinePlayers(),countdownEnd-tick);
         if (phase == Phase.COUNTDOWN && tick >= countdownEnd) {
             countdownFreeze.releaseAll();
             phase = Phase.FIGHT;
+            PartySounds.play(services.participants().onlinePlayers(),Sound.BLOCK_NOTE_BLOCK_PLING,.7f,1.6f);
             matchEnd = tick + durationTicks;
             services.messages().broadcast(text("Бой! Пройдите всю цепочку оружия первым!", NamedTextColor.RED));
         }
@@ -211,7 +215,7 @@ final class ArmsRaceSession implements PartyRoundSession {
         if (phase != Phase.FIGHT) return;
         for (UUID id : List.copyOf(needsWeapon)) {
             Player player = player(id);
-            if (player != null && active(player)) ArmsRaceWeapon.at(state.stage(id)).equip(player);
+            if (player != null && active(player)) weapons.get(state.stage(id)).equip(player);
             needsWeapon.remove(id);
         }
         for (UUID id : List.copyOf(respawnAt.keySet())) {
@@ -224,7 +228,7 @@ final class ArmsRaceSession implements PartyRoundSession {
             projectiles.expire(tick);
             for (UUID id : connected) {
                 Player player = player(id);
-                if (player != null && active(player)) ArmsRaceWeapon.at(state.stage(id)).replenish(player);
+                if (player != null && active(player)) weapons.get(state.stage(id)).replenish(player);
             }
         }
         if (tick >= matchEnd) { requestFinish(state.timeWinner(connected)); return; }
@@ -241,7 +245,7 @@ final class ArmsRaceSession implements PartyRoundSession {
     }
     private int weaponStage(EntityDamageByEntityEvent event, Player attacker) {
         int stage = state.stage(attacker.getUniqueId());
-        ArmsRaceWeapon weapon = ArmsRaceWeapon.at(stage);
+        ArmsRaceWeapon weapon = weapons.get(stage);
         if (event.getDamager() instanceof Projectile shot) {
             Integer firedAt = shot.getPersistentDataContainer().get(shotStageKey, PersistentDataType.INTEGER);
             return weapon.ranged() && firedAt != null && firedAt == stage ? stage : -1;
@@ -293,7 +297,7 @@ final class ArmsRaceSession implements PartyRoundSession {
         if (!advanced) return;
         clearShots(killerId);
         if (state.winner() != null) { requestFinish(state.winner()); return; }
-        ArmsRaceWeapon weapon = ArmsRaceWeapon.at(state.stage(killerId));
+        ArmsRaceWeapon weapon = weapons.get(state.stage(killerId));
         // Keep the old item for the remainder of this tick: a sword sweep must not
         // count as kills with multiple newly unlocked weapons in one attack.
         needsWeapon.add(killerId);
@@ -301,7 +305,7 @@ final class ArmsRaceSession implements PartyRoundSession {
         double healthLimit = maximum == null ? 20 : Math.min(20, maximum.getValue());
         killer.setHealth(Math.min(healthLimit, killer.getHealth() + 4));
         killer.playSound(killer.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .7f, 1.4f);
-        services.messages().broadcast(text(name(killerId) + " → " + (state.stage(killerId) + 1) + "/12 • " + weapon.title, NamedTextColor.GOLD));
+        services.messages().broadcast(text(name(killerId) + " → " + (state.stage(killerId) + 1) + "/" + weapons.size() + " • " + weapon.title, NamedTextColor.GOLD));
         updateHud();
     }
     @Override public void onPlayerDeath(PlayerDeathEvent event) {
@@ -333,7 +337,7 @@ final class ArmsRaceSession implements PartyRoundSession {
     @Override public void onEntityShootBow(EntityShootBowEvent event) {
         if (!(event.getEntity() instanceof Player player) || !fighting(player)) { event.setCancelled(true); return; }
         int stage = state.stage(player.getUniqueId());
-        ArmsRaceWeapon weapon = ArmsRaceWeapon.at(stage);
+        ArmsRaceWeapon weapon = weapons.get(stage);
         if (!weapon.ranged() || event.getBow() == null || event.getBow().getType() != weapon.material) {
             event.setCancelled(true); return;
         }
@@ -365,7 +369,7 @@ final class ArmsRaceSession implements PartyRoundSession {
         if (champion == null) lines.add(text("Ничья: ни одного результативного убийства.", NamedTextColor.YELLOW));
         for (int i = 0; i < ranking.size(); i++) {
             UUID id = ranking.get(i);
-            lines.add(text((i + 1) + ". " + name(id) + " • ступень " + (state.stage(id) + 1) + "/12 • "
+            lines.add(text((i + 1) + ". " + name(id) + " • ступень " + (state.stage(id) + 1) + "/" + weapons.size() + " • "
                     + state.kills(id) + " убийств / " + state.deaths(id) + " смертей"
                     + (connected.contains(id) ? "" : " (вышел)"), i == 0 ? NamedTextColor.GOLD : NamedTextColor.GRAY));
         }
@@ -396,17 +400,17 @@ final class ArmsRaceSession implements PartyRoundSession {
         bar.name(text(phase == Phase.COUNTDOWN ? "Гонка вооружений • старт через " + remaining + " с"
                 : phase == Phase.RESULT ? champion == null ? "Гонка завершена • ничья" : "Победитель: " + name(champion)
                 : "Гонка вооружений • " + TimeFormat.clock(remaining), NamedTextColor.GOLD));
-        bar.progress(Math.clamp((float) remaining * 20 / (phase == Phase.COUNTDOWN ? countdownEnd : durationTicks), 0, 1));
+        bar.progress(Math.clamp((float) remaining * 20 / Math.max(1,phase == Phase.COUNTDOWN ? countdownEnd : durationTicks), 0, 1));
         List<Component> standings = new ArrayList<>();
         for (UUID id : state.leaderboard(connected).stream().limit(7).toList()) {
-            standings.add(text(name(id) + " • " + (state.stage(id) + 1) + "/12", NamedTextColor.GRAY));
+            standings.add(text(name(id) + " • " + (state.stage(id) + 1) + "/" + weapons.size() + "", NamedTextColor.GRAY));
         }
         for (UUID id : connected) {
             Player player = player(id);
             if (player == null) continue;
             List<Component> lines = new ArrayList<>();
             lines.add(text("Все против всех • " + connected.size() + " игроков", NamedTextColor.AQUA));
-            lines.add(text("Ступень " + (state.stage(id) + 1) + "/12: " + ArmsRaceWeapon.at(state.stage(id)).title, NamedTextColor.GREEN));
+            lines.add(text("Ступень " + (state.stage(id) + 1) + "/" + weapons.size() + ": " + weapons.get(state.stage(id)).title, NamedTextColor.GREEN));
             lines.add(text("Убийств: " + state.kills(id) + " • Смертей: " + state.deaths(id), NamedTextColor.WHITE));
             if (respawnAt.containsKey(id)) lines.add(text("Возрождение: " + Math.max(0, (respawnAt.get(id) - tick + 19) / 20) + " с", NamedTextColor.YELLOW));
             else if (protectedSpawn(id)) lines.add(text("Защита появления • атака снимает её", NamedTextColor.YELLOW));
@@ -441,7 +445,7 @@ final class ArmsRaceSession implements PartyRoundSession {
             respawnAt.put(id, tick + respawnTicks); waitForRespawn(player);
             if (phase == Phase.RESULT) countdownFreeze.freeze(player);
         }
-        player.sendMessage(text("Прогресс сохранён: ступень " + (state.stage(id) + 1) + "/12.", NamedTextColor.GREEN));
+        player.sendMessage(text("Прогресс сохранён: ступень " + (state.stage(id) + 1) + "/" + weapons.size() + ".", NamedTextColor.GREEN));
     }
     @Override public void onBlockBreak(BlockBreakEvent event) { event.setCancelled(true); }
     @Override public void onBlockPlace(BlockPlaceEvent event) { event.setCancelled(true); }

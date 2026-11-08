@@ -9,26 +9,27 @@ import org.bukkit.inventory.ItemStack;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 final class BuildMemorySession extends PartySurvivalSession {
     private enum Phase{SHOW,BUILD,REVIEW}
-    private final int stages;private BuildMemoryArena arena;private Phase phase=Phase.SHOW;private int stage=1;private long deadline;
+    private final int stages;private BuildMemoryArena arena;private Phase phase=Phase.SHOW;private int stage=1;private long deadline;private String modelTitle="";
     private final Map<UUID,BuildMemoryPattern> patterns=new LinkedHashMap<>();
     BuildMemorySession(SessionServices s,PartyConfig c,PartyRoundContext context){super(s,c,"build_memory","Повтори постройку",context);stages=c.buildMemoryStages.get();}
     void buildArena(){arena=new BuildMemoryArena(world,names.keySet());arena.build();}
     Location spawn(int i,int n){return arena.spawn(new ArrayList<>(names.keySet()).get(i));}
     Location viewpoint(){return new Location(world,.5,100,.5,0,75);}
     double outHeight(){return 76;}int durationSeconds(){return 500;}boolean podiumAwards(){return true;}
-    String instructions(){return "Запомни постройку на своей платформе и повтори её. Блоков ровно достаточно. Любая ошибка в конце — выбывание!";}
+    String instructions(){return "Запомни постройку и повтори её на голубом участке 5×5. Ориентируйся по его краям. Блоков ровно достаточно; ошибка в конце — выбывание!";}
     void beginPlay(){showPattern();}
-    private void showPattern(){phase=Phase.SHOW;arena.screens(false);patterns.clear();BuildMemoryPattern shared=BuildMemoryPattern.generate(stage,random);
+    private void showPattern(){phase=Phase.SHOW;arena.screens(false);patterns.clear();BuildMemoryPattern shared=BuildMemoryPattern.generate(stage,random);modelTitle=shared.title();
         for(Player p:alivePlayers()){var pattern=shared.rotate(random.nextInt(4));patterns.put(p.getUniqueId(),pattern);teleport(p,arena.spawn(p.getUniqueId()));clearKit(p);arena.show(p.getUniqueId(),pattern);}
-        deadline=elapsed()+Math.max(5,13-stage)*20L;announceTitle("Запоминай!","Этап "+stage+" • ориентир — золотой блок",2);
+        deadline=elapsed()+Math.max(5,13-stage)*20L;announceTitle("Запоминай: "+modelTitle,"Этап "+stage+" • ориентир — края голубого участка",2);PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_BELL,.7f,.9f);
     }
-    void playTick(long elapsed){if(elapsed<deadline)return;
+    void playTick(long elapsed){if(elapsed<deadline){if(phase!=Phase.REVIEW)PartySounds.countdown(alivePlayers(),deadline-elapsed);return;}
         switch(phase){
-            case SHOW->{phase=Phase.BUILD;arena.screens(true);for(Player p:alivePlayers()){arena.clear(p.getUniqueId());clearKit(p);patterns.get(p.getUniqueId()).inventory().forEach((m,n)->p.getInventory().addItem(new ItemStack(m,n)));}deadline=elapsed+Math.max(19,43-3*stage)*20L;announceTitle("Построй!","Воспроизведи образец точно",2);}
+            case SHOW->{phase=Phase.BUILD;arena.screens(true);for(Player p:alivePlayers()){arena.clear(p.getUniqueId());clearKit(p);patterns.get(p.getUniqueId()).inventory().forEach((m,n)->p.getInventory().addItem(new ItemStack(m,n)));}deadline=elapsed+Math.max(19,43-3*stage)*20L;announceTitle("Построй: "+modelTitle,"Воспроизведи образец точно",2);PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_PLING,.7f,1.5f);}
             case BUILD->{phase=Phase.REVIEW;standings.holdResults(true);
                 List<Player> failed=new ArrayList<>();for(Player p:alivePlayers())if(!patterns.get(p.getUniqueId()).matches(arena.capture(p.getUniqueId())))failed.add(p);
                 for(Player p:failed)eliminate(p);
                 for(Player p:alivePlayers())clearKit(p);
+                PartySounds.play(alivePlayers(),Sound.ENTITY_EXPERIENCE_ORB_PICKUP,.7f,1.2f);
                 patterns.forEach((id,pattern)->arena.show(id,pattern));arena.screens(false);
                 deadline=elapsed+60;announceTitle("Проверка",failed.isEmpty()?"Все верно!":"Ошиблись: "+failed.size(),2);
             }

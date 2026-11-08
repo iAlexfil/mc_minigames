@@ -56,15 +56,15 @@ public final class PartyConfig {
             .validate(n -> n >= 15 && n <= 120);
 
     public final Property<Integer> colorFloorStages = bag.define("colorFloor.stages", PropertyCodec.INT, 12).validate(n -> n >= 2 && n <= 24);
-    public final Property<Integer> anvilWaveSeconds = bag.define("anvils.waveSeconds", PropertyCodec.INT, 12).validate(n -> n >= 5 && n <= 30);
-    public final Property<Integer> anvilMoveSeconds = bag.define("anvils.moveSeconds", PropertyCodec.INT, 4).validate(n -> n >= 4 && n <= 15);
+    public final Property<Integer> anvilWaveSeconds = bag.define("anvils.waveSeconds", PropertyCodec.INT, 6).validate(n -> n >= 5 && n <= 30);
+    public final Property<Integer> anvilMoveSeconds = bag.define("anvils.moveSeconds", PropertyCodec.INT, 5).validate(n -> n >= 4 && n <= 15);
     public final Property<Integer> anvilWaves = bag.define("anvils.waves", PropertyCodec.INT, 10).validate(n -> n >= 2 && n <= 20);
     public final Property<Integer> anvilPvpWave = bag.define("anvils.pvpWave", PropertyCodec.INT, 4).validate(n -> n >= 1 && n <= 20);
     public final Property<Integer> buildMemoryStages = bag.define("buildMemory.stages", PropertyCodec.INT, 8).validate(n -> n >= 1 && n <= 8);
     public final Property<Integer> toolRaceSeconds = bag.define("toolRace.durationSeconds", PropertyCodec.INT, 180).validate(n -> n >= 30 && n <= 600);
     public final Property<String> partyModes = bag.define("partyGames.modes", PropertyCodec.STRING, "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race");
-    public final Property<Integer> partyRounds = bag.define("partyGames.rounds", PropertyCodec.INT, 11).validate(n -> n >= 1 && n <= 11);
-    public final Property<Integer> partyIntermission = bag.define("partyGames.intermissionSeconds", PropertyCodec.INT, 8).validate(n -> n >= 3 && n <= 30);
+    public final Property<Integer> partyRounds = bag.define("partyGames.rounds", PropertyCodec.INT, 6).validate(n -> n >= 1 && n <= 11);
+    public final Property<Integer> partyIntermission = bag.define("partyGames.intermissionSeconds", PropertyCodec.INT, 4).validate(n -> n >= 3 && n <= 30);
     public final Property<Integer> partyArmsRaceSeconds = bag.define("partyGames.armsRaceSeconds", PropertyCodec.INT, 180).validate(n -> n >= 60 && n <= 600);
     public final Property<Integer> partyMinersPreparation = bag.define("partyGames.minersPreparationSeconds", PropertyCodec.INT, 60).validate(n -> n >= 10 && n <= 300);
     public final Property<Integer> partyMinersCombat = bag.define("partyGames.minersCombatSeconds", PropertyCodec.INT, 90).validate(n -> n >= 30 && n <= 600);

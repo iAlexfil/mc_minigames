@@ -164,7 +164,7 @@ final class DuelSession implements PartyRoundSession {
         else if (!training) tournament = new DuelTournament(roster);
         // Read once so config reload cannot change the rules halfway through a duel.
         roundLength = Math.clamp((sumo ? config.sumoRoundSeconds : config.roundSeconds).get(), 20, 300);
-        countdown = Math.clamp(ffa ? context.options().countdownSeconds() : (sumo ? config.sumoCountdownSeconds : config.countdownSeconds).get(), 3, 15);
+        countdown = Math.clamp(ffa ? context.options().countdownSeconds() : (sumo ? config.sumoCountdownSeconds : config.countdownSeconds).get(), ffa ? 0 : 3, 15);
         intermission = Math.clamp((sumo ? config.sumoIntermissionSeconds : config.intermissionSeconds).get(), 2, 30);
         world = context.createVoid(sumo ? "party_sumo" : "party_pvp");
         services.arena().applyStandardGameRules(world);
@@ -312,6 +312,7 @@ final class DuelSession implements PartyRoundSession {
         }
         for (Player player : services.participants().onlinePlayers()) countdownFreeze.freeze(player);
         updateHud();
+        if(ffa&&countdown==0)onSecondTick(now);
     }
     @Override public void onSecondTick(long secondsElapsed) {
         now = secondsElapsed;
@@ -328,6 +329,7 @@ final class DuelSession implements PartyRoundSession {
             deadline = now + 1;
             updateHud(); return;
         }
+        if (phase == Phase.COUNTDOWN) PartySounds.countdown(services.participants().onlinePlayers(),(deadline-now)*20);
         if (phase == Phase.COUNTDOWN && now >= deadline) {
             countdownFreeze.releaseAll();
             phase = Phase.FIGHT; fightStarted = now;
@@ -465,7 +467,7 @@ final class DuelSession implements PartyRoundSession {
                 : phase == Phase.RESULT ? "Раунд окончен • " + remaining + " с"
                 : (suddenDeath ? "Овертайм • " : title + " • ") + TimeFormat.clock(remaining);
         bar.name(text(barTitle, NamedTextColor.GOLD));
-        bar.progress(Math.clamp((float) remaining / (phase == Phase.FIGHT ? suddenDeath ? 30 : roundLength : countdown), 0, 1));
+        bar.progress(Math.clamp((float) remaining / (phase == Phase.FIGHT ? suddenDeath ? 30 : roundLength : Math.max(1,countdown)), 0, 1));
         List<Component> lines = new ArrayList<>();
         if (ffa) lines.add(text("Осталось: " + standings.survivors().size() + "/" + names.size(), NamedTextColor.AQUA));
         else if (!training && match != null) {

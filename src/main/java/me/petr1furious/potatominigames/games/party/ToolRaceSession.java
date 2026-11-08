@@ -21,7 +21,7 @@ final class ToolRaceSession extends PartySurvivalSession {
     @Override protected void handleBlockBreak(BlockBreakEvent e){var p=e.getPlayer();UUID id=p.getUniqueId();int depth=arena.depth(id,e.getBlock());
         if(!playing()||!alive(p)||!track.mine(id,depth,elapsed())){e.setCancelled(true);return;}
         e.setDropItems(false);e.setExpToDrop(0);
-        if(track.finished(id)){p.sendMessage(text("Финиш! Время: "+String.format(java.util.Locale.ROOT,"%.2f",elapsed()/20.0)+" с"));spectate(p);}
+        if(track.finished(id)){p.sendMessage(text("Финиш! Время: "+String.format(java.util.Locale.ROOT,"%.2f",elapsed()/20.0)+" с"));p.playSound(p.getLocation(),Sound.ENTITY_PLAYER_LEVELUP,.8f,1.4f);spectate(p);}
     }
     void playTick(long elapsed){if(context.eligible().stream().allMatch(track::finished))finish(List.of());}
     @Override public PartyRoundResult roundResult(){return track==null?PartyRoundResult.empty():track.result(context.eligible());}

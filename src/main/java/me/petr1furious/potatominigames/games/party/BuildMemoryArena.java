@@ -7,7 +7,7 @@ final class BuildMemoryArena {
     BuildMemoryArena(World world,Collection<UUID> roster){this.world=world;int i=0,n=roster.size();double radius=Math.max(16,n*3.2);
         for(UUID id:roster){double angle=2*Math.PI*i++/n;centers.put(id,new Location(world,Math.round(radius*Math.cos(angle)),81,Math.round(radius*Math.sin(angle))));}}
     void build(){for(Location c:centers.values()){
-        for(int x=-4;x<=8;x++)for(int z=-4;z<=8;z++)world.getBlockAt(c.getBlockX()+x,80,c.getBlockZ()+z).setType(x==0&&z==-1?Material.GOLD_BLOCK:Material.SMOOTH_QUARTZ,false);
+        for(int x=-4;x<=8;x++)for(int z=-4;z<=8;z++)world.getBlockAt(c.getBlockX()+x,80,c.getBlockZ()+z).setType(x>=0&&x<5&&z>=0&&z<5?Material.LIGHT_BLUE_CONCRETE:Material.SMOOTH_QUARTZ,false);
         for(int x=-4;x<=8;x++)for(int z=-4;z<=8;z++)if(x==-4||x==8||z==-4||z==8)for(int y=81;y<=88;y++)world.getBlockAt(c.getBlockX()+x,y,c.getBlockZ()+z).setType(Material.BARRIER,false);
     }}
     Location spawn(UUID id){return centers.get(id).clone().add(2.5,0,-2.5);}

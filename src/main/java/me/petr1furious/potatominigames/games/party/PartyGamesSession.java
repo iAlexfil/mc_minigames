@@ -30,7 +30,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
             List<String> pool=Arrays.stream(config.partyModes.get().split(",",-1)).map(String::trim).toList();
             state=new PartyGamesState(new ArrayList<>(names.keySet()),pool,new Random());
             roundCount=Math.min(config.partyRounds.get(),pool.size());intermission=config.partyIntermission.get();
-            options=new PartyRoundOptions(true,5,config.partyArmsRaceSeconds.get(),config.partyMinersPreparation.get(),config.partyMinersCombat.get(),config.partyMinersFinale.get());
+            options=new PartyRoundOptions(true,intermission,config.partyArmsRaceSeconds.get(),config.partyMinersPreparation.get(),config.partyMinersCombat.get(),config.partyMinersFinale.get());
             hub=services.worlds().createVoid("party_hub_"+UUID.randomUUID().toString().replace("-",""));
             services.arena().applyStandardGameRules(hub);hub.setGameRule(GameRules.PVP,false);
             for(int x=-5;x<=5;x++)for(int z=-5;z<=5;z++)hub.getBlockAt(x,80,z).setType(Material.SMOOTH_QUARTZ,false);
@@ -52,7 +52,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
         index++;state.beginRound(index);childSeconds=0;int generation=index;
         var roster=services.participants().all().stream().filter(p->state.nextRoster().contains(p.id())&&p.player()!=null).toList();
         if(roster.isEmpty()){services.session().endGame(EndReason.ALL_PLAYERS_LEFT);return;}
-        context=new PartyRoundContext(services,roster,options,(reason,result)->roundEnded(generation,reason,result));
+        context=new PartyRoundContext(services,roster,options.forRound(index),(reason,result)->roundEnded(generation,reason,result));
         child=PartyRoundFactory.create(state.schedule().get(index),services,config,context);
         phase=Phase.ACTIVE;
         services.messages().broadcast(text("Party Games • "+(index+1)+"/"+roundCount+" • "+PartyRoundFactory.title(state.schedule().get(index))));
@@ -65,6 +65,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
         if(reason!=EndReason.FINISHED){phase=Phase.TRANSITION;transition=Bukkit.getScheduler().runTask(services.plugin(),()->services.session().endGame(reason));return;}
         if(!state.acceptResult(generation,result))return;
         phase=Phase.TRANSITION;
+        PartySounds.play(services.session().audiencePlayers(),Sound.ENTITY_PLAYER_LEVELUP,.6f,1.2f);
         services.messages().broadcast(text("Результаты раунда:"));
         for(var group:result.places())for(UUID id:group)services.messages().broadcast(text(result.place(id)+". "+names.get(id)+" • +"+result.awards().get(id)));
         // Never reset players or unload a world while inside its death/damage callback.
@@ -76,12 +77,14 @@ final class PartyGamesSession extends PartyRoundForwarder {
                 context.disposeWorlds();context=null;
                 if(index+1>=roundCount){complete=true;services.session().endGame(EndReason.FINISHED);return;}
                 phase=Phase.BREAK;deadline=tick+intermission*20L;aloneSince=-1;hud();
+                PartySounds.countdown(services.session().audiencePlayers(),intermission*20L);
             }catch(RuntimeException e){fail(e);}
         });
     }
     private void tick(){
         if(phase==Phase.DONE)return;tick++;
         if(phase==Phase.BREAK){
+            PartySounds.countdown(services.session().audiencePlayers(),deadline-tick);
             if(!services.isTest()&&state.nextRoster().size()<2){if(aloneSince<0)aloneSince=tick;if(tick-aloneSince>=300){services.messages().broadcast(text("Матч завершён досрочно: недостаточно игроков. Очки не сохранены."));services.session().endGame(EndReason.ABORTED);return;}}
             else {aloneSince=-1;if(tick>=deadline)startNext();}
         }
@@ -89,7 +92,7 @@ final class PartyGamesSession extends PartyRoundForwarder {
     private void fail(Exception e){services.plugin().getLogger().log(java.util.logging.Level.SEVERE,"Party Games failed",e);services.messages().broadcast(text("Party Games остановлен из-за ошибки. Очки не сохранены."));services.session().endGame(EndReason.ABORTED);}
     @Override public void onSecondTick(long ignored){try{GameSession active=delegate();if(active!=null)active.onSecondTick(++childSeconds);hud();}catch(RuntimeException e){fail(e);}}
     private void hud(){
-        if(state==null||phase==Phase.DONE)return;
+        if(state==null||phase!=Phase.BREAK)return;
         List<Component> lines=new ArrayList<>();lines.add(text("Раунд "+(index+1)+"/"+roundCount));
         lines.add(Component.text(phase==Phase.ACTIVE?PartyRoundFactory.title(state.schedule().get(index)):aloneSince>=0?"Ждём игроков: "+Math.max(0,(300-(tick-aloneSince)+19)/20)+" с":"Следующая игра: "+Math.max(0,(deadline-tick+19)/20)+" с",NamedTextColor.AQUA));
         for(var group:state.score().standings())for(UUID id:group){if(lines.size()>=14)break;lines.add(Component.text(names.get(id)+": "+state.score().points(id),NamedTextColor.WHITE));}

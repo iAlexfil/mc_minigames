@@ -10,15 +10,16 @@ final class AnvilSession extends PartySurvivalSession {
     Location spawn(int i,int n){return arena.spawn(i,n);}Location viewpoint(){return new Location(world,.5,91,.5,0,80);}
     double outHeight(){return 77;}int durationSeconds(){return waves*(waveSeconds+moveSeconds)+5;}boolean podiumAwards(){return true;}
     String instructions(){return "Прячься под полублоками или уклоняйся! Между волнами укрытия меняются. С "+pvpWave+"-й волны можно толкаться.";}
-    void beginPlay(){round.start(elapsed());}
+    void beginPlay(){round.start(elapsed());PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_BELL,.6f,.8f);}
     void playTick(long elapsed){
         if(round.advance(elapsed)){
             rain.clear();
             if(round.done()){finish(standings.survivors());return;}
-            if(!round.raining()){arena.relocateShelters(round.shelters(),random);announceTitle("Перебежка!","Укрытия переместились • "+moveSeconds+" с",2);}
-            else announceTitle("Волна "+round.wave(),round.pvpEnabled()?"Можно толкаться!":"Укройся или уворачивайся",2);
+            if(!round.raining()){arena.relocateShelters(round.shelters(),random);announceTitle("Перебежка!","Укрытия переместились • "+moveSeconds+" с",2);PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_BELL,.7f,1.2f);}
+            else {announceTitle("Волна "+round.wave(),round.pvpEnabled()?"Можно толкаться!":"Укройся или уворачивайся",2);PartySounds.play(alivePlayers(),Sound.ENTITY_LIGHTNING_BOLT_THUNDER,.35f,1.5f);}
         }
         if(round.raining())rain.tick(elapsed,round.wave(),alivePlayers());
+        else if(elapsed%20==0)PartySounds.countdown(alivePlayers(),round.remaining(elapsed)*20);
     }
     String status(){return "Волна "+round.wave()+" • "+(round.raining()?"Ливень":"Перебежка")+" • "+round.remaining(elapsed())+" с";}
     @Override protected void handleDamage(EntityDamageEvent e){if(e instanceof EntityDamageByEntityEvent attack)handleAttack(attack);e.setCancelled(true);}

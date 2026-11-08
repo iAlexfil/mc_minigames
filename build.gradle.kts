@@ -194,3 +194,9 @@ val checkPartyInteractions by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.games.party.PartyInteractionCheck")
 }
 tasks.check { dependsOn(checkPartyInteractions) }
+val checkPartyPolish by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyPolishCheck")
+}
+tasks.check { dependsOn(checkPartyPolish) }

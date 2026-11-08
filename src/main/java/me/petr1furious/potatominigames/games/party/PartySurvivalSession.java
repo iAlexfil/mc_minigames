@@ -104,7 +104,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         }
         if (names.isEmpty()) throw new CommandFailure("Нужны участники.");
         standings = new SurvivalStandings(names.keySet());
-        countdownEnd = Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.survivalCountdownSeconds.get(), 3, 15) * 20L;
+        countdownEnd = Math.clamp(context.embedded() ? context.options().countdownSeconds() : config.survivalCountdownSeconds.get(), context.embedded() ? 0 : 3, 15) * 20L;
         durationTicks = Math.max(20, durationSeconds()) * 20L;
         world = context.createVoid(id);
         services.arena().applyStandardGameRules(world);
@@ -180,6 +180,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
             playing = true;
             startedAt = tick;
             announceTitle("Поехали!", title, 1);
+            PartySounds.play(services.session().audiencePlayers(),Sound.BLOCK_NOTE_BLOCK_PLING,.7f,1.6f);
             beginPlay();
         }
         if (playing) {
@@ -211,8 +212,9 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         if (done || !standings.eliminate(player.getUniqueId(), tick)) return;
         countdownFreeze.release(player.getUniqueId());
         playerOut(player);
+        player.playSound(player.getLocation(),Sound.BLOCK_NOTE_BLOCK_BASS,.8f,.6f);
         say(player.getName() + " выбывает! Осталось: " + standings.survivors().size());
-        player.sendMessage(Component.text("Ты выбыл. Следующую игру можно начать через меню.", NamedTextColor.GRAY));
+        player.sendMessage(Component.text("Ты выбыл и можешь наблюдать за оставшимися игроками.", NamedTextColor.GRAY));
         spectate(player);
     }
     final void spectate(Player player) {
@@ -242,6 +244,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
                 lines.add(text(podium.place(id) + ". " + names.get(id) + " • +" + podium.awards().get(id) + " очк."));
         }
         result = List.copyOf(lines);
+        if(!context.embedded())PartySounds.play(services.session().audiencePlayers(),Sound.ENTITY_PLAYER_LEVELUP,.6f,1.2f);
         context.finish(EndReason.FINISHED, roundResult());
     }
     @Override public PartyRoundResult roundResult() { return standings == null ? PartyRoundResult.empty() : standings.result(context.eligible(), tick); }
@@ -253,7 +256,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         String line = !playing ? "Старт через " + Math.max(1, (countdownEnd - tick + 19) / 20) + " с" : status();
         bar.name(text(title + " • " + line));
         bar.progress(playing ? Math.clamp(1f - (float) elapsed() / durationTicks, 0, 1)
-                : Math.clamp(1f - (float) tick / countdownEnd, 0, 1));
+                : Math.clamp(1f - (float) tick / Math.max(1,countdownEnd), 0, 1));
         for (Player player : services.session().audiencePlayers()) {
             player.showBossBar(bar);
             services.sidebar().update(player, text(title), List.of(

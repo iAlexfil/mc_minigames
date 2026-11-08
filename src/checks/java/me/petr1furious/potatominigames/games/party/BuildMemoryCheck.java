@@ -6,7 +6,8 @@ public final class BuildMemoryCheck {
     public static void main(String[] args) {
         for(int stage=1;stage<=8;stage++) for(int seed=0;seed<50;seed++) {
             var p=BuildMemoryPattern.generate(stage,new Random(seed));
-            check(p.blocks().size()==5+2*(stage-1),"Exact increasing block count");
+            check(p.blocks().size()==9+2*(stage-1),"Substantial starting model and increasing exact block count");
+            check(p.blocks().keySet().stream().anyMatch(c->c.y()>=2),"Every stage starts with a three-dimensional model");
             check(!p.title().isBlank()&&p.inventory().size()<=3,"Named model with coherent thematic materials");
             check(p.inventory().values().stream().mapToInt(Integer::intValue).sum()==p.blocks().size(),"Exact kit");
             check(p.rotate(1).rotate(3).blocks().equals(p.blocks()),"Rotation round trip");

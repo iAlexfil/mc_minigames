@@ -44,10 +44,13 @@ Four games are also independently available:
 | --- | --- | --- |
 | Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, falling to two seconds; twelve stages. Colors form patches of different sizes, with two rare colors. A target remains within eight blocks of every floor cell. |
 | Наковальни | `/play party anvils` | Dodge dense, staggered rain on a 21×21 platform or shelter under slabs. Each six-second wave is followed by five rain-free seconds to cross the larger arena: old anvils disappear and shelters move randomly. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves, at most 320 airborne anvils, with rate-limited impact sounds. |
-| Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize a recognizable model (stairs, bench, tree, arch, well, bridge, colonnade, fireplace), then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The exact kit grows from 5 to 19 blocks; memorization drops from 12 to 5 seconds and construction from 40 to 19 seconds. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying. |
+| Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize a recognizable model (tree, arch, well, bridge, colonnade, fireplace, gate, house), then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The exact kit grows from 9 to 23 blocks; memorization drops from 12 to 5 seconds, while construction starts at 20 seconds and increases by two seconds per stage, up to 34. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
 
 The new standalone modes award the same podium points to `/party points`.
+Build Memory also supplies an unbreakable iron pickaxe, iron axe and shears in
+hotbar slots 7–9 during construction. Breaking a placed block returns that block
+directly to the inventory; the foundation remains protected.
 Completed mixed matches have a separate leaderboard:
 `/party points party_games`. Administrators can reset it using
 `/party points party_games reset`. Test games and interrupted mixed matches

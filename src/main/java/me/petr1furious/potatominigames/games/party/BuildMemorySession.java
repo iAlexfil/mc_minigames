@@ -16,7 +16,7 @@ final class BuildMemorySession extends PartySurvivalSession {
     Location spawn(int i,int n){return arena.spawn(new ArrayList<>(names.keySet()).get(i));}
     Location viewpoint(){return new Location(world,.5,100,.5,0,75);}
     double outHeight(){return 76;}int durationSeconds(){return 500;}boolean podiumAwards(){return true;}
-    String instructions(){return "Запомни постройку и повтори её на голубом участке 5×5. Ориентируйся по его краям. Блоков ровно достаточно; ошибка в конце — выбывание!";}
+    String instructions(){return "Запомни постройку и повтори её на голубом участке 5×5. Ориентируйся по его краям. Инструменты для исправлений — в слотах 7–9; сломанные блоки возвращаются. Ошибка в конце — выбывание!";}
     void beginPlay(){showPattern();}
     private void showPattern(){phase=Phase.SHOW;arena.screens(false);patterns.clear();BuildMemoryPattern shared=BuildMemoryPattern.generate(stage,random);modelTitle=shared.title();
         for(Player p:alivePlayers()){var pattern=shared.rotate(random.nextInt(4));patterns.put(p.getUniqueId(),pattern);teleport(p,arena.spawn(p.getUniqueId()));clearKit(p);arena.show(p.getUniqueId(),pattern);}
@@ -24,7 +24,19 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
     void playTick(long elapsed){if(elapsed<deadline){if(phase!=Phase.REVIEW)PartySounds.countdown(alivePlayers(),deadline-elapsed);return;}
         switch(phase){
-            case SHOW->{phase=Phase.BUILD;arena.screens(true);for(Player p:alivePlayers()){arena.clear(p.getUniqueId());clearKit(p);patterns.get(p.getUniqueId()).inventory().forEach((m,n)->p.getInventory().addItem(new ItemStack(m,n)));}deadline=elapsed+Math.max(19,43-3*stage)*20L;announceTitle("Построй: "+modelTitle,"Воспроизведи образец точно",2);PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_PLING,.7f,1.5f);}
+            case SHOW->{
+                phase=Phase.BUILD;arena.screens(true);
+                for(Player p:alivePlayers()){
+                    arena.clear(p.getUniqueId());clearKit(p);
+                    patterns.get(p.getUniqueId()).inventory().forEach((m,n)->p.getInventory().addItem(new ItemStack(m,n)));
+                    p.getInventory().setItem(6,PvpClass.item(Material.IRON_PICKAXE));
+                    p.getInventory().setItem(7,PvpClass.item(Material.IRON_AXE));
+                    p.getInventory().setItem(8,PvpClass.item(Material.SHEARS));
+                }
+                deadline=elapsed+(20+2L*(stage-1))*20;
+                announceTitle("Построй: "+modelTitle,"Воспроизведи образец точно • инструменты в слотах 7–9",2);
+                PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_PLING,.7f,1.5f);
+            }
             case BUILD->{phase=Phase.REVIEW;standings.holdResults(true);
                 List<Player> failed=new ArrayList<>();for(Player p:alivePlayers())if(!patterns.get(p.getUniqueId()).matches(arena.capture(p.getUniqueId())))failed.add(p);
                 for(Player p:failed)eliminate(p);

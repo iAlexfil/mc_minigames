@@ -1,13 +1,16 @@
 package me.petr1furious.potatominigames.core.world;
 
+import org.bukkit.World;
+
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.bukkit.World;
-
-/** A session's worlds, for event routing and teardown. Everything resolved here is owned by the session. */
+/**
+ * A session's worlds, for event routing and teardown. Everything resolved here is owned by the
+ * session.
+ */
 public final class SessionWorlds {
     private final ThrowawayWorldService throwaway;
     private final SlimeWorldService slime;
@@ -31,7 +34,21 @@ public final class SessionWorlds {
         return throwaway.createVoid(id);
     }
 
-    /** Seeds of the generated worlds; empty when the session only plays on templates or shared maps. */
+    /** Selectively releases a round's empty void world, never another session's arena. */
+    public void destroyVoid(String id) {
+        if (!throwawayIds.contains(id)) return;
+        World world = org.bukkit.Bukkit.getWorld(throwaway.baseName(id));
+        if (world != null && !world.getPlayers().isEmpty())
+            throw new IllegalStateException("Round world still has players");
+        throwaway.destroy(id);
+        if (org.bukkit.Bukkit.getWorld(throwaway.baseName(id)) != null)
+            throw new IllegalStateException("Round world failed to unload");
+        throwawayIds.remove(id);
+    }
+
+    /**
+     * Seeds of the generated worlds; empty when the session only plays on templates or shared maps.
+     */
     public List<Long> seeds() {
         List<Long> seeds = new ArrayList<>();
         for (String id : throwawayIds) {
@@ -73,7 +90,8 @@ public final class SessionWorlds {
             return true;
         }
         String base = throwaway.baseOf(world);
-        return base != null && throwawayIds.contains(base.substring(ThrowawayWorldService.PREFIX.length()));
+        return base != null
+                && throwawayIds.contains(base.substring(ThrowawayWorldService.PREFIX.length()));
     }
 
     /** Shared worlds are left loaded. */

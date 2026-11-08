@@ -137,3 +137,73 @@ tasks.check {
     dependsOn(checkPillarsPresets, checkSniperDuel, checkPillarsMath, checkPillarsShuffle, checkPillarsAdhd,
             checkPartyPvp, checkPartySumo, checkPartyArmsRace, checkPartySurvival, checkPartyRuntime, checkPvpClasses, checkPartyMiners, checkPillarsPerks)
 }
+
+val checkPartyScoring by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyScoringCheck")
+}
+tasks.check { dependsOn(checkPartyScoring) }
+
+val checkPartyLifecycle by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyLifecycleCheck")
+}
+tasks.check { dependsOn(checkPartyLifecycle) }
+
+for ((taskName, checkClass) in mapOf(
+    "checkColorFloor" to "ColorFloorCheck", "checkAnvils" to "AnvilsCheck",
+    "checkBuildMemory" to "BuildMemoryCheck", "checkToolRace" to "ToolRaceCheck")) {
+    val gameCheck = tasks.register<JavaExec>(taskName) {
+        dependsOn(checks.classesTaskName)
+        classpath = checks.runtimeClasspath
+        mainClass.set("me.petr1furious.potatominigames.games.party.$checkClass")
+    }
+    tasks.check { dependsOn(gameCheck) }
+}
+
+val checkPartyFfa by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyFfaCheck")
+}
+tasks.check { dependsOn(checkPartyFfa) }
+
+val checkPartyGames by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyGamesCheck")
+}
+tasks.check { dependsOn(checkPartyGames) }
+val checkPartyArenas by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyArenaCheck")
+}
+tasks.check { dependsOn(checkPartyArenas) }
+val checkPartyRouting by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyRoutingCheck")
+}
+tasks.check { dependsOn(checkPartyRouting) }
+val checkPartyInteractions by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyInteractionCheck")
+}
+tasks.check { dependsOn(checkPartyInteractions) }
+val checkPartyPolish by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.PartyPolishCheck")
+}
+tasks.check { dependsOn(checkPartyPolish) }
+
+val checkHoleWall by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.HoleWallCheck")
+}
+tasks.check { dependsOn(checkHoleWall) }

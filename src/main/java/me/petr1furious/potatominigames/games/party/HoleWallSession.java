@@ -32,14 +32,14 @@ final class HoleWallSession extends PartySurvivalSession {
         if(newWarning){
             boolean narrowing=frame.warningArmRadius()<warnedArmRadius;
             warnedRadius=frame.warningRadius();warnedArmRadius=frame.warningArmRadius();
-            announceTitle(narrowing?"Платформа станет уже!":"Край исчезнет!",narrowing?"Рукава сузятся до 3 блоков через 3 секунды":"Красные концы платформы обрушатся после прохода стен",2);
+            announceTitle(narrowing?"Платформа станет уже!":"Край исчезнет!",narrowing?"Рукава сузятся до 3 блоков через 3 секунды":"Красные концы платформы обрушатся через 3 секунды",2);
             PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_BELL,.7f,.6f);
         }
         if(reshaping){arena.shrink(frame.radius(),frame.armRadius());PartySounds.play(alivePlayers(),Sound.BLOCK_GLASS_BREAK,.6f,.7f);}
         if(newWarning||reshaping)arena.warn(frame.warningRadius(),frame.warningArmRadius());
         for(var wall:frame.started()){
             displays.put(wall,new HoleWallDisplay(world,wall.pattern,wall.direction,wall.depth));wallNumber=wall.number;
-            announceTitle(wall.direction.title,wall.pattern.title()+" • стена "+wallNumber,1);
+            if(!newWarning)announceTitle(wall.direction.title,wall.pattern.title()+" • стена "+wallNumber,1);
             PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_PLING,.6f,1.2f);
         }
         var walls=flow.active();var players=alivePlayers();

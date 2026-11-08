@@ -2,7 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import java.util.*;
 
-/** Tick-driven stream; holds new arrivals while an announced platform shrink drains old walls. */
+/** Continuous wall stream with independently timed platform changes. */
 final class HoleWallFlow {
     static final class Wall {
         final int number;final HoleWallPattern pattern;final HoleWallPhysics.Direction direction;final long moveAt;
@@ -27,8 +27,8 @@ final class HoleWallFlow {
         int target=tick>=duration*2/3?4:tick>=duration/3?6:8;
         int warning=tick>=duration*2/3-60?4:tick>=duration/3-60?6:8;
         int armRadius=tick>=duration/2?1:2,warningArmRadius=tick>=duration/2-60?1:2;
-        if(walls.isEmpty()&&target<radius)radius=target;
-        if(tick<duration&&tick>=nextSpawn&&walls.size()<4&&warning>=radius){
+        radius=target;
+        if(tick<duration&&tick>=nextSpawn&&walls.size()<4){
             if(directions.isEmpty()){
                 var shuffled=new ArrayList<>(Arrays.asList(HoleWallPhysics.Direction.values()));Collections.shuffle(shuffled,random);
                 if(shuffled.getFirst()==lastDirection)Collections.swap(shuffled,0,1);

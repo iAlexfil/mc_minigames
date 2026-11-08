@@ -15,12 +15,26 @@ import static me.petr1furious.potatominigames.games.party.PartyScoringCheck.chec
 
 public final class HoleWallCheck {
     public static void main(String[] args) throws Exception {
-        directionCoverage(); openings(); collisions(); floor(); displayLifecycle(); pushingAndRouting(); wallStream();
+        centerRequiresAction(); directionCoverage(); openings(); collisions(); floor(); displayLifecycle(); pushingAndRouting(); wallStream();
         check(PartyGamesState.MODES.contains("hole_in_the_wall"),"New mode eligible for party selection");
         var game=new PartyGame((PartyConfig)null);
         check(game.modes().contains("hole_in_the_wall")&&game.maxPlayers("hole_in_the_wall")==12,"New mode in menu and commands");
         check(game.modeTitle("hole_in_the_wall").equals("Дырка в стене"),"Readable mode name");
         System.out.println("Hole in the Wall openings, continuous collision, platform and registration passed");
+    }
+    private static void centerRequiresAction(){
+        for(int radius:new int[]{1,2})for(int seed=0;seed<20;seed++){
+            int mustMove=0,canJump=0;
+            for(int stage=1;stage<=10;stage++){
+                var pattern=HoleWallPattern.generate(stage,radius,new Random(seed));
+                var standing=new BoundingBox(.2,81,.2,.8,82.8,.8);
+                var jumping=standing.clone().shift(0,1.05,0);
+                for(var dir:HoleWallPhysics.Direction.values())
+                    check(HoleWallPhysics.collides(pattern.cells(),dir,-2,2,standing,standing),"Every wall requires action instead of standing still at center; stage="+stage);
+                if(HoleWallPhysics.collides(pattern.cells(),HoleWallPhysics.Direction.NORTH,-2,2,jumping,jumping))mustMove++;else canJump++;
+            }
+            check(mustMove>=6&&canJump>=1,"Most walls force lateral movement, with some timed center jumps");
+        }
     }
     private static void directionCoverage(){
         for(int seed=0;seed<20;seed++){
@@ -59,12 +73,13 @@ public final class HoleWallCheck {
             int count=0,maxActive=0,oldRadius=8;long warningAt=-1;boolean crossing=false;
             for(long tick=0;tick<seconds*20L;tick++){
                 var frame=flow.tick(tick);count+=frame.started().size();
+                int expectedRadius=tick>=seconds*40L/3?4:tick>=seconds*20L/3?6:8;
+                check(frame.radius()==expectedRadius,"Ends disappear exactly at each timed third, even with active walls");
                 check(frame.armRadius()==(tick<seconds*10L?2:1),"Arms narrow from five to three blocks exactly halfway");
                 check(frame.warningArmRadius()==(tick<seconds*10L-60?2:1),"Width change is warned three seconds before halfway");
                 if(frame.warningRadius()<oldRadius&&warningAt<0)warningAt=tick;
                 if(frame.radius()<oldRadius){
                     check(tick-warningAt>=60,"Shrink always has at least three seconds of warning");
-                    for(var wall:flow.active())check(wall.moveAt==tick+40,"No earlier wall survives a floor shrink");
                     oldRadius=frame.radius();warningAt=-1;
                 }
                 var active=flow.active();maxActive=Math.max(maxActive,active.size());

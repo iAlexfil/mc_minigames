@@ -15,17 +15,28 @@ import static me.petr1furious.potatominigames.games.party.PartyScoringCheck.chec
 
 public final class HoleWallCheck {
     public static void main(String[] args) throws Exception {
-        openings(); collisions(); floor(); displayLifecycle(); pushingAndRouting(); wallStream();
+        directionCoverage(); openings(); collisions(); floor(); displayLifecycle(); pushingAndRouting(); wallStream();
         check(PartyGamesState.MODES.contains("hole_in_the_wall"),"New mode eligible for party selection");
         var game=new PartyGame((PartyConfig)null);
         check(game.modes().contains("hole_in_the_wall")&&game.maxPlayers("hole_in_the_wall")==12,"New mode in menu and commands");
         check(game.modeTitle("hole_in_the_wall").equals("Дырка в стене"),"Readable mode name");
         System.out.println("Hole in the Wall openings, continuous collision, platform and registration passed");
     }
+    private static void directionCoverage(){
+        for(int seed=0;seed<20;seed++){
+            var flow=new HoleWallFlow(2400,new Random(seed));List<HoleWallPhysics.Direction> sequence=new ArrayList<>();
+            Set<HoleWallPhysics.Direction> late=EnumSet.noneOf(HoleWallPhysics.Direction.class);
+            for(int tick=0;tick<2400;tick++)for(var wall:flow.tick(tick).started()){
+                sequence.add(wall.direction);if(tick>=1600)late.add(wall.direction);
+            }
+            for(int start=0;start+4<=sequence.size();start+=4)check(new HashSet<>(sequence.subList(start,start+4)).size()==4,"Every direction stays in rotation, instead of locking into two sides");
+            check(late.size()==4,"All four sides still appear in the final third");
+        }
+    }
     private static void openings(){
         Set<List<HoleWallPattern.Cell>> patterns=new HashSet<>();boolean jumps=false;
         Set<String> styles=new HashSet<>();Set<Integer> sizes=new HashSet<>();
-        for(int radius:new int[]{2,6,8})for(int stage=1;stage<=20;stage++)for(int seed=0;seed<8;seed++){
+        for(int radius:new int[]{1,2,6,8})for(int stage=1;stage<=20;stage++)for(int seed=0;seed<8;seed++){
             var pattern=HoleWallPattern.generate(stage,radius,new Random(seed));patterns.add(pattern.cells());
             styles.add(pattern.title());sizes.add(pattern.cells().size());
             check(!pattern.gates().isEmpty(),"Every wall has a passage");
@@ -48,6 +59,8 @@ public final class HoleWallCheck {
             int count=0,maxActive=0,oldRadius=8;long warningAt=-1;boolean crossing=false;
             for(long tick=0;tick<seconds*20L;tick++){
                 var frame=flow.tick(tick);count+=frame.started().size();
+                check(frame.armRadius()==(tick<seconds*10L?2:1),"Arms narrow from five to three blocks exactly halfway");
+                check(frame.warningArmRadius()==(tick<seconds*10L-60?2:1),"Width change is warned three seconds before halfway");
                 if(frame.warningRadius()<oldRadius&&warningAt<0)warningAt=tick;
                 if(frame.radius()<oldRadius){
                     check(tick-warningAt>=60,"Shrink always has at least three seconds of warning");
@@ -58,10 +71,12 @@ public final class HoleWallCheck {
                 check(active.size()<=4,"Bounded concurrent display walls");
                 if(tick==80)check(count>=2,"Second wall appears within four seconds, before first exits");
                 for(var a:active){
-                    for(var gate:a.pattern.gates())check(gate.start()>=-2&&gate.start()+gate.width()<=3,"All active gates retain landing floor on the plus arms");
+                    for(var gate:a.pattern.gates())check(gate.start()>=-frame.armRadius()&&gate.start()+gate.width()<=frame.armRadius()+1,"Even existing wall gates fit the floor when the arms narrow");
                     for(var b:active)if(a!=b){
                         int dot=a.direction.dx*b.direction.dx+a.direction.dz*b.direction.dz;
-                        check(dot!=-1,"No unavoidable opposing-wall squeeze");
+                        boolean aOnFloor=tick>=a.moveAt&&Math.abs(a.depth)<=frame.radius()+2;
+                        boolean bOnFloor=tick>=b.moveAt&&Math.abs(b.depth)<=frame.radius()+2;
+                        check(dot!=-1||!aOnFloor||!bOnFloor,"Opposing walls never squeeze the playable platform");
                         if(dot==0&&tick>=a.moveAt&&tick>=b.moveAt)crossing=true;
                         for(var ga:a.pattern.gates())for(var gb:b.pattern.gates()){
                             double feet=Math.max(ga.bottom(),gb.bottom())+.01;
@@ -94,13 +109,16 @@ public final class HoleWallCheck {
         var fixture=new PartyArenaCheck.WorldMap();var arena=new HoleWallArena(fixture.world);arena.build();
         check(fixture.blocks.values().stream().filter(m->m!=Material.AIR).count()==145,"Smaller 17 by 17 plus with five-wide arms");
         for(int x=-8;x<=8;x++)for(int z=-8;z<=8;z++)check((fixture.world.getBlockAt(x,80,z).getType()!=Material.AIR)==(Math.abs(x)<=2||Math.abs(z)<=2),"No solid corners outside plus");
-        arena.warn(6);
+        arena.warn(6,2);
         check(fixture.world.getBlockAt(8,80,0).getType()==Material.RED_CONCRETE,"Doomed arm visibly warns before removal");
         check(fixture.world.getBlockAt(6,80,0).getType()!=Material.RED_CONCRETE,"Safe floor stays recognizable");
         check(fixture.world.getBlockAt(8,80,8).getType()==Material.AIR,"Warning cannot create corner blocks");
-        arena.shrink(6);arena.shrink(4);
+        arena.shrink(6,2);arena.warn(6,1);
+        check(fixture.world.getBlockAt(2,80,5).getType()==Material.RED_CONCRETE,"Width warning marks the outer arm strip");
+        check(fixture.world.getBlockAt(1,80,5).getType()!=Material.RED_CONCRETE,"The remaining three-wide strip is safe");
+        arena.shrink(6,1);arena.shrink(4,1);
         for(int x=-10;x<=10;x++)for(int z=-10;z<=10;z++)
-            check((fixture.world.getBlockAt(x,80,z).getType()!=Material.AIR)==(Math.abs(x)<=4&&Math.abs(z)<=4&&(Math.abs(x)<=2||Math.abs(z)<=2)),"Shrinking preserves plus shape");
+            check((fixture.world.getBlockAt(x,80,z).getType()!=Material.AIR)==(Math.abs(x)<=4&&Math.abs(z)<=4&&(Math.abs(x)<=1||Math.abs(z)<=1)),"Shrinking preserves plus shape with three-wide arms");
         for(int i=0;i<12;i++){var p=arena.spawn(i,12);check(fixture.world.getBlockAt(p.getBlockX(),80,p.getBlockZ()).getType()!=Material.AIR,"Spawn remains over floor");}
     }
     private static void pushingAndRouting() throws Exception {

@@ -13,7 +13,7 @@ final class HoleWallSession extends PartySurvivalSession {
     private final Map<HoleWallFlow.Wall,HoleWallDisplay> displays=new LinkedHashMap<>();
     private final Map<UUID,BoundingBox> previous=new HashMap<>();
     private final Map<UUID,Long> nextHitSound=new HashMap<>();
-    private int wallNumber,warnedRadius=8;
+    private int wallNumber,warnedRadius=8,warnedArmRadius=2;
     HoleWallSession(SessionServices services,PartyConfig config,PartyRoundContext context){
         super(services,config,"hole_in_the_wall","Дырка в стене",context);seconds=config.holeWallSeconds.get();
     }
@@ -27,12 +27,16 @@ final class HoleWallSession extends PartySurvivalSession {
     void playTick(long elapsed){
         var frame=flow.tick(elapsed);
         for(var wall:frame.finished()){var display=displays.remove(wall);if(display!=null)display.clear();}
-        if(frame.warningRadius()<warnedRadius){
-            warnedRadius=frame.warningRadius();arena.warn(warnedRadius);
-            announceTitle("Край исчезнет!","Красные концы платформы обрушатся после прохода стен",2);
+        boolean newWarning=frame.warningRadius()<warnedRadius||frame.warningArmRadius()<warnedArmRadius;
+        boolean reshaping=frame.radius()<arena.radius()||frame.armRadius()<arena.armRadius();
+        if(newWarning){
+            boolean narrowing=frame.warningArmRadius()<warnedArmRadius;
+            warnedRadius=frame.warningRadius();warnedArmRadius=frame.warningArmRadius();
+            announceTitle(narrowing?"Платформа станет уже!":"Край исчезнет!",narrowing?"Рукава сузятся до 3 блоков через 3 секунды":"Красные концы платформы обрушатся после прохода стен",2);
             PartySounds.play(alivePlayers(),Sound.BLOCK_NOTE_BLOCK_BELL,.7f,.6f);
         }
-        if(frame.radius()<arena.radius()){arena.shrink(frame.radius());PartySounds.play(alivePlayers(),Sound.BLOCK_GLASS_BREAK,.6f,.7f);}
+        if(reshaping){arena.shrink(frame.radius(),frame.armRadius());PartySounds.play(alivePlayers(),Sound.BLOCK_GLASS_BREAK,.6f,.7f);}
+        if(newWarning||reshaping)arena.warn(frame.warningRadius(),frame.warningArmRadius());
         for(var wall:frame.started()){
             displays.put(wall,new HoleWallDisplay(world,wall.pattern,wall.direction,wall.depth));wallNumber=wall.number;
             announceTitle(wall.direction.title,wall.pattern.title()+" • стена "+wallNumber,1);

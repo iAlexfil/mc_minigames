@@ -46,7 +46,10 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, String title) {
         return new HoleWallPattern(cells,gates,title);
     }
     private static Gate gate(int width,int bottom,int height,int radius,Random random){
-        // Keep a block of landing room on both sides of the passage.
-        return new Gate(-radius+1+random.nextInt(2*radius-width),width,bottom,height);
+        // Keep landing margins where possible, but a three-wide arm also accepts a full-width gate.
+        width=Math.min(width,2*radius+1);
+        int padding=2*radius+1-width>=2?1:0;
+        int min=-radius+padding,max=radius+1-width-padding;
+        return new Gate(min+random.nextInt(max-min+1),width,bottom,height);
     }
 }

@@ -1,7 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 import java.util.*;
 final class PartyGamesState {
-    static final List<String> MODES=List.of("pvp","sumo","arms_race","tnt_run","mob_count","rhino","miners","color_floor","anvils","build_memory","tool_race");
+    static final List<String> MODES=List.of("pvp","sumo","arms_race","tnt_run","mob_count","rhino","miners","color_floor","anvils","build_memory","tool_race","hole_in_the_wall");
     private final List<String> schedule;private final Set<UUID> roster,connected,withdrawn=new HashSet<>(),disqualified=new HashSet<>();
     private final PartyMatchScore score;private int generation=-1;private boolean closed=true;
     PartyGamesState(List<UUID> roster,List<String> modes,Random random){

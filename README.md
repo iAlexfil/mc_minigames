@@ -22,7 +22,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 ### Party Games and new party games
 
 Join **Вечеринка → Party Games**, or run `/play party party_games`.
-The default match picks six distinct games at random from the eleven-game pool, with
+The default match picks six distinct games at random from the twelve-game pool, with
 2–12 players. PvP and Sumo become simultaneous, one-life free-for-alls inside
 this match; their standalone modes retain the existing round-robin BO3 rules.
 Eliminated players spectate until the next game. Each completed game awards
@@ -47,6 +47,7 @@ Four games are also independently available:
 | Наковальни | `/play party anvils` | Dodge dense, staggered rain on a 42×42 platform or shelter under slabs. Each six-second wave is followed by ten rain-free seconds to cross the larger arena: old anvils disappear and shelters move randomly. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves, starting at 2080 anvils per second and capped at 5120 airborne anvils, preserving rain density per block with rate-limited impact sounds. Shuffled complete sweeps guarantee rain over all 1764 floor cells each wave; slabs intercept anvils above shelters. |
 | Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize a recognizable model (tree, arch, well, bridge, colonnade, fireplace, gate, house), then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The exact kit grows from 9 to 23 blocks; memorization drops from 12 to 5 seconds, while construction starts at 20 seconds and increases by two seconds per stage, up to 34. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Opaque screens prevent copying. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
+| Дырка в стене | `/play party hole_in_the_wall` | Pass through randomized slime-wall gates and jump windows from all four directions. Walls push instead of dealing damage; falling eliminates. Each wall has a two-second warning and accelerates through the two-minute round. The 21×21 platform shrinks to 17×17 and then 13×13, with a red warning rim at least three seconds before removal between walls. PvP is disabled. Survival places award 3/2/1. Configure `holeInTheWall.durationSeconds` (45–300, default 120). |
 
 The new standalone modes award the same podium points to `/party points`.
 Build Memory also supplies an unbreakable iron pickaxe, iron axe and shears in

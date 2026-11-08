@@ -20,9 +20,9 @@ public final class PartyPolishCheck {
             var selected=state.schedule().subList(0,yaml.getInt("partyGames.rounds"));
             check(new HashSet<>(selected).size()==6,"No repeat games");selections.add(selected);
         }
-        check(pool.size()==11&&selections.size()>20,"Random six selected from the full pool");
+        check(pool.size()==12&&pool.contains("hole_in_the_wall")&&selections.size()>20,"Random six selected from the full pool");
         check(PartyRoundOptions.party().forRound(0).countdownSeconds()==4,"Initial countdown is four seconds");
-        for(int round=1;round<11;round++)
+        for(int round=1;round<12;round++)
             check(PartyRoundOptions.party().forRound(round).countdownSeconds()==4,"Every later arena has its own four-second countdown");
         var shortChain=ArmsRaceWeapon.progression(true);var fullChain=ArmsRaceWeapon.progression(false);
         check(shortChain.size()==6&&fullChain.size()==12,"Six steps only inside Party Games");

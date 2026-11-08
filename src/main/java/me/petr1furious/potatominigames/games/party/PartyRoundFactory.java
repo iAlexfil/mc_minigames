@@ -3,6 +3,7 @@ import me.petr1furious.potatominigames.core.game.SessionServices;
 final class PartyRoundFactory {
     static PartyRoundSession create(String mode,SessionServices services,PartyConfig config,PartyRoundContext context){
         return switch(mode){
+            case "hole_in_the_wall"->new HoleWallSession(services,config,context);
             case "pvp","sumo"->new DuelSession(services,config,mode.equals("sumo"),context);
             case "arms_race"->new ArmsRaceSession(services,config,context);
             case "tnt_run"->new TntRunSession(services,config,context);
@@ -16,5 +17,5 @@ final class PartyRoundFactory {
             default->throw new IllegalArgumentException("Unknown party round: "+mode);
         };
     }
-    static String title(String mode){return switch(mode){case "pvp"->"PvP";case "sumo"->"Сумо";case "arms_race"->"Гонка вооружений";case "tnt_run"->"TNT Run";case "mob_count"->"Пересчёт";case "rhino"->"Носорожий переполох";case "miners"->"Битва шахтёров";case "color_floor"->"Цветной пол";case "anvils"->"Наковальни";case "build_memory"->"Повтори постройку";case "tool_race"->"Гонка инструментов";default->mode;};}
+    static String title(String mode){return switch(mode){case "hole_in_the_wall"->"Дырка в стене";case "pvp"->"PvP";case "sumo"->"Сумо";case "arms_race"->"Гонка вооружений";case "tnt_run"->"TNT Run";case "mob_count"->"Пересчёт";case "rhino"->"Носорожий переполох";case "miners"->"Битва шахтёров";case "color_floor"->"Цветной пол";case "anvils"->"Наковальни";case "build_memory"->"Повтори постройку";case "tool_race"->"Гонка инструментов";default->mode;};}
 }

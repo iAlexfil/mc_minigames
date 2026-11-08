@@ -5,7 +5,7 @@ public final class PartyGamesCheck {
     public static void main(String[] args){
         UUID a=new UUID(0,1),b=new UUID(0,2),c=new UUID(0,3);
         var s=new PartyGamesState(List.of(a,b,c),PartyGamesState.MODES,new Random(1));
-        check(s.schedule().size()==11&&new HashSet<>(s.schedule()).size()==11,"Eleven unique games");
+        check(s.schedule().size()==12&&new HashSet<>(s.schedule()).size()==12,"Twelve unique games");
         s.beginRound(0);s.disconnect(b);s.reconnect(b);
         check(s.acceptResult(0,new PartyRoundResult(List.of(List.of(b),List.of(a),List.of(c)))),"Current generation result");
         check(s.score().points(b)==0&&s.score().points(a)==3,"Disconnect then rejoin cannot earn this round");

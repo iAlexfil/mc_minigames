@@ -16,6 +16,7 @@ final class ArmsRaceState {
         long advancedAt;
         boolean alive = true;
     }
+
     private final Map<UUID, Score> scores = new LinkedHashMap<>();
     private final int stages;
     private long sequence;
@@ -23,22 +24,42 @@ final class ArmsRaceState {
 
     ArmsRaceState(Collection<UUID> roster, int stages) {
         if (roster.isEmpty() || stages < 1 || roster.stream().distinct().count() != roster.size()) {
-            throw new IllegalArgumentException("Distinct players and a nonempty weapon chain required");
+            throw new IllegalArgumentException(
+                    "Distinct players and a nonempty weapon chain required");
         }
         this.stages = stages;
         roster.forEach(id -> scores.put(id, new Score()));
     }
-    int stage(UUID id) { return scores.get(id).stage; }
-    int kills(UUID id) { return scores.get(id).kills; }
-    int deaths(UUID id) { return scores.get(id).deaths; }
-    boolean alive(UUID id) { return scores.containsKey(id) && scores.get(id).alive; }
-    void setAlive(UUID id, boolean alive) { scores.get(id).alive = alive; }
-    UUID winner() { return winner; }
+
+    int stage(UUID id) {
+        return scores.get(id).stage;
+    }
+
+    int kills(UUID id) {
+        return scores.get(id).kills;
+    }
+
+    int deaths(UUID id) {
+        return scores.get(id).deaths;
+    }
+
+    boolean alive(UUID id) {
+        return scores.containsKey(id) && scores.get(id).alive;
+    }
+
+    void setAlive(UUID id, boolean alive) {
+        scores.get(id).alive = alive;
+    }
+
+    UUID winner() {
+        return winner;
+    }
 
     /** Returns true only when the killer earned a new step (or the final victory). */
     boolean death(UUID victim, UUID killer, int weaponStage) {
         return death(victim, killer, weaponStage, ++sequence);
     }
+
     boolean death(UUID victim, UUID killer, int weaponStage, long tick) {
         if (winner != null || !alive(victim)) return false;
         Score dead = scores.get(victim);
@@ -54,17 +75,27 @@ final class ArmsRaceState {
         else attacker.stage++;
         return true;
     }
+
     List<UUID> leaderboard(Collection<UUID> eligible) {
-        return scores.keySet().stream().filter(eligible::contains).sorted(Comparator
-                .<UUID>comparingInt(this::kills).reversed()
-                .thenComparingInt(this::deaths)
-                .thenComparingLong(id -> scores.get(id).advancedAt)).toList();
+        return scores.keySet().stream()
+                .filter(eligible::contains)
+                .sorted(
+                        Comparator.<UUID>comparingInt(this::kills)
+                                .reversed()
+                                .thenComparingInt(this::deaths)
+                                .thenComparingLong(id -> scores.get(id).advancedAt))
+                .toList();
     }
+
     PartyRoundResult result(Collection<UUID> eligible) {
-        return PartyRoundResult.ordered(eligible, Comparator.<UUID,Boolean>comparing(id -> !id.equals(winner))
-                .thenComparing(Comparator.<UUID>comparingInt(this::kills).reversed())
-                .thenComparingInt(this::deaths).thenComparingLong(id -> scores.get(id).advancedAt));
+        return PartyRoundResult.ordered(
+                eligible,
+                Comparator.<UUID, Boolean>comparing(id -> !id.equals(winner))
+                        .thenComparing(Comparator.<UUID>comparingInt(this::kills).reversed())
+                        .thenComparingInt(this::deaths)
+                        .thenComparingLong(id -> scores.get(id).advancedAt));
     }
+
     UUID timeWinner(Collection<UUID> eligible) {
         List<UUID> ranking = leaderboard(eligible);
         return ranking.isEmpty() || kills(ranking.getFirst()) == 0 ? null : ranking.getFirst();

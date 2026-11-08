@@ -7,6 +7,7 @@ import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.game.EndReason;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
@@ -129,7 +130,7 @@ final class ArmsRaceSession implements PartyRoundSession {
             names.put(participant.id(), participant.name());
             connected.add(participant.id());
         }
-        if (names.isEmpty()) throw new CommandFailure("Для гонки вооружений нужны участники.");
+        if (names.isEmpty()) throw new CommandFailure(I18n.tr("party.duels.arms.participants_required"));
         state = new ArmsRaceState(names.keySet(), weapons.size());
         countdownEnd =
                 Math.clamp(
@@ -170,39 +171,31 @@ final class ArmsRaceSession implements PartyRoundSession {
         bar =
                 services.bossBars()
                         .create(
-                                text("Гонка вооружений", NamedTextColor.GOLD),
+                                text("arms.title", NamedTextColor.GOLD),
                                 BossBar.Color.RED,
                                 BossBar.Overlay.PROGRESS);
         for (Player player : services.participants().onlinePlayers()) spawn(player);
         services.messages()
                 .broadcast(
-                        text(
-                                "Гонка вооружений: все против всех! Убийство текущим оружием"
-                                        + " открывает следующую ступень.",
-                                NamedTextColor.GOLD));
+                        text("arms.rules", NamedTextColor.GOLD));
         services.messages()
                 .broadcast(
-                        text(
-                                weapons.size()
-                                        + " ступеней, финал — золотая лопата. После смерти оружие"
-                                        + " сохраняется. Строить нельзя.",
-                                NamedTextColor.GRAY));
+                        text("arms.progression_rules", NamedTextColor.GRAY, weapons.size()));
         if (services.isTest())
             services.messages()
                     .broadcast(
-                            text(
-                                    "Тестовая игра: без сохранения очков. /party stop — закончить.",
-                                    NamedTextColor.YELLOW));
+                            text("arms.test_rules", NamedTextColor.YELLOW));
         updateHud();
         ticker = Bukkit.getScheduler().runTaskTimer(services.plugin(), this::tick, 1L, 1L);
     }
 
-    private static Component text(String value, NamedTextColor color) {
-        return Component.text(value, color);
+    private static Component text(String key, NamedTextColor color, Object... args) {
+        return I18n.tr("party.duels." + key, args).color(color);
     }
 
-    private String name(UUID id) {
-        return names.getOrDefault(id, "Игрок");
+    private Component name(UUID id) {
+        String value = names.get(id);
+        return value == null ? I18n.tr("party.duels.player") : Component.text(value);
     }
 
     private Player player(UUID id) {
@@ -270,14 +263,8 @@ final class ArmsRaceSession implements PartyRoundSession {
         if (phase == Phase.COUNTDOWN) countdownFreeze.freeze(player);
         player.showBossBar(bar);
         player.sendActionBar(
-                text(
-                        "Ступень "
-                                + (state.stage(id) + 1)
-                                + "/"
-                                + weapons.size()
-                                + " • "
-                                + weapons.get(state.stage(id)).title,
-                        NamedTextColor.GREEN));
+                text("arms.stage_actionbar", NamedTextColor.GREEN,
+                        state.stage(id) + 1, weapons.size(), weapons.get(state.stage(id)).title));
     }
 
     private void waitForRespawn(Player player) {
@@ -311,7 +298,7 @@ final class ArmsRaceSession implements PartyRoundSession {
             matchEnd = tick + durationTicks;
             services.messages()
                     .broadcast(
-                            text("Бой! Пройдите всю цепочку оружия первым!", NamedTextColor.RED));
+                            text("arms.fight", NamedTextColor.RED));
         }
         if (phase == Phase.RESULT) {
             if (tick >= resultEnd) finish(champion);
@@ -444,16 +431,14 @@ final class ArmsRaceSession implements PartyRoundSession {
         respawnAt.put(victimId, tick + respawnTicks);
         services.messages()
                 .broadcast(
-                        text(
-                                creditedAttacker == null
-                                        ? name(victimId) + " погиб"
-                                        : name(creditedAttacker) + " убил " + name(victimId),
-                                NamedTextColor.RED));
+                        creditedAttacker == null
+                                ? text("death.died", NamedTextColor.RED, name(victimId))
+                                : text("death.killed", NamedTextColor.RED, name(creditedAttacker), name(victimId)));
         if (killerId != null)
             killer.showTitle(
                     Title.title(
-                            text("Вы убили " + name(victimId), NamedTextColor.GOLD),
-                            text(advanced ? "Следующая ступень оружия" : "", NamedTextColor.WHITE),
+                            text("arms.you_killed", NamedTextColor.GOLD, name(victimId)),
+                            advanced ? text("arms.next_stage", NamedTextColor.WHITE) : Component.empty(),
                             Title.Times.times(
                                     Duration.ZERO, Duration.ofSeconds(2), Duration.ofMillis(300))));
         if (!advanced) return;
@@ -472,15 +457,8 @@ final class ArmsRaceSession implements PartyRoundSession {
         killer.playSound(killer.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .7f, 1.4f);
         services.messages()
                 .broadcast(
-                        text(
-                                name(killerId)
-                                        + " → "
-                                        + (state.stage(killerId) + 1)
-                                        + "/"
-                                        + weapons.size()
-                                        + " • "
-                                        + weapon.title,
-                                NamedTextColor.GOLD));
+                        text("arms.advanced", NamedTextColor.GOLD,
+                                name(killerId), state.stage(killerId) + 1, weapons.size(), weapon.title));
         updateHud();
     }
 
@@ -491,9 +469,8 @@ final class ArmsRaceSession implements PartyRoundSession {
         UUID killer = hit != null && tick - hit.tick() <= 8 * 20 ? hit.attacker() : null;
         event.deathMessage(null);
         event.deathScreenMessageOverride(
-                text(
-                        killer == null ? "Вы погибли" : "Вас убил " + name(killer),
-                        NamedTextColor.RED));
+                I18n.render(killer == null ? text("death.you_died", NamedTextColor.RED)
+                        : text("death.killed_by", NamedTextColor.RED, name(killer)), event.getPlayer()));
         event.getDrops().clear();
         event.setDroppedExp(0);
         event.setKeepInventory(true);
@@ -555,11 +532,8 @@ final class ArmsRaceSession implements PartyRoundSession {
         resultEnd = tick + DeathPause.TICKS;
         services.messages()
                 .broadcast(
-                        text(
-                                winner == null
-                                        ? "Гонка завершена: ничья"
-                                        : "Победитель гонки — " + name(winner),
-                                NamedTextColor.GOLD));
+                        winner == null ? text("arms.draw", NamedTextColor.GOLD)
+                                : text("arms.winner", NamedTextColor.GOLD, name(winner)));
         for (UUID id : connected) {
             Player player = player(id);
             if (player != null && !player.isDead()) countdownFreeze.freeze(player);
@@ -578,25 +552,14 @@ final class ArmsRaceSession implements PartyRoundSession {
         }
         List<Component> lines = new ArrayList<>();
         if (champion == null)
-            lines.add(text("Ничья: ни одного результативного убийства.", NamedTextColor.YELLOW));
+            lines.add(text("arms.no_kills", NamedTextColor.YELLOW));
         for (int i = 0; i < ranking.size(); i++) {
             UUID id = ranking.get(i);
             lines.add(
-                    text(
-                            (i + 1)
-                                    + ". "
-                                    + name(id)
-                                    + " • ступень "
-                                    + (state.stage(id) + 1)
-                                    + "/"
-                                    + weapons.size()
-                                    + " • "
-                                    + state.kills(id)
-                                    + " убийств / "
-                                    + state.deaths(id)
-                                    + " смертей"
-                                    + (connected.contains(id) ? "" : " (вышел)"),
-                            i == 0 ? NamedTextColor.GOLD : NamedTextColor.GRAY));
+                    text(connected.contains(id) ? "arms.standing" : "arms.standing_left",
+                            i == 0 ? NamedTextColor.GOLD : NamedTextColor.GRAY,
+                            i + 1, name(id), state.stage(id) + 1, weapons.size(),
+                            state.kills(id), state.deaths(id)));
         }
         result = List.copyOf(lines);
         context.finish(EndReason.FINISHED, roundResult());
@@ -635,7 +598,7 @@ final class ArmsRaceSession implements PartyRoundSession {
     public Component globalResult() {
         return champion == null
                 ? null
-                : text(name(champion) + " выиграл гонку вооружений!", NamedTextColor.GOLD);
+                : text("arms.global_winner", NamedTextColor.GOLD, name(champion));
     }
 
     private void updateHud() {
@@ -644,15 +607,13 @@ final class ArmsRaceSession implements PartyRoundSession {
                 Math.max(
                         0, ((phase == Phase.COUNTDOWN ? countdownEnd : matchEnd) - tick + 19) / 20);
         bar.name(
-                text(
-                        phase == Phase.COUNTDOWN
-                                ? "Гонка вооружений • старт через " + remaining + " с"
-                                : phase == Phase.RESULT
-                                        ? champion == null
-                                                ? "Гонка завершена • ничья"
-                                                : "Победитель: " + name(champion)
-                                        : "Гонка вооружений • " + TimeFormat.clock(remaining),
-                        NamedTextColor.GOLD));
+                phase == Phase.COUNTDOWN
+                        ? text("arms.countdown", NamedTextColor.GOLD, remaining)
+                        : phase == Phase.RESULT
+                                ? champion == null
+                                        ? text("arms.result_draw", NamedTextColor.GOLD)
+                                        : text("arms.result_winner", NamedTextColor.GOLD, name(champion))
+                                : text("arms.timer", NamedTextColor.GOLD, TimeFormat.clock(remaining)));
         bar.progress(
                 Math.clamp(
                         (float) remaining
@@ -664,43 +625,27 @@ final class ArmsRaceSession implements PartyRoundSession {
         List<Component> standings = new ArrayList<>();
         for (UUID id : state.leaderboard(connected).stream().limit(7).toList()) {
             standings.add(
-                    text(
-                            name(id) + " • " + (state.stage(id) + 1) + "/" + weapons.size() + "",
-                            NamedTextColor.GRAY));
+                    text("arms.leaderboard", NamedTextColor.GRAY, name(id), state.stage(id) + 1, weapons.size()));
         }
         for (UUID id : connected) {
             Player player = player(id);
             if (player == null) continue;
             List<Component> lines = new ArrayList<>();
             lines.add(
-                    text(
-                            "Все против всех • " + connected.size() + " игроков",
-                            NamedTextColor.AQUA));
+                    text("arms.players", NamedTextColor.AQUA, connected.size()));
             lines.add(
-                    text(
-                            "Ступень "
-                                    + (state.stage(id) + 1)
-                                    + "/"
-                                    + weapons.size()
-                                    + ": "
-                                    + weapons.get(state.stage(id)).title,
-                            NamedTextColor.GREEN));
+                    text("arms.stage", NamedTextColor.GREEN,
+                            state.stage(id) + 1, weapons.size(), weapons.get(state.stage(id)).title));
             lines.add(
-                    text(
-                            "Убийств: " + state.kills(id) + " • Смертей: " + state.deaths(id),
-                            NamedTextColor.WHITE));
+                    text("arms.statistics", NamedTextColor.WHITE, state.kills(id), state.deaths(id)));
             if (respawnAt.containsKey(id))
                 lines.add(
-                        text(
-                                "Возрождение: "
-                                        + Math.max(0, (respawnAt.get(id) - tick + 19) / 20)
-                                        + " с",
-                                NamedTextColor.YELLOW));
+                        text("arms.respawn", NamedTextColor.YELLOW,
+                                Math.max(0, (respawnAt.get(id) - tick + 19) / 20)));
             else if (protectedSpawn(id))
-                lines.add(text("Защита появления • атака снимает её", NamedTextColor.YELLOW));
+                lines.add(text("arms.spawn_protection", NamedTextColor.YELLOW));
             lines.addAll(standings);
-            services.sidebar()
-                    .update(player, text("Гонка вооружений", NamedTextColor.LIGHT_PURPLE), lines);
+            services.sidebar().update(player, text("arms.title", NamedTextColor.LIGHT_PURPLE), lines);
             player.showBossBar(bar);
         }
     }
@@ -760,13 +705,7 @@ final class ArmsRaceSession implements PartyRoundSession {
             if (phase == Phase.RESULT) countdownFreeze.freeze(player);
         }
         player.sendMessage(
-                text(
-                        "Прогресс сохранён: ступень "
-                                + (state.stage(id) + 1)
-                                + "/"
-                                + weapons.size()
-                                + ".",
-                        NamedTextColor.GREEN));
+                text("arms.progress_saved", NamedTextColor.GREEN, state.stage(id) + 1, weapons.size()));
     }
 
     @Override

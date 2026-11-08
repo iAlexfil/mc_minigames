@@ -183,7 +183,7 @@ public final class ConfigRegistry {
                 }
             }
         }
-        throw new IllegalArgumentException("not a declared setting");
+        throw me.petr1furious.potatominigames.i18n.I18n.exception("core.config.not_declared");
     }
 
     private static Property<?> propertyOf(Binding binding, String key) {

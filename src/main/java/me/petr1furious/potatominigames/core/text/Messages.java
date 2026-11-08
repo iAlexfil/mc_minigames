@@ -43,25 +43,21 @@ public final class Messages {
         target.sendMessage(prefixed(message));
     }
 
-    /** "1 player", "3 players". */
-    public static String count(int amount, String noun) {
-        return amount + " " + noun + (amount == 1 ? "" : "s");
+
+    public Component success(Component message) {
+        return message.colorIfAbsent(NamedTextColor.GREEN);
     }
 
-    public Component success(String message) {
-        return Component.text(message, NamedTextColor.GREEN);
+    public Component error(Component message) {
+        return message.colorIfAbsent(NamedTextColor.RED);
     }
 
-    public Component error(String message) {
-        return Component.text(message, NamedTextColor.RED);
+    public Component info(Component message) {
+        return message.colorIfAbsent(NamedTextColor.GRAY);
     }
 
-    public Component info(String message) {
-        return Component.text(message, NamedTextColor.GRAY);
-    }
-
-    public Component highlight(String message) {
-        return Component.text(message, NamedTextColor.GOLD);
+    public Component highlight(Component message) {
+        return message.colorIfAbsent(NamedTextColor.GOLD);
     }
 
     public void broadcast(Component message) {

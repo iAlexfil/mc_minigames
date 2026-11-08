@@ -4,6 +4,7 @@ import me.petr1furious.potatominigames.core.config.ConfigRegistry;
 import me.petr1furious.potatominigames.core.game.GameSession;
 import me.petr1furious.potatominigames.core.game.Minigame;
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -30,7 +31,7 @@ public final class PartyGame implements Minigame {
 
     @Override
     public Component displayName() {
-        return Component.text("Вечеринка", NamedTextColor.LIGHT_PURPLE);
+        return I18n.tr("party.rounds.name").color(NamedTextColor.LIGHT_PURPLE);
     }
 
     @Override
@@ -62,17 +63,10 @@ public final class PartyGame implements Minigame {
     }
 
     @Override
-    public String modeTitle(String mode) {
-        return switch (mode) {
-            case "hole_in_the_wall" -> "Дырка в стене";
-            case "party_games" -> "Party Games";
-            case "miners" -> "Битва шахтёров";
-            case "color_floor" -> "Цветной пол";
-            case "anvils" -> "Наковальни";
-            case "build_memory" -> "Повтори постройку";
-            case "tool_race" -> "Гонка инструментов";
-            default -> mode;
-        };
+    public Component modeTitle(String mode) {
+        return mode.equals("party_games")
+                ? I18n.tr("party.rounds.mode.party_games")
+                : PartyRoundFactory.title(mode);
     }
 
     @Override
@@ -107,27 +101,7 @@ public final class PartyGame implements Minigame {
 
     @Override
     public Component description(String mode) {
-        return Component.text(
-                switch (mode) {
-                    case "hole_in_the_wall" ->
-                            "Проходи сквозь стены • не дай столкнуть себя с платформы";
-                    case "party_games" ->
-                            "Все игры в одном матче • каждый сам за себя • призовые очки 3 / 2 / 1";
-                    case "color_floor" -> "Найди нужный цвет • неверный пол исчезает";
-                    case "anvils" -> "Ливни наковален • перемещающиеся укрытия • толкай соперников";
-                    case "build_memory" -> "Запомни и повтори постройку • одна ошибка — выбывание";
-                    case "tool_race" -> "50 блоков вниз • выбирай нужный инструмент";
-                    case "miners" ->
-                            "Битва шахтёров: личные шахты • случайный лут из руд • затем PvP";
-                    case "sumo" -> "Сумо: столкни соперника • каждый с каждым • BO3";
-                    case "arms_race" -> "Гонка вооружений: все против всех • 12 ступеней оружия";
-                    case "tnt_run" -> "TNT Run: три яруса • исчезающий пол • последний выживший";
-                    case "mob_count" ->
-                            "Пересчёт: запомни мобов • выбери голову • прыгни на верную платформу";
-                    case "rhino" ->
-                            "Носорожий переполох: рывки разорителей • бросай мины • не упади";
-                    default -> "PvP: каждый с каждым • BO3 • случайные классы";
-                });
+        return I18n.tr("party.rounds.description." + (modes().contains(mode) ? mode : "pvp"));
     }
 
     @Override

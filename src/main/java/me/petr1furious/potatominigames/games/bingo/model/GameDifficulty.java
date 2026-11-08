@@ -1,5 +1,8 @@
 package me.petr1furious.potatominigames.games.bingo.model;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+
 import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;
@@ -28,6 +31,13 @@ public record GameDifficulty(String key, int order, int targetScore, int maxDevi
             }
         }
         durations = Map.copyOf(normalizedDurations);
+    }
+
+    public Component displayName() {
+        return switch (key) {
+            case "baby", "easy", "medium", "hard", "insane" -> I18n.tr("bingo.difficulty." + key);
+            default -> Component.text(key);
+        };
     }
 
     @Override

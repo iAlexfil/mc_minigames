@@ -1,9 +1,10 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
 import me.petr1furious.potatominigames.core.world.Locations;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.GameMode;
@@ -70,7 +71,7 @@ public class HimarsGadget extends AbstractGadget {
             Player shooter = (Player) event.getEntity();
             int remaining = shooter.getGameMode() == GameMode.SURVIVAL ? getRemainingCooldownSeconds(shooter) : 0;
             if (remaining > 0) {
-                shooter.sendActionBar(Component.text("HIMARS: " + remaining + "s").color(NamedTextColor.RED));
+                shooter.sendActionBar(I18n.tr("gadgets.himars.cooldown", remaining).color(NamedTextColor.RED));
                 event.setCancelled(true);
                 return;
             }
@@ -132,7 +133,7 @@ public class HimarsGadget extends AbstractGadget {
         var crossbow = new ItemStack(Material.CROSSBOW);
         GadgetItems.addTag(crossbow, TAG);
         var meta = crossbow.getItemMeta();
-        meta.displayName(Component.text("HIMARS").color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
+        meta.displayName(I18n.tr("gadgets.himars.name").color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
         meta.setUnbreakable(true);
         meta.setEnchantmentGlintOverride(true);
         crossbow.setItemMeta(meta);

@@ -8,6 +8,8 @@ import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 /** The framed end-of-game block, sent as one chat message so nothing lands in between. */
 public final class Summary {
     private static final Component SEPARATOR = Component.text("▬".repeat(24), NamedTextColor.DARK_GRAY);
@@ -54,9 +56,8 @@ public final class Summary {
 
     /** "Winner: Alice" / "Winners: Alice, Bob". */
     public static Component winners(List<Component> names) {
-        return Component.text()
-                .append(Component.text(names.size() == 1 ? "Winner: " : "Winners: ", NamedTextColor.GREEN))
-                .append(Component.join(JoinConfiguration.commas(true), names))
-                .build();
+        return I18n.tr(names.size() == 1 ? "common.summary.winner" : "common.summary.winners",
+                Component.join(JoinConfiguration.separator(Component.text(", ")), names))
+                .color(NamedTextColor.GREEN);
     }
 }

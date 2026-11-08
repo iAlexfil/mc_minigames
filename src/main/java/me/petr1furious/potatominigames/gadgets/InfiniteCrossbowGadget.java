@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
 import me.petr1furious.potatominigames.core.world.Locations;
@@ -46,6 +48,7 @@ public class InfiniteCrossbowGadget extends AbstractGadget {
             meta.addChargedProjectile(new ItemStack(Material.ARROW));
             setLore(meta, count + 1, max);
             item.setItemMeta(meta);
+            I18n.item(item, event.getPlayer());
             if (GadgetItems.isLeftClick(event)) {
                 event.getPlayer().playSound(event.getPlayer().getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.1f, 2f);
             }
@@ -84,7 +87,7 @@ public class InfiniteCrossbowGadget extends AbstractGadget {
         GadgetItems.addTag(crossbow, TAG);
         var meta = crossbow.getItemMeta();
         meta.displayName(
-                Component.text("Infinite Crossbow").color(NamedTextColor.GOLD).decoration(TextDecoration.ITALIC,
+                I18n.tr("gadgets.crossbow.name").color(NamedTextColor.GOLD).decoration(TextDecoration.ITALIC,
                         false));
         meta.setUnbreakable(true);
         meta.setEnchantmentGlintOverride(true);
@@ -99,10 +102,10 @@ public class InfiniteCrossbowGadget extends AbstractGadget {
 
     private void setLore(CrossbowMeta meta, int projectiles, int max) {
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("Crossbow with infinite ammo").color(NamedTextColor.GRAY)
+        lore.add(I18n.tr("gadgets.crossbow.lore").color(NamedTextColor.GRAY)
                 .decoration(TextDecoration.ITALIC, false));
         if (max > 1) {
-            lore.add(Component.text("Loaded: " + projectiles + "/" + max).color(NamedTextColor.GRAY)
+            lore.add(I18n.tr("gadgets.crossbow.loaded", projectiles, max).color(NamedTextColor.GRAY)
                     .decoration(TextDecoration.ITALIC, false));
         }
         meta.lore(lore);

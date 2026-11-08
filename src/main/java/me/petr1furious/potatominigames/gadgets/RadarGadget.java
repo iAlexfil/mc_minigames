@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
 import net.kyori.adventure.text.Component;
@@ -45,7 +47,7 @@ public class RadarGadget extends AbstractGadget {
 
         int remaining = getRemainingCooldownSeconds(player);
         if (remaining > 0) {
-            player.sendActionBar(Component.text("Radar: " + remaining + "s").color(NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("gadgets.radar.cooldown", remaining).color(NamedTextColor.RED));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 0.5f);
             return;
         }
@@ -53,7 +55,7 @@ public class RadarGadget extends AbstractGadget {
 
         Player target = findTarget(player);
         if (target == null) {
-            player.sendActionBar(Component.text("No players in cone").color(NamedTextColor.GRAY));
+            player.sendActionBar(I18n.tr("gadgets.radar.no_players").color(NamedTextColor.GRAY));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 0.7f);
             return;
         }
@@ -63,9 +65,9 @@ public class RadarGadget extends AbstractGadget {
                     new PotionEffect(PotionEffectType.GLOWING, glowingEffectLength.get() * 20, 0, false, false));
         }
 
-        player.sendActionBar(Component.text("Radar: ").color(NamedTextColor.YELLOW)
-                .append(context.hideTargetNames(player) ? Component.text("enemy", NamedTextColor.AQUA)
-                        : Component.text(target.getName(), NamedTextColor.AQUA)));
+        player.sendActionBar(I18n.tr("gadgets.radar.target",
+                context.hideTargetNames(player) ? I18n.tr("gadgets.enemy").color(NamedTextColor.AQUA)
+                        : Component.text(target.getName(), NamedTextColor.AQUA)).color(NamedTextColor.YELLOW));
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 2f);
         target.playSound(target.getLocation(), Sound.BLOCK_FIRE_EXTINGUISH, 0.6f, 1.5f);
     }
@@ -115,7 +117,7 @@ public class RadarGadget extends AbstractGadget {
         var item = new ItemStack(Material.SPYGLASS);
         GadgetItems.addTag(item, TAG);
         var meta = item.getItemMeta();
-        meta.displayName(Component.text("Radar").color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
+        meta.displayName(I18n.tr("gadgets.radar.name").color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
         meta.setEnchantmentGlintOverride(true);
         item.setItemMeta(meta);
         item.setAmount(count);

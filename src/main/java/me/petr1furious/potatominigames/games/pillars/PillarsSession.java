@@ -54,9 +54,9 @@ import me.petr1furious.potatominigames.core.game.EndReason;
 import me.petr1furious.potatominigames.core.game.GameSession;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.player.Participant;
-import me.petr1furious.potatominigames.core.text.Messages;
 import me.petr1furious.potatominigames.core.text.Summary;
 import me.petr1furious.potatominigames.core.text.TimeFormat;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 final class PillarsSession implements GameSession {
     private enum Ending {
@@ -181,7 +181,7 @@ final class PillarsSession implements GameSession {
 
     private void start() throws CommandFailure {
         if (!game.modes().contains(modeId)) {
-            throw new CommandFailure("Unknown Pillars mode or preset: " + modeId);
+            throw new CommandFailure(I18n.tr("pillars.play.error.mode", modeId));
         }
         rules = preset != null ? mixRules(preset.modifiers()) : mode.id.equals("fusion") ? rollFusion()
                 : new Rules(mode.layout.get().equalsIgnoreCase("random"), mode.cooldownSeconds.get(),
@@ -193,14 +193,13 @@ final class PillarsSession implements GameSession {
         }
         List<PillarsArena> usable = game.importedArenas();
         if (usable.isEmpty()) {
-            throw new CommandFailure("No pillars arenas imported. Use "
-                    + "/pillars arena import all.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.no_imported_arenas"));
         }
         String forced = services.option(ARENA_OPTION);
         if (forced != null) {
             arena = usable.stream().filter(candidate -> candidate.name().equalsIgnoreCase(forced)).findFirst()
-                    .orElseThrow(() -> new CommandFailure("Unknown arena: " + forced + " (imported: "
-                            + String.join(", ", usable.stream().map(PillarsArena::name).toList()) + ")"));
+                    .orElseThrow(() -> new CommandFailure(I18n.tr("pillars.play.error.imported_arena", forced,
+                            String.join(", ", usable.stream().map(PillarsArena::name).toList()))));
         } else {
             arena = usable.get(ThreadLocalRandom.current().nextInt(usable.size()));
         }
@@ -216,14 +215,14 @@ final class PillarsSession implements GameSession {
         items = ItemPool.build(world, itemConfig);
         if (mode.luckyBlocks.get()) {
             if (!Bukkit.getPluginManager().isPluginEnabled(LUCKY_PLUGIN)) {
-                throw new CommandFailure("Lucky mode needs the " + LUCKY_PLUGIN + " plugin.");
+                throw new CommandFailure(I18n.tr("pillars.play.error.lucky_plugin", LUCKY_PLUGIN));
             }
             // A placed pillar block would be a lucky block too.
             String pillarKey = pillarMaterial().getKey().getKey();
             items = items.stream().filter(item -> !item.id().equalsIgnoreCase(pillarKey)).toList();
         }
         if (items.isEmpty()) {
-            throw new CommandFailure("Item pool is empty; check games/pillars.yml.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.empty_pool"));
         }
         if (mode.id.equals("sniper_duel")) {
             prepareSniperDrops();
@@ -306,15 +305,12 @@ final class PillarsSession implements GameSession {
                     () -> create(draw(new ItemPool.GroupState(groups), 1)));
         }
         if (preset != null || mode.id.equals("fusion")) {
-            announce(Component.text()
-                    .append(Component.text((preset != null ? preset.name() : "Fusion") + ": ", mode.accentColor()))
-                    .append(Component.text(fusionText(), NamedTextColor.WHITE))
-                    .build());
+            announce(I18n.tr("pillars.play.modifiers.mix", game.modeTitle(modeId).color(mode.accentColor()),
+                    fusionText().color(NamedTextColor.WHITE)));
         } else if (perks != null) {
-            announce(Component.text("Перки включены: особые предметы с блеском в обычной выдаче. Управление указано на предметах.", NamedTextColor.LIGHT_PURPLE));
+            announce(I18n.tr("pillars.play.perks.enabled").color(NamedTextColor.LIGHT_PURPLE));
         } else if (adhd != null) {
-            announce(Component.text("СДВГ включён: периодические вспышки ускоренного шафла и рейва.",
-                    NamedTextColor.GOLD));
+            announce(I18n.tr("pillars.play.adhd.enabled").color(NamedTextColor.GOLD));
         }
         services.plugin().getLogger().info("Pillars (" + modeId + (rules.modifiers().isEmpty() ? ""
                 : ": " + String.join("+", rules.modifiers())) + ") started in arena " + arena.name() + " with "
@@ -503,10 +499,10 @@ final class PillarsSession implements GameSession {
             case START -> {
                 shuffleItems.setEnabled(true);
                 events.startBurst(adhd.durationTicks());
-                announce(Component.text("СДВГ! " + adhd.secondsLeft()
-                        + " с: шафл ×3 и рейв ×3!", NamedTextColor.GOLD).decorate(TextDecoration.BOLD));
-                Title title = Title.title(Component.text("СДВГ!", NamedTextColor.GOLD).decorate(TextDecoration.BOLD),
-                        Component.text("Шафл ×3 • Рейв ×3 • " + adhd.secondsLeft() + " с", NamedTextColor.YELLOW));
+                announce(I18n.tr("pillars.play.adhd.start", adhd.secondsLeft()).color(NamedTextColor.GOLD)
+                        .decorate(TextDecoration.BOLD));
+                Title title = Title.title(I18n.tr("pillars.play.adhd.title").color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD),
+                        I18n.tr("pillars.play.adhd.subtitle", adhd.secondsLeft()).color(NamedTextColor.YELLOW));
                 for (Player player : services.session().audiencePlayers()) {
                     player.showTitle(title);
                 }
@@ -518,7 +514,7 @@ final class PillarsSession implements GameSession {
                 events.stopBurst();
                 shuffleItems.setEnabled(rules.shuffle());
                 itemCountdown = itemCooldown();
-                announce(Component.text("СДВГ закончился: возвращаются обычные правила режима.", NamedTextColor.GRAY));
+                announce(I18n.tr("pillars.play.adhd.end").color(NamedTextColor.GRAY));
                 updateHud();
             }
             default -> { }
@@ -551,7 +547,7 @@ final class PillarsSession implements GameSession {
             player.setVelocity(new Vector());
             player.setFallDistance(0);
             player.showTitle(Title.title(
-                    Component.text("GO!", NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
+                    I18n.tr("pillars.play.title.go").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
                     Component.empty(), COUNTDOWN_TIMES));
         }
         playToAlive(Sound.ENTITY_PLAYER_LEVELUP, 0.75f, 1.2f);
@@ -582,7 +578,7 @@ final class PillarsSession implements GameSession {
                     List<ItemStack> drop = List.of(next);
                     giveItems(player, pillarPlayer.sniperDrops > 6 ? perkDraw(drop) : drop);
                 } else {
-                    player.getInventory().addItem(next);
+                    player.getInventory().addItem(I18n.item(next, player));
                     playItemSound(player);
                 }
             } else {
@@ -630,7 +626,7 @@ final class PillarsSession implements GameSession {
             }
         }
         if (logs.isEmpty() || arrows.isEmpty() || sniperCrossbow == null || sniperRocket == null) {
-            throw new CommandFailure("Sniper Duel needs logs, arrows, crossbows and firework rockets enabled.");
+            throw new CommandFailure(I18n.tr("pillars.play.error.sniper_pool"));
         }
         sniperLogs = List.copyOf(logs);
         sniperArrows = List.copyOf(arrows);
@@ -710,8 +706,8 @@ final class PillarsSession implements GameSession {
                 List.copyOf(modifiers));
     }
 
-    private String fusionText() {
-        return rules.modifiers().isEmpty() ? "no modifiers, plain pillars" : String.join(" + ", rules.modifiers());
+    private Component fusionText() {
+        return game.modifierLabels(rules.modifiers());
     }
 
     /** Item Frenzy cannot speed shuffle up, so it is not rolled then. */
@@ -870,7 +866,7 @@ final class PillarsSession implements GameSession {
     private void giveItems(Player player, List<ItemStack> stacks) {
         if (perks != null) perks.grant(player, stacks);
         else for (ItemStack stack : stacks) {
-            player.getInventory().addItem(stack.clone());
+            player.getInventory().addItem(I18n.item(stack.clone(), player));
         }
         playItemSound(player);
     }
@@ -888,16 +884,16 @@ final class PillarsSession implements GameSession {
     private void updateHud() {
         if (bossBar != null) {
             float progress = itemCountdownProgress();
-            bossBar.name(Component.text(adhdActive()
-                    ? "СДВГ: " + adhd.secondsLeft() + " с • смена через " + itemSecondsLeft() + " с"
-                    : "=== " + itemSecondsLeft() + "s ===").style(keyStyle()));
+            bossBar.name((adhdActive()
+                    ? I18n.tr("pillars.play.bossbar.adhd", adhd.secondsLeft(), itemSecondsLeft())
+                    : I18n.tr("pillars.play.bossbar.next_item", itemSecondsLeft())).style(keyStyle()));
             bossBar.progress(progress);
             bossBar.color(barColor(progress));
         }
         if (!mode.scoreboard.get()) {
             return;
         }
-        Component title = MiniMessage.miniMessage().deserialize("<bold><gradient:#71CCF8:#FC91EC:#F87171>Pillars");
+        Component title = I18n.tr("pillars.play.sidebar.title");
         Style value = Style.style(NamedTextColor.GRAY).decoration(TextDecoration.BOLD, false);
         for (PillarPlayer pillarPlayer : players.values()) {
             Player player = pillarPlayer.player();
@@ -905,12 +901,10 @@ final class PillarsSession implements GameSession {
                 continue;
             }
             services.sidebar().update(player, title, List.of(
-                    Component.text("Mode: ").style(keyStyle()).append(Component.text(modeName()).style(value)),
-                    Component.text("Name: ").style(keyStyle()).append(Component.text(pillarPlayer.name).style(value)),
-                    Component.text("Time Left: ").style(keyStyle())
-                            .append(Component.text(TimeFormat.clock(Math.max(0, timeLeft))).style(value)),
-                    Component.text("Kills: ").style(keyStyle())
-                            .append(Component.text(String.valueOf(pillarPlayer.kills)).style(value))));
+                    I18n.tr("pillars.play.sidebar.mode", modeName().style(value)).style(keyStyle()),
+                    I18n.tr("pillars.play.sidebar.player", Component.text(pillarPlayer.name).style(value)).style(keyStyle()),
+                    I18n.tr("pillars.play.sidebar.time", Component.text(TimeFormat.clock(Math.max(0, timeLeft))).style(value)).style(keyStyle()),
+                    I18n.tr("pillars.play.sidebar.kills", Component.text(pillarPlayer.kills).style(value)).style(keyStyle())));
         }
     }
 
@@ -945,43 +939,27 @@ final class PillarsSession implements GameSession {
         }
         boolean now = itemSecondsLeft() <= 0;
         List<TextColor> colors = now ? ITEM_NOW_COLORS : ITEM_TIME_COLORS;
-        String text = now ? "New item(s)" : "Next item in " + itemSecondsLeft() + "s";
+        Component text = now ? I18n.tr("pillars.play.actionbar.new_item")
+                : I18n.tr("pillars.play.actionbar.next_item", itemSecondsLeft());
         if (adhdActive()) {
-            text = "СДВГ " + adhd.secondsLeft() + " с • " + text;
+            text = now ? I18n.tr("pillars.play.actionbar.adhd_new_item", adhd.secondsLeft())
+                    : I18n.tr("pillars.play.actionbar.adhd_next_item", adhd.secondsLeft(), itemSecondsLeft());
         }
-        Component bar = MiniMessage.miniMessage().deserialize("<gradient:" + colors.get(0).asHexString() + ":"
-                + colors.get(1).asHexString() + ":" + String.format(java.util.Locale.ROOT, "%.2f", actionBarPhase)
-                + ">" + text + "</gradient>");
         for (PillarPlayer pillarPlayer : alive) {
             Player player = pillarPlayer.player();
             if (player != null) {
+                Component bar = MiniMessage.miniMessage().deserialize("<gradient:" + colors.get(0).asHexString() + ":"
+                        + colors.get(1).asHexString() + ":" + String.format(java.util.Locale.ROOT, "%.2f", actionBarPhase)
+                        + "><text></gradient>", net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
+                                .component("text", I18n.render(text, player)));
                 player.sendActionBar(bar);
             }
         }
     }
 
-    String modeName() {
-        return baseModeName() + (adhdActive() ? " • СДВГ!" : "");
-    }
-
-    private String baseModeName() {
-        if (preset != null) {
-            return preset.name();
-        }
-        return switch (mode.id) {
-            case "chaos" -> "Chaos";
-            case "item-shuffle" -> "Item-Shuffle";
-            case "lucky" -> "Lucky";
-            case "tactical" -> "Tactical";
-            case "big_house" -> "Big House";
-            case "sniper_duel" -> "Sniper Duel";
-            case "party" -> "Party";
-            case "rave" -> "Rave";
-            case "adhd" -> "СДВГ";
-            case "perks" -> "Перки";
-            case "fusion" -> "Fusion";
-            default -> "Original";
-        };
+    Component modeName() {
+        Component name = game.modeTitle(modeId);
+        return adhdActive() ? I18n.tr("pillars.play.mode.adhd_active", name) : name;
     }
 
     private void playToAlive(Sound sound, float volume, float pitch) {
@@ -1094,13 +1072,10 @@ final class PillarsSession implements GameSession {
             player.setGameMode(GameMode.SPECTATOR);
             player.teleport(center);
         }
-        services.messages().send(player, Component.text()
-                .append(Component.text("You are out! ", NamedTextColor.RED))
-                .append(Component.text("Spectating until the end. ", NamedTextColor.GRAY))
-                .append(Component.text("[Leave]", NamedTextColor.AQUA)
+        services.messages().send(player, I18n.tr("pillars.play.eliminated",
+                I18n.tr("pillars.play.leave").color(NamedTextColor.AQUA)
                         .clickEvent(ClickEvent.runCommand("/play leave"))
-                        .hoverEvent(HoverEvent.showText(Component.text("/play leave", NamedTextColor.GRAY))))
-                .build());
+                        .hoverEvent(HoverEvent.showText(Component.text("/play leave", NamedTextColor.GRAY)))));
     }
 
     /** Never the template's spawn. */
@@ -1156,7 +1131,7 @@ final class PillarsSession implements GameSession {
         player.setFallDistance(0);
         // Match everyone else during the start countdown.
         player.setInvulnerable(!started);
-        announce(Component.text(player.getName() + " is back in the game", NamedTextColor.GREEN));
+        announce(I18n.tr("pillars.play.respawned", player.getName()).color(NamedTextColor.GREEN));
         updateHud();
         return true;
     }
@@ -1185,24 +1160,22 @@ final class PillarsSession implements GameSession {
 
     void addTime(long seconds) {
         timeLeft += seconds;
-        announceTimeChange("Time extended by " + TimeFormat.words(seconds) + ", "
-                + TimeFormat.words(timeLeft) + " left");
+        announceTimeChange(I18n.tr("pillars.play.time.extended", TimeFormat.words(seconds), TimeFormat.words(timeLeft)));
     }
 
     void removeTime(long seconds) {
         // Zero ends the game on the next tick.
         timeLeft = Math.max(0, timeLeft - seconds);
-        announceTimeChange("Time reduced by " + TimeFormat.words(seconds) + ", "
-                + TimeFormat.words(timeLeft) + " left");
+        announceTimeChange(I18n.tr("pillars.play.time.reduced", TimeFormat.words(seconds), TimeFormat.words(timeLeft)));
     }
 
     void setTime(long seconds) {
         timeLeft = Math.max(0, seconds);
-        announceTimeChange("Time set to " + TimeFormat.words(timeLeft));
+        announceTimeChange(I18n.tr("pillars.play.time.set", TimeFormat.words(timeLeft)));
     }
 
-    private void announceTimeChange(String message) {
-        announce(Component.text(message, NamedTextColor.YELLOW));
+    private void announceTimeChange(Component message) {
+        announce(message.color(NamedTextColor.YELLOW));
         playToAlive(Sound.BLOCK_NOTE_BLOCK_BELL, 0.5f, 1.5f);
         updateHud();
     }
@@ -1213,24 +1186,25 @@ final class PillarsSession implements GameSession {
 
     List<Component> info() {
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.text("Mode: " + modeName()
-                + (preset != null || mode.id.equals("fusion") ? " (" + fusionText() + ")" : "")
-                + ", arena: " + arena.name(), NamedTextColor.GRAY));
-        lines.add(Component.text("Time left: " + TimeFormat.words(timeLeft)
-                + (started ? "" : ", starting in " + startCountdown + "s")
-                + ", next item in " + itemSecondsLeft() + "s", NamedTextColor.GRAY));
-        lines.add(Component.text("Item pool: " + items.size() + " item(s), total weight "
-                + items.stream().mapToLong(ItemPool.PoolItem::weight).sum(), NamedTextColor.GRAY));
-        lines.add(Component.text("Item groups: " + groups.size() + " (" + String.join(", ",
-                groups.stream().map(ItemPool.ItemGroup::name).toList()) + ")", NamedTextColor.GRAY));
+        lines.add((preset != null || mode.id.equals("fusion")
+                ? I18n.tr("pillars.play.info.mix", modeName(), fusionText(), arena.name())
+                : I18n.tr("pillars.play.info.mode", modeName(), arena.name())).color(NamedTextColor.GRAY));
+        lines.add((started
+                ? I18n.tr("pillars.play.info.time", TimeFormat.words(timeLeft), itemSecondsLeft())
+                : I18n.tr("pillars.play.info.countdown", TimeFormat.words(timeLeft), startCountdown, itemSecondsLeft()))
+                .color(NamedTextColor.GRAY));
+        lines.add(I18n.tr("pillars.play.info.pool", items.size(),
+                items.stream().mapToLong(ItemPool.PoolItem::weight).sum()).color(NamedTextColor.GRAY));
+        lines.add(I18n.tr("pillars.play.info.groups", groups.size(), String.join(", ",
+                groups.stream().map(ItemPool.ItemGroup::name).toList())).color(NamedTextColor.GRAY));
         List<Component> names = new ArrayList<>();
         for (PillarPlayer pillarPlayer : players.values()) {
             NamedTextColor color = !alive.contains(pillarPlayer) ? NamedTextColor.RED
                     : pillarPlayer.disconnectedAt != null ? NamedTextColor.YELLOW : NamedTextColor.GREEN;
             names.add(Component.text(pillarPlayer.name, color));
         }
-        lines.add(Component.text("Players: ", NamedTextColor.GRAY)
-                .append(Component.join(net.kyori.adventure.text.JoinConfiguration.commas(true), names)));
+        lines.add(I18n.tr("pillars.play.info.players",
+                Component.join(net.kyori.adventure.text.JoinConfiguration.separator(Component.text(", ")), names)).color(NamedTextColor.GRAY));
         return lines;
     }
 
@@ -1248,8 +1222,7 @@ final class PillarsSession implements GameSession {
         }
         pillarPlayer.disconnectedAt = Bukkit.getCurrentTick();
         pillarPlayer.lastLocation = player.getLocation().clone();
-        announce(Component.text(player.getName() + " disconnected, " + TimeFormat.words(grace)
-                + " to reconnect", NamedTextColor.YELLOW));
+        announce(I18n.tr("pillars.play.disconnected", player.getName(), TimeFormat.words(grace)).color(NamedTextColor.YELLOW));
     }
 
     @Override
@@ -1285,7 +1258,7 @@ final class PillarsSession implements GameSession {
                 player.setFallDistance(0);
             }
             pillarPlayer.disconnectedAt = null;
-            announce(Component.text(player.getName() + " reconnected", NamedTextColor.YELLOW));
+            announce(I18n.tr("pillars.play.reconnected", player.getName()).color(NamedTextColor.YELLOW));
             updateHud();
         });
     }
@@ -1311,8 +1284,7 @@ final class PillarsSession implements GameSession {
         int now = Bukkit.getCurrentTick();
         for (PillarPlayer pillarPlayer : List.copyOf(alive)) {
             if (pillarPlayer.disconnectedAt != null && (now - pillarPlayer.disconnectedAt) / 20 >= grace) {
-                announce(Component.text(pillarPlayer.name + " did not reconnect and is out",
-                        NamedTextColor.YELLOW));
+                announce(I18n.tr("pillars.play.reconnect_timeout", pillarPlayer.name).color(NamedTextColor.YELLOW));
                 eliminate(pillarPlayer);
             }
         }
@@ -1353,11 +1325,11 @@ final class PillarsSession implements GameSession {
         String winnerNames = String.join(" & ", winners.stream().map(p -> p.name).toList());
         int winnerKills = winners.stream().mapToInt(p -> p.kills).sum();
         Title title = switch (cause) {
-            case FORCE -> Title.title(Component.text("Game stopped", NamedTextColor.YELLOW), Component.empty());
-            case TIME_OVER -> Title.title(Component.text("Time's up!", NamedTextColor.GREEN), Component.empty());
-            case LAST_STANDING -> Title.title(Component.text(winnerNames + " wins!", NamedTextColor.GREEN),
-                    Component.text(Messages.count(winnerKills, "kill"), NamedTextColor.YELLOW));
-            case DRAW -> Title.title(Component.text("Draw!", NamedTextColor.GREEN),
+            case FORCE -> Title.title(I18n.tr("pillars.play.title.stopped").color(NamedTextColor.YELLOW), Component.empty());
+            case TIME_OVER -> Title.title(I18n.tr("pillars.play.title.time_over").color(NamedTextColor.GREEN), Component.empty());
+            case LAST_STANDING -> Title.title(I18n.tr("pillars.play.title.winner", winnerNames).color(NamedTextColor.GREEN),
+                    I18n.tr("pillars.play.title.kills", winnerKills).color(NamedTextColor.YELLOW));
+            case DRAW -> Title.title(I18n.tr("pillars.play.title.draw").color(NamedTextColor.GREEN),
                     Component.text(winnerNames, NamedTextColor.YELLOW));
         };
         for (Player player : services.participants().onlinePlayers()) {
@@ -1431,16 +1403,15 @@ final class PillarsSession implements GameSession {
             }
             lines.add(switch (endingCause) {
                 case LAST_STANDING -> Summary.winners(names);
-                case DRAW -> Component.text().append(Component.text("Draw: ", NamedTextColor.YELLOW))
-                        .append(Component.join(JoinConfiguration.separator(Component.text(" & ", NamedTextColor.GRAY)),
-                                names))
-                        .build();
-                case TIME_OVER -> Component.text("Time's up, nobody won", NamedTextColor.YELLOW);
-                case FORCE -> Component.text("Stopped, nobody won", NamedTextColor.YELLOW);
+                case DRAW -> I18n.tr("pillars.play.summary.draw",
+                        Component.join(JoinConfiguration.separator(Component.text(" & ", NamedTextColor.GRAY)), names))
+                        .color(NamedTextColor.YELLOW);
+                case TIME_OVER -> I18n.tr("pillars.play.summary.time_over").color(NamedTextColor.YELLOW);
+                case FORCE -> I18n.tr("pillars.play.summary.stopped").color(NamedTextColor.YELLOW);
             });
             lines.add(Component.empty());
         }
-        lines.add(Component.text("Kills", NamedTextColor.GRAY));
+        lines.add(I18n.tr("pillars.play.summary.kills").color(NamedTextColor.GRAY));
         List<PillarPlayer> ranked = new ArrayList<>(players.values());
         ranked.sort(Comparator.comparingInt((PillarPlayer p) -> p.kills).reversed()
                 .thenComparing(p -> !winners.contains(p)));
@@ -1451,31 +1422,27 @@ final class PillarsSession implements GameSession {
         }
         if ((preset != null || mode.id.equals("fusion")) && rules != null) {
             lines.add(Component.empty());
-            lines.add(Component.text((preset != null ? preset.name() : "Fusion") + ": " + fusionText(),
-                    NamedTextColor.GRAY));
+            lines.add(I18n.tr("pillars.play.modifiers.mix", game.modeTitle(modeId), fusionText()).color(NamedTextColor.GRAY));
         }
         if (adhd != null) {
-            lines.add(Component.text("СДВГ: " + adhd.durationTicks() / 20 + " с шафла ×3 и рейва ×3 во время вспышек",
-                    NamedTextColor.GOLD));
+            lines.add(I18n.tr("pillars.play.summary.adhd", adhd.durationTicks() / 20).color(NamedTextColor.GOLD));
         }
         return lines;
     }
 
     @Override
     public Component globalResult() {
-        Component name = Component.text("Pillars", NamedTextColor.LIGHT_PURPLE);
+        Component name = game.displayName();
         String winnerNames = String.join(" & ", winners.stream().map(p -> p.name).toList());
         if (endingCause == Ending.LAST_STANDING && !winners.isEmpty()) {
-            return Component.text().append(Component.text(winnerNames, NamedTextColor.AQUA))
-                    .append(Component.text(" won ", NamedTextColor.GREEN)).append(name).build();
+            return I18n.tr("pillars.play.result.winner", Component.text(winnerNames, NamedTextColor.AQUA), name)
+                    .color(NamedTextColor.GREEN);
         }
         if (endingCause == Ending.DRAW) {
-            return Component.text().append(name)
-                    .append(Component.text(" ended in a draw between " + winnerNames, NamedTextColor.GREEN)).build();
+            return I18n.tr("pillars.play.result.draw", name, winnerNames).color(NamedTextColor.GREEN);
         }
         if (endingCause == Ending.TIME_OVER) {
-            return Component.text().append(name)
-                    .append(Component.text(" ended: time's up", NamedTextColor.GREEN)).build();
+            return I18n.tr("pillars.play.result.time_over", name).color(NamedTextColor.GREEN);
         }
         return null;
     }

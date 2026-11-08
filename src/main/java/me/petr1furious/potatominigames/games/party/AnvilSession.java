@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
@@ -14,7 +16,7 @@ final class AnvilSession extends PartySurvivalSession {
     private final SumoCombat combat = new SumoCombat();
 
     AnvilSession(SessionServices s, PartyConfig c, PartyRoundContext context) {
-        super(s, c, "anvils", "Наковальни", context);
+        super(s, c, "anvils", context);
         waveSeconds = c.anvilWaveSeconds.get();
         moveSeconds = c.anvilMoveSeconds.get();
         waves = c.anvilWaves.get();
@@ -50,10 +52,8 @@ final class AnvilSession extends PartySurvivalSession {
         return true;
     }
 
-    String instructions() {
-        return "Прячься под полублоками или уклоняйся! Между волнами укрытия меняются. С "
-                + pvpWave
-                + "-й волны можно толкаться.";
+    Component instructions() {
+        return I18n.tr("party.rounds.anvils.instructions", pvpWave);
     }
 
     void beginPlay() {
@@ -70,12 +70,13 @@ final class AnvilSession extends PartySurvivalSession {
             }
             if (!round.raining()) {
                 arena.relocateShelters(round.shelters(), random);
-                announceTitle("Перебежка!", "Укрытия переместились • " + moveSeconds + " с", 2);
+                announceTitle(I18n.tr("party.rounds.anvils.move"),
+                        I18n.tr("party.rounds.anvils.shelters_moved", moveSeconds), 2);
                 PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, 1.2f);
             } else {
                 announceTitle(
-                        "Волна " + round.wave(),
-                        round.pvpEnabled() ? "Можно толкаться!" : "Укройся или уворачивайся",
+                        I18n.tr("party.rounds.anvils.wave", round.wave()),
+                        I18n.tr(round.pvpEnabled() ? "party.rounds.anvils.push" : "party.rounds.anvils.hide"),
                         2);
                 PartySounds.play(alivePlayers(), Sound.ENTITY_LIGHTNING_BOLT_THUNDER, .35f, 1.5f);
             }
@@ -85,14 +86,10 @@ final class AnvilSession extends PartySurvivalSession {
             PartySounds.countdown(alivePlayers(), round.remaining(elapsed) * 20);
     }
 
-    String status() {
-        return "Волна "
-                + round.wave()
-                + " • "
-                + (round.raining() ? "Ливень" : "Перебежка")
-                + " • "
-                + round.remaining(elapsed())
-                + " с";
+    Component status() {
+        return I18n.tr("party.rounds.anvils.status", round.wave(),
+                I18n.tr(round.raining() ? "party.rounds.anvils.rain" : "party.rounds.anvils.move"),
+                round.remaining(elapsed()));
     }
 
     @Override

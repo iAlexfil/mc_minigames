@@ -54,6 +54,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.title.Title;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 /**
  * Random events of the party and rave modes. Every second an event starts with the same chance,
@@ -62,35 +63,36 @@ import me.petr1furious.potatominigames.core.game.SessionServices;
  */
 final class PillarsEvents implements Listener {
     enum Kind {
-        BOATS("Boat Rain", "Boats fall from the sky: hop in!", 15),
-        DISCO("Disco", "Keep moving, or get hurt, more every time", 30),
-        BLOCK_BAN("Block Ban", "One placed block type vanishes for good", 7),
-        STIFF_NECK("Stiff Neck", "You cannot turn left or right", 20),
-        SWAP("Swap", "Players trade places", 0),
-        LOW_GRAVITY("Low Gravity", "Everything floats", 10),
-        GIANTS("Giants & Gnomes", "Everyone turns huge or tiny", 20),
-        SLIPPERY("Slippery Floor", "Placed blocks turn to ice", 20),
-        SPOTLIGHT("Spotlight", "Everyone glows through walls", 15),
-        HANGOVER("Hangover", "Nausea and slowness", 15),
-        WIND("Wind", "A steady wind pushes you; sneak to hold on", 60),
-        KNOCKBACK("Knockback Party", "Everyone gets a knockback stick", 20),
-        FRENZY("Item Frenzy", "Items come three times as fast", 15),
-        HOT_POTATO("Hot Potato", "Hit someone to pass the TNT before it blows", 20),
-        DARKNESS("Darkness", "You can barely see", 15),
-        VANISHING("Vanishing Blocks", "Placed blocks vanish after 15s, until the end", -1),
-        SUPERHOT("SUPERHOT", "Stand still and your items freeze", 30),
-        AIRDROP("Airdrop", "A chest of loot appears above the middle", 0),
-        CONTRACT_AD("Реклама", "Служба по контракту: рекламная пауза на 5 секунд", 5),
-        MATH("Контрольная", "Реши пример в чате за 10 секунд или получи 3 сердца урона", 10);
+        BOATS(15),
+        DISCO(30),
+        BLOCK_BAN(7),
+        STIFF_NECK(20),
+        SWAP(0),
+        LOW_GRAVITY(10),
+        GIANTS(20),
+        SLIPPERY(20),
+        SPOTLIGHT(15),
+        HANGOVER(15),
+        WIND(60),
+        KNOCKBACK(20),
+        FRENZY(15),
+        HOT_POTATO(20),
+        DARKNESS(15),
+        VANISHING(-1),
+        SUPERHOT(30),
+        AIRDROP(0),
+        CONTRACT_AD(5),
+        MATH(10);
 
-        final String title;
-        final String description;
+        final Component title;
+        final Component description;
         /** Seconds; 0 happens at once, -1 lasts until the end of the game. */
         final int seconds;
 
-        Kind(String title, String description, int seconds) {
-            this.title = title;
-            this.description = description;
+        Kind(int seconds) {
+            String key = "pillars.effects.event." + name().toLowerCase(Locale.ROOT);
+            this.title = I18n.tr(key + ".title");
+            this.description = I18n.tr(key + ".description");
             this.seconds = seconds;
         }
     }
@@ -187,17 +189,15 @@ final class PillarsEvents implements Listener {
         }
         pending.add(kind);
         Title warning = Title.title(
-                Component.text(kind.title, NamedTextColor.GOLD).decorate(TextDecoration.BOLD),
-                Component.text(kind.description, NamedTextColor.YELLOW),
+                kind.title.color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD),
+                kind.description.color(NamedTextColor.YELLOW),
                 Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(4500), Duration.ofMillis(500)));
         for (Player player : audience()) {
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 0.8f, 1.2f);
         }
         showEventTitle(warning);
-        services.messages().broadcast(Component.text()
-                .append(Component.text(kind.title, NamedTextColor.GOLD))
-                .append(Component.text(" in 5s: " + kind.description, NamedTextColor.GRAY))
-                .build());
+        services.messages().broadcast(I18n.tr("pillars.effects.event.warning",
+                kind.title.color(NamedTextColor.GOLD), kind.description).color(NamedTextColor.GRAY));
         later(kind, WARNING_TICKS, () -> begin(kind));
     }
 
@@ -279,7 +279,7 @@ final class PillarsEvents implements Listener {
             }
         }
         if (natural && kind.seconds > 0) {
-            services.messages().broadcast(Component.text(kind.title + " is over", NamedTextColor.GRAY));
+            services.messages().broadcast(I18n.tr("pillars.effects.event.finished", kind.title).color(NamedTextColor.GRAY));
         }
     }
 
@@ -334,8 +334,8 @@ final class PillarsEvents implements Listener {
                 for (Player player : alive) {
                     boolean giant = ThreadLocalRandom.current().nextBoolean();
                     addModifier(player, Attribute.SCALE, scaleKey, giant ? 1.0 : -0.5);
-                    player.sendActionBar(Component.text(giant ? "You are a giant!" : "You are a gnome!",
-                            NamedTextColor.LIGHT_PURPLE));
+                    player.sendActionBar(I18n.tr(giant ? "pillars.effects.event.giant" : "pillars.effects.event.gnome")
+                            .color(NamedTextColor.LIGHT_PURPLE));
                 }
             }
             case SPOTLIGHT -> effect(alive, PotionEffectType.GLOWING, 0, effectTicks(kind, kind.seconds * 20));
@@ -349,15 +349,15 @@ final class PillarsEvents implements Listener {
                 windYaw = ThreadLocalRandom.current().nextFloat() * 360f;
                 double radians = Math.toRadians(windYaw);
                 wind = new Vector(-Math.sin(radians), 0, Math.cos(radians)).multiply(WIND_PUSH);
-                String towards = COMPASS[Math.floorMod(Math.round(windYaw / 45f), 8)];
-                Title title = Title.title(Component.text("Wind", NamedTextColor.AQUA).decorate(TextDecoration.BOLD),
-                        Component.text("blowing " + towards + "; sneak to hold on", NamedTextColor.WHITE));
+                Component towards = I18n.tr("pillars.effects.direction." + COMPASS[Math.floorMod(Math.round(windYaw / 45f), 8)]);
+                Title title = Title.title(Kind.WIND.title.color(NamedTextColor.AQUA).decorate(TextDecoration.BOLD),
+                        I18n.tr("pillars.effects.wind.instructions", towards).color(NamedTextColor.WHITE));
                 showEventTitle(title);
             }
             case KNOCKBACK -> {
                 for (Player player : alive) {
-                    ItemStack stick = eventItem(Material.STICK, Kind.KNOCKBACK, "Knockback Stick",
-                            NamedTextColor.AQUA);
+                    ItemStack stick = eventItem(Material.STICK, Kind.KNOCKBACK,
+                            I18n.tr("pillars.effects.item.knockback_stick"), NamedTextColor.AQUA);
                     stick.addUnsafeEnchantment(Enchantment.KNOCKBACK, 2);
                     give(player, stick);
                 }
@@ -434,8 +434,9 @@ final class PillarsEvents implements Listener {
         int frame = (tick - adStartedAt) / 5;
         NamedTextColor color = AD_COLORS[frame % AD_COLORS.length];
         Title title = Title.title(
-                Component.text(frame % 2 == 0 ? "★ СЛУЖБА ★" : "СЛУЖБА", color).decorate(TextDecoration.BOLD),
-                Component.text("ПО КОНТРАКТУ • РЕКЛАМНАЯ ПАУЗА", AD_COLORS[(frame + 1) % AD_COLORS.length])
+                I18n.tr(frame % 2 == 0 ? "pillars.effects.ad.title_starred" : "pillars.effects.ad.title")
+                        .color(color).decorate(TextDecoration.BOLD),
+                I18n.tr("pillars.effects.ad.subtitle").color(AD_COLORS[(frame + 1) % AD_COLORS.length])
                         .decorate(TextDecoration.BOLD),
                 Title.Times.times(Duration.ZERO, Duration.ofMillis(300), Duration.ZERO));
         for (Player player : audience()) {
@@ -448,15 +449,14 @@ final class PillarsEvents implements Listener {
                 alive.stream().map(Player::getUniqueId).toList());
         mathEndsAt = tick + Kind.MATH.seconds * 20;
         mathChallenge = challenge;
-        Component question = Component.text(challenge.problem().expression() + " = ?", NamedTextColor.YELLOW)
-                .decorate(TextDecoration.BOLD);
+        Component question = I18n.tr("pillars.effects.math.question", challenge.problem().expression())
+                .color(NamedTextColor.YELLOW).decorate(TextDecoration.BOLD);
         showEventTitle(Title.title(question,
-                Component.text("Ответь числом в чат за 10 секунд!", NamedTextColor.WHITE),
+                I18n.tr("pillars.effects.math.instructions").color(NamedTextColor.WHITE),
                 Title.Times.times(Duration.ZERO, Duration.ofSeconds(3), Duration.ofMillis(250))));
         for (Player player : alive) {
-            player.sendMessage(Component.text("Контрольная: ", NamedTextColor.GOLD).append(question)
-                    .append(Component.text(" Напиши ответ в чат за 10 секунд или потеряешь 3 сердца!",
-                            NamedTextColor.WHITE)));
+            player.sendMessage(I18n.tr("pillars.effects.math.announcement", question)
+                    .color(NamedTextColor.WHITE));
         }
         showMathReminder(alive);
     }
@@ -469,8 +469,8 @@ final class PillarsEvents implements Listener {
         int seconds = Math.max(1, (mathEndsAt - tick + 19) / 20);
         for (Player player : alive) {
             if (challenge.isWaiting(player.getUniqueId())) {
-                player.sendActionBar(Component.text(challenge.problem().expression() + " = ? • В чат: "
-                        + seconds + " с", NamedTextColor.YELLOW));
+                player.sendActionBar(I18n.tr("pillars.effects.math.reminder", challenge.problem().expression(), seconds)
+                        .color(NamedTextColor.YELLOW));
             }
         }
     }
@@ -494,10 +494,8 @@ final class PillarsEvents implements Listener {
                 return;
             }
             switch (expected.answer(playerId, message)) {
-                case CORRECT -> player.sendMessage(Component.text("Верно! Урона за этот пример не будет.",
-                        NamedTextColor.GREEN));
-                case WRONG -> player.sendMessage(Component.text("Неверно! Попробуй ещё раз, пока есть время.",
-                        NamedTextColor.RED));
+                case CORRECT -> player.sendMessage(I18n.tr("pillars.effects.math.correct").color(NamedTextColor.GREEN));
+                case WRONG -> player.sendMessage(I18n.tr("pillars.effects.math.wrong").color(NamedTextColor.RED));
                 default -> { }
             }
         });
@@ -518,8 +516,8 @@ final class PillarsEvents implements Listener {
                 break;
             }
             if (failures.contains(player.getUniqueId())) {
-                player.sendMessage(Component.text("Время вышло! " + challenge.problem().expression() + " = "
-                        + challenge.problem().result() + ". Штраф: 3 сердца.", NamedTextColor.RED));
+                player.sendMessage(I18n.tr("pillars.effects.math.timeout", challenge.problem().expression(),
+                        challenge.problem().result()).color(NamedTextColor.RED));
                 player.sendActionBar(Component.empty());
                 player.damage(MATH_DAMAGE);
             }
@@ -561,7 +559,7 @@ final class PillarsEvents implements Listener {
             player.damage(2.0 * hits);
             player.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, effectTicks(Kind.DISCO, 60), 0,
                     false, false, false));
-            player.sendActionBar(Component.text("Keep moving! (-" + hits + " ♥)", NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("pillars.effects.disco.keep_moving", hits).color(NamedTextColor.RED));
         }
     }
 
@@ -577,8 +575,8 @@ final class PillarsEvents implements Listener {
             }
             if (tick % 10 == 0) {
                 player.sendActionBar(frozen.containsKey(player.getUniqueId())
-                        ? Component.text("SUPERHOT: move to get your items back", NamedTextColor.RED)
-                        : Component.text("SUPERHOT: keep moving", NamedTextColor.WHITE));
+                        ? I18n.tr("pillars.effects.superhot.frozen").color(NamedTextColor.RED)
+                        : I18n.tr("pillars.effects.superhot.moving").color(NamedTextColor.WHITE));
             }
         }
     }
@@ -667,8 +665,8 @@ final class PillarsEvents implements Listener {
             }
             float relative = wrapDegrees(windYaw - player.getYaw());
             String arrow = ARROWS[Math.floorMod(Math.round(relative / 45f), 8)];
-            player.sendActionBar(Component.text("Wind " + arrow + (holding ? "  (holding on)" : ""),
-                    NamedTextColor.AQUA));
+            player.sendActionBar(I18n.tr(holding ? "pillars.effects.wind.holding" : "pillars.effects.wind.moving", arrow)
+                    .color(NamedTextColor.AQUA));
         }
     }
 
@@ -731,9 +729,9 @@ final class PillarsEvents implements Listener {
             player.setFallDistance(0);
             player.playSound(target, Sound.ENTITY_ENDERMAN_TELEPORT, 0.8f, 1.0f);
         }
-        services.messages().broadcast(Component.text("Swapped: "
-                + String.join(" → ", chosen.stream().map(Player::getName).toList()) + " → "
-                + chosen.getFirst().getName(), NamedTextColor.LIGHT_PURPLE));
+        services.messages().broadcast(I18n.tr("pillars.effects.swap.players",
+                String.join(" → ", chosen.stream().map(Player::getName).toList()) + " → "
+                        + chosen.getFirst().getName()).color(NamedTextColor.LIGHT_PURPLE));
     }
 
     // Hot potato.
@@ -741,7 +739,7 @@ final class PillarsEvents implements Listener {
     private void handPotato(Player holder) {
         potatoHolder = holder.getUniqueId();
         potatoPassedAt = tick;
-        give(holder, eventItem(Material.TNT, Kind.HOT_POTATO, "Hot Potato", NamedTextColor.RED));
+        give(holder, eventItem(Material.TNT, Kind.HOT_POTATO, Kind.HOT_POTATO.title, NamedTextColor.RED));
         holder.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, effectTicks(Kind.HOT_POTATO, POTATO_TICKS),
                 0, false, false, false));
         holder.playSound(holder.getLocation(), Sound.ENTITY_TNT_PRIMED, 1f, 1.2f);
@@ -754,7 +752,7 @@ final class PillarsEvents implements Listener {
             return;
         }
         int left = Math.max(0, (potatoEndsAt - tick + 19) / 20);
-        Component bar = Component.text("Hot Potato: " + holder.getName() + " — " + left + "s", NamedTextColor.RED);
+        Component bar = I18n.tr("pillars.effects.hot_potato.holder", holder.name(), left).color(NamedTextColor.RED);
         for (Player player : alive) {
             player.sendActionBar(bar);
         }
@@ -815,8 +813,8 @@ final class PillarsEvents implements Listener {
         for (Player player : audience()) {
             player.playSound(player.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_BLAST, 0.8f, 1.0f);
         }
-        services.messages().broadcast(Component.text("Airdrop: a chest appeared " + (block.getY() - session.pillarTop())
-                + " blocks above the pillars", NamedTextColor.GOLD));
+        services.messages().broadcast(I18n.tr("pillars.effects.airdrop.appeared", block.getY() - session.pillarTop())
+                .color(NamedTextColor.GOLD));
     }
 
     // Block ban.
@@ -854,7 +852,7 @@ final class PillarsEvents implements Listener {
                     shown = names.get((names.indexOf(shown) + 1) % names.size());
                 }
                 last[0] = shown;
-                showBanName(Component.text(pretty(shown), NamedTextColor.YELLOW), 15);
+                showBanName(pretty(shown).color(NamedTextColor.YELLOW), 15);
                 for (Player player : audience()) {
                     player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.4f, 1.0f + index * 0.03f);
                 }
@@ -864,7 +862,8 @@ final class PillarsEvents implements Listener {
         }
         Material chosen = pick(candidates);
         later(Kind.BLOCK_BAN, WARNING_TICKS, () -> {
-            showBanName(Component.text("✖ " + pretty(chosen), NamedTextColor.RED).decorate(TextDecoration.BOLD), 45);
+            showBanName(I18n.tr("pillars.effects.block_ban.selected", pretty(chosen))
+                    .color(NamedTextColor.RED).decorate(TextDecoration.BOLD), 45);
             for (Player player : audience()) {
                 player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 0.6f, 1.0f);
             }
@@ -888,8 +887,8 @@ final class PillarsEvents implements Listener {
             for (Player player : audience()) {
                 player.playSound(player.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 0.5f, 1.2f);
             }
-            services.messages().broadcast(Component.text("Block Ban: " + pretty(chosen) + " is gone ("
-                    + removed + " block" + (removed == 1 ? "" : "s") + ") and no longer drops", NamedTextColor.RED));
+            services.messages().broadcast(I18n.tr("pillars.effects.block_ban.removed", pretty(chosen), removed)
+                    .color(NamedTextColor.RED));
             finish(Kind.BLOCK_BAN, true);
         });
     }
@@ -913,9 +912,8 @@ final class PillarsEvents implements Listener {
         return weights.keySet().iterator().next();
     }
 
-    private static String pretty(Material material) {
-        String name = material.getKey().getKey().replace('_', ' ');
-        return name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1);
+    private static Component pretty(Material material) {
+        return Component.translatable(material.translationKey());
     }
 
     // Hooks from the session.
@@ -1043,10 +1041,10 @@ final class PillarsEvents implements Listener {
         }
     }
 
-    private ItemStack eventItem(Material material, Kind kind, String name, NamedTextColor color) {
+    private ItemStack eventItem(Material material, Kind kind, Component name, NamedTextColor color) {
         ItemStack stack = new ItemStack(material);
         stack.editMeta(meta -> {
-            meta.displayName(Component.text(name, color).decoration(TextDecoration.ITALIC, false));
+            meta.displayName(name.color(color).decoration(TextDecoration.ITALIC, false));
             meta.getPersistentDataContainer().set(itemKey, PersistentDataType.STRING, kind.name());
         });
         return stack;
@@ -1062,7 +1060,7 @@ final class PillarsEvents implements Listener {
 
     /** Inventory first, the overflow at the player's feet. */
     private static void give(Player player, ItemStack stack) {
-        for (ItemStack left : player.getInventory().addItem(stack).values()) {
+        for (ItemStack left : player.getInventory().addItem(I18n.item(stack.clone(), player)).values()) {
             player.getWorld().dropItem(player.getLocation(), left);
         }
     }

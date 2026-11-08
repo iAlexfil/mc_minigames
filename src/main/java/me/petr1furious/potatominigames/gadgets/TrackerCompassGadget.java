@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
@@ -34,17 +36,15 @@ public class TrackerCompassGadget extends AbstractGadget {
             Player target = nearestTarget(player);
             if (target == null) {
                 if (holding) {
-                    player.sendActionBar(Component.text("Nobody to track", NamedTextColor.GRAY));
+                    player.sendActionBar(I18n.tr("gadgets.tracker.nobody").color(NamedTextColor.GRAY));
                 }
                 continue;
             }
             player.setCompassTarget(target.getLocation());
             if (holding) {
-                player.sendActionBar(Component.text()
-                        .append(Component.text("Tracking ", NamedTextColor.GRAY))
-                        .append(Component.text(
-                                context.hideTargetNames(player) ? "enemy" : target.getName(), NamedTextColor.AQUA))
-                        .build());
+                player.sendActionBar(I18n.tr("gadgets.tracker.target",
+                        context.hideTargetNames(player) ? I18n.tr("gadgets.enemy").color(NamedTextColor.AQUA)
+                                : Component.text(target.getName(), NamedTextColor.AQUA)).color(NamedTextColor.GRAY));
             }
         }
     }
@@ -91,7 +91,7 @@ public class TrackerCompassGadget extends AbstractGadget {
         var item = new ItemStack(Material.COMPASS);
         GadgetItems.addTag(item, TAG);
         var meta = item.getItemMeta();
-        meta.displayName(Component.text("Tracker").color(NamedTextColor.GREEN)
+        meta.displayName(I18n.tr("gadgets.tracker.name").color(NamedTextColor.GREEN)
                 .decoration(TextDecoration.ITALIC, false));
         meta.setEnchantmentGlintOverride(true);
         item.setItemMeta(meta);

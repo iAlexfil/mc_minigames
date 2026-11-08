@@ -1,8 +1,9 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Material;
@@ -45,14 +46,14 @@ public class GrappleBowGadget extends AbstractGadget {
             return;
 
         if (disableWhileGliding.get() && shooter.isGliding()) {
-            shooter.sendActionBar(Component.text("Grapple Bow disabled while gliding").color(NamedTextColor.RED));
+            shooter.sendActionBar(I18n.tr("gadgets.grapple.gliding").color(NamedTextColor.RED));
             shooter.playSound(shooter.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 0.5f);
             event.setCancelled(true);
             return;
         }
         int remaining = getRemainingCooldownSeconds(shooter);
         if (remaining > 0) {
-            shooter.sendActionBar(Component.text("Grapple Bow: " + remaining + "s").color(NamedTextColor.RED));
+            shooter.sendActionBar(I18n.tr("gadgets.grapple.cooldown", remaining).color(NamedTextColor.RED));
             shooter.playSound(shooter.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 0.2f, 0.5f);
             event.setCancelled(true);
             return;
@@ -113,7 +114,7 @@ public class GrappleBowGadget extends AbstractGadget {
         GadgetItems.addTag(bow, TAG);
         ItemMeta meta = bow.getItemMeta();
         meta.displayName(
-                Component.text("Grapple Bow").color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
+                I18n.tr("gadgets.grapple.name").color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
         meta.setUnbreakable(true);
         meta.addEnchant(Enchantment.INFINITY, 1, true);
         meta.setEnchantmentGlintOverride(true);

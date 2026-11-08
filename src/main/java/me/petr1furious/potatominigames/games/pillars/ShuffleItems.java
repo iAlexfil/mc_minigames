@@ -34,8 +34,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.PlayerInventory;
 
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 /** A shuffle replaces all items in its arena, including items stashed outside player inventories. */
 final class ShuffleItems implements Listener {
@@ -165,8 +165,7 @@ final class ShuffleItems implements Listener {
         if (event.getPlayer().getWorld().equals(world) && event.getInventory().getType() == InventoryType.ENDER_CHEST) {
             // Ender chests belong to the persistent player, not the throwaway arena or its snapshot.
             event.setCancelled(true);
-            event.getPlayer().sendMessage(Component.text("В шафле эндер-сундук недоступен: между наборами остаются только блоки.",
-                    NamedTextColor.RED));
+            event.getPlayer().sendMessage(I18n.tr("pillars.play.shuffle.ender_chest").color(NamedTextColor.RED));
         }
     }
 

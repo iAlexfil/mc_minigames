@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -21,6 +22,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 import me.petr1furious.potatominigames.core.team.TeamColor;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 /**
  * Per-viewer sidebar; each line is a team prefix on an invisible entry and only changed
@@ -41,10 +43,13 @@ public final class SidebarService {
         final Scoreboard scoreboard;
         final Objective objective;
         final List<Component> lines = new ArrayList<>();
+        Component title;
+        String language;
 
-        View(Component title) {
+        View(Component title, Locale locale) {
+            this.title = title;
             scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
-            objective = scoreboard.registerNewObjective("sidebar", Criteria.DUMMY, title);
+            objective = scoreboard.registerNewObjective("sidebar", Criteria.DUMMY, I18n.render(title, locale));
             objective.setDisplaySlot(DisplaySlot.SIDEBAR);
         }
 
@@ -62,12 +67,13 @@ public final class SidebarService {
             return team;
         }
 
-        void setLines(List<Component> newLines) {
+        void setLines(List<Component> newLines, Locale locale) {
+            boolean relocalize = !I18n.language(locale).equals(language);
             int count = Math.min(newLines.size(), MAX_LINES);
             for (int i = 0; i < count; i++) {
                 Component line = newLines.get(i);
-                if (i >= lines.size() || !line.equals(lines.get(i))) {
-                    lineTeam(i).prefix(line);
+                if (relocalize || i >= lines.size() || !line.equals(lines.get(i))) {
+                    lineTeam(i).prefix(I18n.render(line, locale));
                 }
                 objective.getScore(entryFor(i)).setScore(count - i);
             }
@@ -76,10 +82,14 @@ public final class SidebarService {
             }
             lines.clear();
             lines.addAll(newLines.subList(0, count));
+            language = I18n.language(locale);
         }
 
-        void setTitle(Component title) {
-            objective.displayName(title);
+        void setTitle(Component title, Locale locale) {
+            if (!this.title.equals(title) || !I18n.language(locale).equals(language)) {
+                objective.displayName(I18n.render(title, locale));
+            }
+            this.title = title;
         }
     }
 
@@ -107,20 +117,21 @@ public final class SidebarService {
     }
 
     private void render(Player viewer, Component title, List<Component> lines) {
+        Locale locale = viewer.locale();
         View view = views.get(viewer.getUniqueId());
         if (view == null) {
-            view = new View(title);
+            view = new View(title, locale);
             views.put(viewer.getUniqueId(), view);
             applyNameColors(view.scoreboard);
             viewer.setScoreboard(view.scoreboard);
         } else {
-            view.setTitle(title);
+            view.setTitle(title, locale);
         }
         // Reconnecting players return on the main scoreboard; re-attach the view.
         if (viewer.getScoreboard() != view.scoreboard) {
             viewer.setScoreboard(view.scoreboard);
         }
-        view.setLines(lines);
+        view.setLines(lines, locale);
     }
 
     public void clear(Player viewer) {

@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.command;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -72,7 +73,7 @@ public final class PlayCommand {
                     Player player = requirePlayer(c);
                     QueueService.Queue queue = queues.requireTeamQueue(player);
                     if (queue.teamColors().isEmpty()) {
-                        throw new CommandFailure("No team colours are available in this queue.");
+                        throw new CommandFailure(I18n.tr("core.queue.no_colors"));
                     }
                     menu.openTeams(player, queue);
                 }))
@@ -87,7 +88,7 @@ public final class PlayCommand {
                             }
                             TeamColor color = TeamColor.fromId(raw);
                             if (color == null) {
-                                throw new CommandFailure("Unknown team colour: " + raw);
+                                throw new CommandFailure(I18n.tr("core.team.unknown_color", raw));
                             }
                             queues.pickTeam(requirePlayer(c), color);
                         }))));
@@ -142,7 +143,7 @@ public final class PlayCommand {
                 .executes(ctx -> run(ctx, c -> {
                     Player player = requirePlayer(c);
                     if (lobby.world() == null) {
-                        throw new CommandFailure("There is no lobby on this server.");
+                        throw new CommandFailure(I18n.tr("core.lobby.unavailable"));
                     }
                     Optional<ActiveSession> session = sessions.sessionOf(player);
                     if (session.isPresent()) {
@@ -223,11 +224,11 @@ public final class PlayCommand {
         String gameId = ctx.getArgument("game", String.class);
         Minigame game = sessions.game(gameId);
         if (game == null) {
-            throw new CommandFailure("Unknown game: " + gameId);
+            throw new CommandFailure(I18n.tr("core.command.unknown_game", gameId));
         }
         List<QueueService.Queue> available = queues.queuesOf(game);
         if (available.isEmpty()) {
-            throw new CommandFailure(game.id() + " has no open queues.");
+            throw new CommandFailure(I18n.tr("core.queue.no_open", game.displayName()));
         }
         QueueService.Queue queue;
         if (mode == null) {
@@ -238,17 +239,17 @@ public final class PlayCommand {
             queue = available.getFirst();
         } else {
             queue = available.stream().filter(candidate -> candidate.mode().equalsIgnoreCase(mode)).findFirst()
-                    .orElseThrow(() -> new CommandFailure("Unknown or closed mode: " + mode));
+                    .orElseThrow(() -> new CommandFailure(I18n.tr("core.queue.unknown_mode", mode)));
         }
         Ballot ballot = queue.ballots().isEmpty() ? null : queue.ballots().getFirst();
         if (choice != null && ballot == null) {
-            throw new CommandFailure(game.id() + " has nothing to vote on.");
+            throw new CommandFailure(I18n.tr("core.queue.no_ballots", game.displayName()));
         }
         String vote = null;
         if (choice != null && !choice.equalsIgnoreCase(Ballot.ANY)) {
             vote = ballot.choices().get().stream().filter(option -> option.equalsIgnoreCase(choice)).findFirst()
-                    .orElseThrow(() -> new CommandFailure("Unknown " + ballot.title() + ": " + choice + " (options: "
-                            + String.join(", ", ballot.choices().get()) + ", " + Ballot.ANY + ")"));
+                    .orElseThrow(() -> new CommandFailure(I18n.tr("core.ballot.unknown_choice", ballot.titleComponent(),
+                            choice, String.join(", ", ballot.choices().get()) + ", " + Ballot.ANY)));
         }
         // Already queued: just the picks.
         if (!queue.contains(player.getUniqueId())) {
@@ -274,45 +275,39 @@ public final class PlayCommand {
 
     private void sendOverview(CommandContext<CommandSourceStack> ctx) {
         var sender = ctx.getSource().getSender();
-        sender.sendMessage(Component.text("Games:", NamedTextColor.GOLD));
+        sender.sendMessage(I18n.tr("core.command.games").color(NamedTextColor.GOLD));
         for (QueueService.Queue queue : queues.visibleQueues()) {
             sender.sendMessage(line(queue));
         }
         if (sender instanceof Player player) {
-            queues.queueOf(player).ifPresent(queue -> player.sendMessage(Component.text()
-                    .append(Component.text("You are queued for ", NamedTextColor.GRAY))
-                    .append(queue.displayName())
-                    .append(Component.text(". ", NamedTextColor.GRAY))
-                    .append(button("Leave", "/play leave", "Leave the queue"))
-                    .build()));
+            queues.queueOf(player).ifPresent(queue -> player.sendMessage(
+                    I18n.tr("core.queue.you_queued", queue.displayName(),
+                            button(I18n.tr("core.button.leave"), "/play leave", I18n.tr("core.button.leave_queue")))
+                            .color(NamedTextColor.GRAY)));
         }
     }
 
     private Component line(QueueService.Queue queue) {
         Optional<ActiveSession> running = sessions.sessionOf(queue.game());
-        String status;
+        Component status;
         if (running.isPresent()) {
-            status = "running, click to spectate";
+            status = I18n.tr("core.queue.status_running");
         } else if (queue.countdown() != null) {
-            status = queue.countText() + " queued, starts in " + queue.countdown() + "s";
+            status = I18n.tr("core.queue.status_countdown", queue.countText(), queue.countdown());
         } else {
-            status = queue.countText() + " queued, needs " + queue.minPlayers();
+            status = I18n.tr("core.queue.status_waiting", queue.countText(), queue.minPlayers());
         }
         Component description = queue.game().description(queue.mode());
-        return Component.text()
-                .append(Component.text(" • ", NamedTextColor.DARK_GRAY))
-                .append(queue.displayName())
-                .append(Component.text(" — " + status, NamedTextColor.GRAY))
+        return I18n.tr("core.queue.overview_line", queue.displayName(), status).color(NamedTextColor.GRAY)
                 .clickEvent(ClickEvent.runCommand(queue.command()))
                 .hoverEvent(HoverEvent.showText(description.equals(Component.empty())
                         ? Component.text(queue.command(), NamedTextColor.GRAY)
-                        : description.colorIfAbsent(NamedTextColor.GRAY)))
-                .build();
+                        : description.colorIfAbsent(NamedTextColor.GRAY)));
     }
 
-    private static Component button(String label, String command, String hover) {
-        return Component.text("[" + label + "]", NamedTextColor.AQUA)
+    private static Component button(Component label, String command, Component hover) {
+        return I18n.tr("core.button.bracket", label).color(NamedTextColor.AQUA)
                 .clickEvent(ClickEvent.runCommand(command))
-                .hoverEvent(HoverEvent.showText(Component.text(hover, NamedTextColor.GRAY)));
+                .hoverEvent(HoverEvent.showText(hover.color(NamedTextColor.GRAY)));
     }
 }

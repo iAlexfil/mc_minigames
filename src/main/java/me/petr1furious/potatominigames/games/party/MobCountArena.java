@@ -42,7 +42,7 @@ final class MobCountArena {
             var species = round.platforms().get(i);
             world.getBlockAt(x(i), FLOOR + 1, z(i)).setType(Material.valueOf(species.head), false);
             TextDisplay label = world.spawn(new Location(world, x(i) + .5, FLOOR + 2.2, z(i) + .5), TextDisplay.class);
-            label.text(Component.text(species.title, NamedTextColor.WHITE));
+            label.text(species.title.color(NamedTextColor.WHITE));
             label.setBillboard(Display.Billboard.CENTER);
             label.setShadowed(true);
             label.setSeeThrough(false);

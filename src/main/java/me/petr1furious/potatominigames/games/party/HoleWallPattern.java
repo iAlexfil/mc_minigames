@@ -1,8 +1,11 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+
 import java.util.*;
 
-record HoleWallPattern(List<Cell> cells, List<Gate> gates, String title) {
+record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     static final int HALF_WIDTH = 13, HEIGHT = 5;
 
     record Cell(int u, int y) {}
@@ -22,49 +25,49 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, String title) {
         List<Gate> gates = new ArrayList<>();
         int kind = Math.floorMod(stage - 1, 10);
         int sideWidth = Math.min(2, radius);
-        String title;
+        Component title;
         switch (kind) {
             case 0 -> {
-                title = "Арка";
+                title = I18n.tr("party.rounds.hole_wall.pattern.arch");
                 gates.add(sideGate(3, radius, random));
             }
             case 1 -> {
-                title = "Двойные ворота";
+                title = I18n.tr("party.rounds.hole_wall.pattern.double_gate");
                 gates.add(new Gate(-radius, sideWidth, 0, 3));
                 gates.add(new Gate(radius - sideWidth + 1, sideWidth, 0, 3));
             }
             case 2 -> {
-                title = "Барьер";
+                title = I18n.tr("party.rounds.hole_wall.pattern.barrier");
                 gates.add(gate(3, 1, 3, radius, random));
             }
             case 3 -> {
-                title = "Ступени";
+                title = I18n.tr("party.rounds.hole_wall.pattern.steps");
                 gates.add(new Gate(-radius, sideWidth, 0, 3));
                 gates.add(new Gate(radius - sideWidth + 1, sideWidth, 1, 3));
             }
             case 4 -> {
-                title = "Колонны";
+                title = I18n.tr("party.rounds.hole_wall.pattern.columns");
                 gates.add(sideGate(1, radius, random));
             }
             case 5 -> {
-                title = "Зубцы";
+                title = I18n.tr("party.rounds.hole_wall.pattern.battlements");
                 gates.add(gate(2, 1, 3, radius, random));
             }
             case 6 -> {
-                title = "Зигзаг";
+                title = I18n.tr("party.rounds.hole_wall.pattern.zigzag");
                 gates.add(sideGate(2, radius, random));
             }
             case 7 -> {
-                title = "Акведук";
+                title = I18n.tr("party.rounds.hole_wall.pattern.aqueduct");
                 gates.add(new Gate(-radius, sideWidth, 0, 3));
                 gates.add(new Gate(radius - sideWidth + 1, sideWidth, 0, 3));
             }
             case 8 -> {
-                title = "Навес";
+                title = I18n.tr("party.rounds.hole_wall.pattern.canopy");
                 gates.add(sideGate(2, radius, random));
             }
             default -> {
-                title = "Замочная скважина";
+                title = I18n.tr("party.rounds.hole_wall.pattern.keyhole");
                 gates.add(sideGate(1, radius, random));
             }
         }

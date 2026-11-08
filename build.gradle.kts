@@ -41,8 +41,15 @@ tasks.jar {
     archiveClassifier.set("mc$mc")
 }
 
+sourceSets.main {
+    java.srcDir("i18n/java")
+}
+
 tasks.processResources {
     val pluginVersion = version.toString()
+    from("i18n/locales") {
+        into("i18n")
+    }
     // Declared, or a version bump leaves the old plugin.yml in place.
     inputs.property("version", pluginVersion)
     filesMatching("plugin.yml") {
@@ -51,6 +58,7 @@ tasks.processResources {
 }
 
 val checks by sourceSets.creating {
+    java.srcDir("i18n/checks")
     compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
     runtimeClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
 }
@@ -207,3 +215,10 @@ val checkHoleWall by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.games.party.HoleWallCheck")
 }
 tasks.check { dependsOn(checkHoleWall) }
+
+val checkI18n by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.i18n.I18nCheck")
+}
+tasks.check { dependsOn(checkI18n) }

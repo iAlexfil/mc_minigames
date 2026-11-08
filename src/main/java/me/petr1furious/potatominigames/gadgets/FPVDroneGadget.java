@@ -1,9 +1,10 @@
 package me.petr1furious.potatominigames.gadgets;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import me.petr1furious.potatominigames.core.config.Property;
 import me.petr1furious.potatominigames.core.config.PropertyCodec;
 import me.petr1furious.potatominigames.core.world.Locations;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.*;
@@ -185,7 +186,7 @@ public class FPVDroneGadget extends AbstractGadget {
                     return;
                 }
                 endSession(p.getUniqueId());
-                p.sendActionBar(Component.text("Drone flight aborted").color(NamedTextColor.YELLOW));
+                p.sendActionBar(I18n.tr("gadgets.drone.aborted").color(NamedTextColor.YELLOW));
             }
 
             @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
@@ -329,7 +330,7 @@ public class FPVDroneGadget extends AbstractGadget {
                 }
 
                 int left = (int) Math.max(0, (getMaxFlightTicks() - (tick - s.startTick)) / 20.0);
-                p.sendActionBar(Component.text("FPV: " + left + "s").color(NamedTextColor.AQUA));
+                p.sendActionBar(I18n.tr("gadgets.drone.remaining", left).color(NamedTextColor.AQUA));
 
                 if (tick % 10 == 0) {
                     p.getWorld().playSound(p, Sound.ENTITY_BEE_LOOP, SoundCategory.PLAYERS,
@@ -429,7 +430,7 @@ public class FPVDroneGadget extends AbstractGadget {
         event.setCancelled(true);
 
         if (!player.getLocation().clone().subtract(0, 0.05, 0).getBlock().getType().isSolid()) {
-            player.sendActionBar(Component.text("Must be on ground to deploy drone").color(NamedTextColor.RED));
+            player.sendActionBar(I18n.tr("gadgets.drone.ground_required").color(NamedTextColor.RED));
             return;
         }
 
@@ -508,7 +509,7 @@ public class FPVDroneGadget extends AbstractGadget {
         player.teleport(player.getLocation().add(0, 0.05, 0));
         player.getInventory().clear();
         player.getInventory().setArmorContents(new ItemStack[] { null, null, null, null });
-        player.getInventory().setItem(DRONE_ABORT_SLOT, createAbortItem());
+        player.getInventory().setItem(DRONE_ABORT_SLOT, I18n.item(createAbortItem(), player));
         player.getInventory().setHeldItemSlot(DRONE_ACTIVE_SLOT);
         boolean addedPotion = false;
         if (!player.hasPotionEffect(PotionEffectType.INVISIBILITY)) {
@@ -522,7 +523,7 @@ public class FPVDroneGadget extends AbstractGadget {
                 originalScale);
         session.appliedInvisPotion = addedPotion;
         sessions.put(player.getUniqueId(), session);
-        player.sendActionBar(Component.text("Drone deployed: select the barrier to abort").color(NamedTextColor.GREEN));
+        player.sendActionBar(I18n.tr("gadgets.drone.deployed").color(NamedTextColor.GREEN));
     }
 
     public void endSession(UUID playerId) {
@@ -597,7 +598,7 @@ public class FPVDroneGadget extends AbstractGadget {
         GadgetItems.addTag(item, ABORT_TAG);
         var meta = item.getItemMeta();
         meta.displayName(
-                Component.text("Abort Drone").color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
+                I18n.tr("gadgets.drone.abort").color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
         meta.setEnchantmentGlintOverride(true);
         item.setItemMeta(meta);
         return item;
@@ -613,7 +614,7 @@ public class FPVDroneGadget extends AbstractGadget {
         GadgetItems.addTag(item, TAG);
         var meta = item.getItemMeta();
         meta.displayName(
-                Component.text("FPV Drone").color(NamedTextColor.DARK_AQUA).decoration(TextDecoration.ITALIC, false));
+                I18n.tr("gadgets.drone.name").color(NamedTextColor.DARK_AQUA).decoration(TextDecoration.ITALIC, false));
         meta.setEnchantmentGlintOverride(true);
         item.setItemMeta(meta);
         item.setAmount(count);

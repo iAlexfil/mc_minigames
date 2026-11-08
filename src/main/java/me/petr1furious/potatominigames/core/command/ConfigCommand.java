@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.core.command;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import org.bukkit.command.CommandSender;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -65,18 +67,17 @@ public final class ConfigCommand {
             return;
         }
         if (!ctx.getSource().getSender().hasPermission(GameCommands.ADMIN_PERMISSION)) {
-            throw new CommandFailure("Changing settings needs " + GameCommands.ADMIN_PERMISSION + ".");
+            throw new CommandFailure(I18n.tr("core.config.permission", GameCommands.ADMIN_PERMISSION));
         }
         switch (node.kind()) {
-            case SECTION -> throw new CommandFailure(path + " is a section; set a value inside it (options: "
-                    + String.join(", ", childNames(node)) + ")");
+            case SECTION -> throw new CommandFailure(I18n.tr("core.config.is_section", path, String.join(", ", childNames(node))));
             case LIST -> editList(ctx, node, value);
             case VALUE -> setValue(ctx, node, value);
         }
     }
 
     private void setValue(CommandContext<CommandSourceStack> ctx, Node node, String value) throws CommandFailure {
-        String old = node.value();
+        Component old = node.valueComponent();
         try {
             if (value.equalsIgnoreCase(DEFAULT)) {
                 editor.reset(node);
@@ -84,22 +85,14 @@ public final class ConfigCommand {
                 editor.set(node, value);
             }
         } catch (IllegalArgumentException exception) {
-            throw new CommandFailure("Invalid value for " + node.path() + ": " + value + " ("
-                    + exception.getMessage() + ")");
+            throw new CommandFailure(I18n.tr("core.config.invalid_value", node.path(), value, I18n.message(exception)));
         }
         Node updated = editor.resolve(node.path());
-        String now = updated != null ? updated.value() : value;
-        var line = Component.text()
-                .append(Component.text(node.path() + ": ", NamedTextColor.GRAY))
-                .append(Component.text(old, NamedTextColor.WHITE))
-                .append(Component.text(" → ", NamedTextColor.GRAY))
-                .append(Component.text(now, NamedTextColor.GREEN));
-        if (value.equalsIgnoreCase(DEFAULT)) {
-            line.append(Component.text(" (default)", NamedTextColor.GRAY));
-        } else if (!node.isDeclared()) {
-            line.append(Component.text(" (applies to the next game)", NamedTextColor.GRAY));
-        }
-        ctx.getSource().getSender().sendMessage(line.build());
+        Component now = updated != null ? updated.valueComponent() : Component.text(value);
+        String messageKey = value.equalsIgnoreCase(DEFAULT) ? "core.config.changed_default"
+                : !node.isDeclared() ? "core.config.changed_next" : "core.config.changed";
+        ctx.getSource().getSender().sendMessage(I18n.tr(messageKey, node.path(),
+                old.color(NamedTextColor.WHITE), now.color(NamedTextColor.GREEN)).color(NamedTextColor.GRAY));
     }
 
     private void editList(CommandContext<CommandSourceStack> ctx, Node node, String value) throws CommandFailure {
@@ -107,31 +100,28 @@ public final class ConfigCommand {
         String verb = (space < 0 ? value : value.substring(0, space)).toLowerCase(Locale.ROOT);
         String entry = space < 0 ? "" : value.substring(space + 1).strip();
         if (!(verb.equals("add") || verb.equals("remove")) || entry.isEmpty()) {
-            throw new CommandFailure(node.path() + " is a list: use " + node.path() + " add <entry> or "
-                    + node.path() + " remove <entry>");
+            throw new CommandFailure(I18n.tr("core.config.list_usage", node.path(),
+                    node.path() + " add <entry>", node.path() + " remove <entry>"));
         }
         String changed;
         try {
             changed = verb.equals("add") ? editor.listAdd(node, entry) : editor.listRemove(node, entry);
         } catch (IllegalArgumentException exception) {
-            throw new CommandFailure(node.path() + ": " + exception.getMessage());
+            throw new CommandFailure(I18n.tr("core.config.path_error", node.path(), I18n.message(exception)));
         }
-        ctx.getSource().getSender().sendMessage(Component.text()
-                .append(Component.text(node.path() + ": ", NamedTextColor.GRAY))
-                .append(Component.text((verb.equals("add") ? "+ " : "- ") + changed, NamedTextColor.GREEN))
-                .append(Component.text(" (applies to the next game)", NamedTextColor.GRAY))
-                .build());
+        ctx.getSource().getSender().sendMessage(I18n.tr("core.config.list_changed", node.path(),
+                Component.text((verb.equals("add") ? "+ " : "- ") + changed, NamedTextColor.GREEN)).color(NamedTextColor.GRAY));
     }
 
     private CommandFailure unknown(String path) {
         int dot = path.lastIndexOf('.');
         Node parent = editor.resolve(dot < 0 ? "" : path.substring(0, dot));
         if (parent == null || parent.kind() != Kind.SECTION) {
-            return new CommandFailure("Unknown config path: " + path);
+            return new CommandFailure(I18n.tr("core.config.unknown_path", path));
         }
-        return new CommandFailure("Unknown config path: " + path + " (options"
-                + (parent.path().isEmpty() ? "" : " under " + parent.path()) + ": "
-                + String.join(", ", childNames(parent)) + ")");
+        return new CommandFailure(parent.path().isEmpty()
+                ? I18n.tr("core.config.unknown_path_options", path, String.join(", ", childNames(parent)))
+                : I18n.tr("core.config.unknown_path_under", path, parent.path(), String.join(", ", childNames(parent))));
     }
 
     private List<String> childNames(Node section) {
@@ -153,7 +143,7 @@ public final class ConfigCommand {
                 }
                 sectionLines(node, depth, lines);
                 if (lines.isEmpty()) {
-                    lines.add(Component.text("Nothing to configure here.", NamedTextColor.GRAY));
+                    lines.add(I18n.tr("core.config.empty").color(NamedTextColor.GRAY));
                 }
             }
         }
@@ -178,9 +168,9 @@ public final class ConfigCommand {
         NamedTextColor color = node.type().equals("text") ? NamedTextColor.WHITE : NamedTextColor.AQUA;
         return Component.text()
                 .append(Component.text("  ".repeat(depth) + label + ": ", NamedTextColor.GRAY))
-                .append(Component.text(node.value(), color))
+                .append(node.valueComponent().color(color))
                 .clickEvent(ClickEvent.suggestCommand(command(node.path()) + " "))
-                .hoverEvent(HoverEvent.showText(hover(node, "Click to edit")))
+                .hoverEvent(HoverEvent.showText(hover(node, I18n.tr("core.config.click_edit"))))
                 .build();
     }
 
@@ -190,27 +180,27 @@ public final class ConfigCommand {
         lines.add(Component.text()
                 .append(Component.text(indent + label + ":" + (entries.isEmpty() ? " []" : ""), NamedTextColor.GRAY))
                 .clickEvent(ClickEvent.suggestCommand(command(node.path()) + " add "))
-                .hoverEvent(HoverEvent.showText(hover(node, "Click to add an entry")))
+                .hoverEvent(HoverEvent.showText(hover(node, I18n.tr("core.config.click_add"))))
                 .build());
         for (String entry : entries) {
             lines.add(Component.text()
                     .append(Component.text(indent + "  - ", NamedTextColor.GRAY))
                     .append(Component.text(entry, NamedTextColor.WHITE))
                     .clickEvent(ClickEvent.suggestCommand(command(node.path()) + " remove " + entry))
-                    .hoverEvent(HoverEvent.showText(Component.text("Click to remove", NamedTextColor.GRAY)))
+                    .hoverEvent(HoverEvent.showText(I18n.tr("core.config.click_remove").color(NamedTextColor.GRAY)))
                     .build());
         }
     }
 
-    private static Component hover(Node node, String action) {
+    private static Component hover(Node node, Component action) {
         String fallback = node.defaultValue();
         return Component.text()
-                .append(Component.text(node.type(), NamedTextColor.AQUA))
+                .append(node.typeComponent().color(NamedTextColor.AQUA))
                 .append(Component.newline())
-                .append(Component.text(fallback != null ? "default: " + fallback : "no default (file only)",
-                        NamedTextColor.GRAY))
+                .append((fallback != null ? I18n.tr("core.config.default_value", node.defaultComponent())
+                        : I18n.tr("core.config.file_only")).color(NamedTextColor.GRAY))
                 .append(Component.newline())
-                .append(Component.text(action, NamedTextColor.YELLOW))
+                .append(action.color(NamedTextColor.YELLOW))
                 .build();
     }
 
@@ -225,7 +215,7 @@ public final class ConfigCommand {
         String input = builder.getRemaining();
         int space = input.indexOf(' ');
         if (space < 0) {
-            return suggestPath(builder, input);
+            return suggestPath(ctx.getSource().getSender(), builder, input);
         }
         if (!ctx.getSource().getSender().hasPermission(GameCommands.ADMIN_PERMISSION)) {
             return builder.buildFuture();
@@ -240,14 +230,14 @@ public final class ConfigCommand {
             int verbEnd = value.indexOf(' ');
             if (verbEnd < 0) {
                 SuggestionsBuilder verbs = builder.createOffset(start);
-                offer(verbs, "add", "add an entry", value);
-                offer(verbs, "remove", "remove an entry", value);
+                offer(ctx.getSource().getSender(), verbs, "add", I18n.tr("core.config.suggest_add"), value);
+                offer(ctx.getSource().getSender(), verbs, "remove", I18n.tr("core.config.suggest_remove"), value);
                 return verbs.buildFuture();
             }
             SuggestionsBuilder entries = builder.createOffset(start + verbEnd + 1);
             if (value.substring(0, verbEnd).equalsIgnoreCase("remove")) {
                 for (String entry : node.entries()) {
-                    offer(entries, entry, "listed", value.substring(verbEnd + 1));
+                    offer(ctx.getSource().getSender(), entries, entry, I18n.tr("core.config.suggest_listed"), value.substring(verbEnd + 1));
                 }
             }
             return entries.buildFuture();
@@ -255,20 +245,20 @@ public final class ConfigCommand {
         SuggestionsBuilder values = builder.createOffset(start);
         String current = node.value();
         if (node.isDeclared() || node.raw() != null) {
-            offer(values, current, "current · " + node.type(), value);
+            offer(ctx.getSource().getSender(), values, current, I18n.tr("core.config.suggest_current", node.typeComponent()), value);
         }
         for (String choice : node.choices()) {
             if (!choice.equalsIgnoreCase(current)) {
-                offer(values, choice, node.type(), value);
+                offer(ctx.getSource().getSender(), values, choice, node.typeComponent(), value);
             }
         }
         if (node.isDeclared() && !DEFAULT.equalsIgnoreCase(current)) {
-            offer(values, DEFAULT, "reset to " + node.defaultValue(), value);
+            offer(ctx.getSource().getSender(), values, DEFAULT, I18n.tr("core.config.suggest_reset", node.defaultComponent()), value);
         }
         return values.buildFuture();
     }
 
-    private CompletableFuture<Suggestions> suggestPath(SuggestionsBuilder builder, String input) {
+    private CompletableFuture<Suggestions> suggestPath(CommandSender viewer, SuggestionsBuilder builder, String input) {
         int dot = input.lastIndexOf('.');
         Node parent = editor.resolve(dot < 0 ? "" : input.substring(0, dot));
         SuggestionsBuilder segments = builder.createOffset(builder.getStart() + dot + 1);
@@ -278,20 +268,20 @@ public final class ConfigCommand {
         String typed = input.substring(dot + 1);
         for (Node child : editor.children(parent)) {
             String name = lastSegment(child.path());
-            String tooltip = switch (child.kind()) {
-                case SECTION -> "section";
-                case LIST -> "list of " + child.entries().size();
-                case VALUE -> child.type() + " = " + child.value();
+            Component tooltip = switch (child.kind()) {
+                case SECTION -> I18n.tr("core.config.suggest_section");
+                case LIST -> I18n.tr("core.config.suggest_list", child.entries().size());
+                case VALUE -> I18n.tr("core.config.suggest_value", child.typeComponent(), child.valueComponent());
             };
-            offer(segments, child.kind() == Kind.SECTION ? name + "." : name, tooltip, typed);
+            offer(viewer, segments, child.kind() == Kind.SECTION ? name + "." : name, tooltip, typed);
         }
         return segments.buildFuture();
     }
 
-    private static void offer(SuggestionsBuilder builder, String text, String tooltip, String typed) {
+    private static void offer(CommandSender viewer, SuggestionsBuilder builder, String text, Component tooltip, String typed) {
         if (text.toLowerCase(Locale.ROOT).startsWith(typed.toLowerCase(Locale.ROOT))) {
             builder.suggest(text, MessageComponentSerializer.message()
-                    .serialize(Component.text(tooltip, NamedTextColor.GRAY)));
+                    .serialize(I18n.render(tooltip.color(NamedTextColor.GRAY), viewer)));
         }
     }
 

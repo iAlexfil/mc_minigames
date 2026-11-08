@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.command;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
@@ -13,7 +14,7 @@ public class CommandFailure extends Exception {
     }
 
     public CommandFailure(Component text) {
-        super(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(text));
+        super(I18n.plain(text, java.util.Locale.ENGLISH));
         this.text = text.colorIfAbsent(NamedTextColor.RED);
     }
 

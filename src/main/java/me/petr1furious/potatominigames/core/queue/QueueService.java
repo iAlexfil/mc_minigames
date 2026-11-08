@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.queue;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,7 +65,7 @@ import me.petr1furious.potatominigames.core.text.Messages;
  */
 public final class QueueService implements Listener {
     private static final Messages QUEUE =
-            new Messages(Bukkit::getServer, Messages.tag(Component.text("Queue", NamedTextColor.YELLOW)));
+            new Messages(Bukkit::getServer, Messages.tag(I18n.tr("core.queue.tag").color(NamedTextColor.YELLOW)));
 
     private static final Title.Times COUNTDOWN_TITLE_TIMES =
             Title.Times.times(Duration.ZERO, Duration.ofMillis(900), Duration.ofMillis(200));
@@ -258,6 +259,11 @@ public final class QueueService implements Listener {
             String leading = leading(ballot);
             return leading != null ? leading : RANDOM;
         }
+
+        public Component leadingComponent(Ballot ballot) {
+            String leading = leading(ballot);
+            return leading != null ? ballot.choiceComponent(leading) : I18n.tr("common.choice.random");
+        }
     }
 
     /** Shown for an undecided ballot without a fallback. */
@@ -358,22 +364,18 @@ public final class QueueService implements Listener {
     /** Spectates instead if the game is already running. */
     public void join(Player player, Queue queue) throws CommandFailure {
         if (queues.get(queue.game.id() + "." + queue.mode) != queue || !queue.enabled()) {
-            throw new CommandFailure("That queue is closed.");
+            throw new CommandFailure(I18n.tr("core.queue.closed"));
         }
         Optional<ActiveSession> current = sessions.sessionOf(player);
         if (current.isPresent() && current.get().isParticipant(player)) {
-            throw new CommandFailure(Component.text()
-                    .append(Component.text("You are playing ", NamedTextColor.RED))
-                    .append(current.get().displayName())
-                    .append(Component.text(". Use /play leave first.", NamedTextColor.RED))
-                    .build());
+            throw new CommandFailure(I18n.tr("core.queue.already_playing", current.get().displayName()));
         }
         touch(player);
 
         Optional<ActiveSession> running = sessions.sessionOf(queue.game);
         if (running.isPresent()) {
             if (current.isPresent() && current.get() == running.get()) {
-                throw new CommandFailure("You are already spectating this game.");
+                throw new CommandFailure(I18n.tr("core.queue.already_spectating"));
             }
             Queue previous = byPlayer.get(player.getUniqueId());
             if (previous != null) {
@@ -386,7 +388,7 @@ public final class QueueService implements Listener {
 
         Queue previous = byPlayer.get(player.getUniqueId());
         if (previous == queue) {
-            throw new CommandFailure("You are already in this queue.");
+            throw new CommandFailure(I18n.tr("core.queue.already_joined"));
         }
         if (previous != null) {
             remove(player, previous);
@@ -397,12 +399,8 @@ public final class QueueService implements Listener {
         queue.members.add(player.getUniqueId());
         byPlayer.put(player.getUniqueId(), queue);
 
-        QUEUE.send(player, Component.text()
-                .append(Component.text("You joined ", NamedTextColor.GREEN))
-                .append(queue.displayName())
-                .append(Component.text(" (" + queue.countText() + "). ", NamedTextColor.GREEN))
-                .append(memberButtons(queue))
-                .build());
+        QUEUE.send(player, I18n.tr("core.queue.joined", queue.displayName(), queue.countText(), memberButtons(queue))
+                .color(NamedTextColor.GREEN));
         announce(queue, player, true);
     }
 
@@ -412,7 +410,7 @@ public final class QueueService implements Listener {
         if (queue != null) {
             remove(player, queue);
             lobby.leaveQueue(player);
-            QUEUE.send(player, Component.text("You left the queue.", NamedTextColor.YELLOW));
+            QUEUE.send(player, I18n.tr("core.queue.left").color(NamedTextColor.YELLOW));
             return;
         }
         Optional<ActiveSession> session = sessions.sessionOf(player);
@@ -420,23 +418,20 @@ public final class QueueService implements Listener {
             session.get().leave(player);
             return;
         }
-        throw new CommandFailure("You are not in a queue or a game.");
+        throw new CommandFailure(I18n.tr("core.queue.not_in_game_or_queue"));
     }
 
     public void vote(Player player) throws CommandFailure {
         Queue queue = byPlayer.get(player.getUniqueId());
         if (queue == null) {
-            throw new CommandFailure("You are not in a queue.");
+            throw new CommandFailure(I18n.tr("core.queue.not_queued"));
         }
         if (!queue.votes.add(player.getUniqueId())) {
-            throw new CommandFailure("You already voted to start.");
+            throw new CommandFailure(I18n.tr("core.queue.already_start_voted"));
         }
         touch(player);
-        Component line = Component.text()
-                .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                .append(Component.text(" voted to start (" + queue.votesCast() + "/" + queue.votesNeeded() + ")",
-                        NamedTextColor.GRAY))
-                .build();
+        Component line = I18n.tr("core.queue.start_vote", Component.text(player.getName(), NamedTextColor.AQUA),
+                queue.votesCast(), queue.votesNeeded()).color(NamedTextColor.GRAY);
         for (Player member : online(queue)) {
             QUEUE.send(member, line);
         }
@@ -446,10 +441,10 @@ public final class QueueService implements Listener {
     public Queue requireTeamQueue(Player player) throws CommandFailure {
         Queue queue = byPlayer.get(player.getUniqueId());
         if (queue == null) {
-            throw new CommandFailure("Join a queue first.");
+            throw new CommandFailure(I18n.tr("core.queue.join_first"));
         }
         if (!queue.game.usesTeams()) {
-            throw new CommandFailure("This game has no teams.");
+            throw new CommandFailure(I18n.tr("core.queue.no_teams"));
         }
         return queue;
     }
@@ -458,46 +453,40 @@ public final class QueueService implements Listener {
     public void pickTeam(Player player, TeamColor color) throws CommandFailure {
         Queue queue = requireTeamQueue(player);
         if (!queue.teamColors().contains(color)) {
-            throw new CommandFailure(Component.text()
-                    .append(color.displayNameComponent())
-                    .append(Component.text(" is not available in ", NamedTextColor.RED))
-                    .append(queue.displayName())
-                    .append(Component.text(".", NamedTextColor.RED))
-                    .build());
+            throw new CommandFailure(I18n.tr("core.queue.color_unavailable", color.displayNameComponent(), queue.displayName()));
         }
         if (queue.teamPicks.get(player.getUniqueId()) == color) {
-            throw new CommandFailure("You already picked that team.");
+            throw new CommandFailure(I18n.tr("core.queue.already_team_picked"));
         }
         touch(player);
         queue.teamPicks.put(player.getUniqueId(), color);
-        announcePick(queue, Component.text()
-                .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                .append(Component.text(" picked ", NamedTextColor.GRAY))
-                .append(color.displayNameComponent())
-                .build());
+        announcePick(queue, I18n.tr("core.queue.team_picked", Component.text(player.getName(), NamedTextColor.AQUA),
+                color.displayNameComponent()).color(NamedTextColor.GRAY));
     }
 
     /** Back to auto-balancing. */
     public void clearTeamPick(Player player) throws CommandFailure {
         Queue queue = requireTeamQueue(player);
         if (queue.teamPicks.remove(player.getUniqueId()) == null) {
-            throw new CommandFailure("You have no team picked.");
+            throw new CommandFailure(I18n.tr("core.queue.no_team_picked"));
         }
         touch(player);
-        announcePick(queue, Component.text()
-                .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                .append(Component.text(" will be auto-balanced", NamedTextColor.GRAY))
-                .build());
+        announcePick(queue, I18n.tr("core.queue.auto_balanced", Component.text(player.getName(), NamedTextColor.AQUA))
+                .color(NamedTextColor.GRAY));
     }
 
     /** The player's queue, if it votes on this ballot. */
     public Queue requireBallotQueue(Player player, String key) throws CommandFailure {
         Queue queue = byPlayer.get(player.getUniqueId());
         if (queue == null) {
-            throw new CommandFailure("Join a queue first.");
+            throw new CommandFailure(I18n.tr("core.queue.join_first"));
         }
         if (queue.ballot(key) == null) {
-            throw new CommandFailure("There is no " + key + " vote in this queue.");
+            throw new CommandFailure(I18n.tr("core.queue.no_ballot", switch (key) {
+                case "difficulty" -> I18n.tr("core.ballot.difficulty");
+                case "map" -> I18n.tr("core.ballot.map");
+                default -> Component.text(key);
+            }));
         }
         return queue;
     }
@@ -510,12 +499,12 @@ public final class QueueService implements Listener {
         String picked = null;
         if (choice != null) {
             picked = choices.stream().filter(option -> option.equalsIgnoreCase(choice)).findFirst()
-                    .orElseThrow(() -> new CommandFailure("Unknown " + ballot.title() + ": " + choice
-                            + " (options: " + String.join(", ", choices) + ", " + Ballot.ANY + ")"));
+                    .orElseThrow(() -> new CommandFailure(I18n.tr("core.ballot.unknown_choice", ballot.titleComponent(),
+                            choice, String.join(", ", choices) + ", " + Ballot.ANY)));
         }
         Map<UUID, String> votes = queue.ballotVotes.computeIfAbsent(key, ignored -> new LinkedHashMap<>());
         if (Objects.equals(votes.get(player.getUniqueId()), picked)) {
-            throw new CommandFailure(picked == null ? "You already voted for any." : "You already voted for that.");
+            throw new CommandFailure(I18n.tr(picked == null ? "core.ballot.already_any" : "core.ballot.already_voted"));
         }
         touch(player);
         if (picked == null) {
@@ -523,12 +512,9 @@ public final class QueueService implements Listener {
         } else {
             votes.put(player.getUniqueId(), picked);
         }
-        announcePick(queue, Component.text()
-                .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                .append(Component.text(" voted for " + ballot.title() + " ", NamedTextColor.GRAY))
-                .append(Component.text(picked == null ? Ballot.ANY : picked, NamedTextColor.WHITE))
-                .append(Component.text(" (leading: " + queue.leadingText(ballot) + ")", NamedTextColor.GRAY))
-                .build());
+        announcePick(queue, I18n.tr("core.ballot.voted", Component.text(player.getName(), NamedTextColor.AQUA),
+                ballot.titleComponent(), ballot.choiceComponent(picked).color(NamedTextColor.WHITE),
+                queue.leadingComponent(ballot)).color(NamedTextColor.GRAY));
     }
 
     private void announcePick(Queue queue, Component line) {
@@ -540,13 +526,10 @@ public final class QueueService implements Listener {
     /** Ignores the minimum and timers. */
     public void forceStart(Queue queue) throws CommandFailure {
         if (sessions.sessionOf(queue.game).isPresent()) {
-            throw new CommandFailure(Component.text()
-                    .append(queue.game.displayName())
-                    .append(Component.text(" is already running.", NamedTextColor.RED))
-                    .build());
+            throw new CommandFailure(I18n.tr("core.session.already_running", queue.game.displayName()));
         }
         if (online(queue).isEmpty()) {
-            throw new CommandFailure("Nobody is in that queue.");
+            throw new CommandFailure(I18n.tr("core.queue.empty"));
         }
         startGame(queue);
     }
@@ -569,8 +552,7 @@ public final class QueueService implements Listener {
                     if (now - lastActivity.getOrDefault(member.getUniqueId(), now) > afkMillis) {
                         remove(member, queue);
                         lobby.leaveQueue(member);
-                        QUEUE.send(member, Component.text("Removed from the queue: AFK.",
-                                NamedTextColor.YELLOW));
+                        QUEUE.send(member, I18n.tr("core.queue.afk_removed").color(NamedTextColor.YELLOW));
                     }
                 }
             }
@@ -647,8 +629,7 @@ public final class QueueService implements Listener {
             sessions.start(queue.game, queue.mode, roster, picks, true, options);
         } catch (CommandFailure failure) {
             plugin.getLogger().warning("Queued " + queue.game.id() + " could not start: "
-                    + net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
-                            .serialize(failure.text()));
+                    + I18n.plain(failure.text(), Locale.ENGLISH));
             // Requeue at the front with a full countdown.
             List<UUID> rest = new ArrayList<>(queue.members);
             queue.members.clear();
@@ -737,23 +718,17 @@ public final class QueueService implements Listener {
     }
 
     private void announce(Queue queue, Player who, boolean joined) {
-        Component line = Component.text()
-                .append(Component.text(who.getName(), NamedTextColor.AQUA))
-                .append(Component.text(joined ? " joined " : " left ", NamedTextColor.GRAY))
-                .append(queue.displayName())
-                .append(Component.text(" (" + queue.countText() + ") ", NamedTextColor.GRAY))
-                .append(button("Join", queue.command(), "Join this queue"))
-                .build();
+        Component line = I18n.tr(joined ? "core.queue.player_joined" : "core.queue.player_left",
+                Component.text(who.getName(), NamedTextColor.AQUA), queue.displayName(), queue.countText(),
+                button(I18n.tr("core.button.join"), queue.command(), I18n.tr("core.button.join_queue")))
+                .color(NamedTextColor.GRAY);
         for (Player player : freePlayers()) {
             if (player != who) {
                 QUEUE.send(player, line);
             }
         }
-        Component memberLine = Component.text()
-                .append(Component.text(who.getName(), NamedTextColor.AQUA))
-                .append(Component.text(joined ? " joined your queue " : " left your queue ", NamedTextColor.GRAY))
-                .append(Component.text("(" + queue.countText() + ")", NamedTextColor.GRAY))
-                .build();
+        Component memberLine = I18n.tr(joined ? "core.queue.member_joined" : "core.queue.member_left",
+                Component.text(who.getName(), NamedTextColor.AQUA), queue.countText()).color(NamedTextColor.GRAY);
         for (Player member : online(queue)) {
             if (member != who) {
                 QUEUE.send(member, memberLine);
@@ -762,34 +737,23 @@ public final class QueueService implements Listener {
     }
 
     private void announceCountdown(Queue queue) {
-        Component members = Component.text()
-                .append(queue.displayName())
-                .append(Component.text(" starts in " + queue.countdown + "s"
-                        + ballotSuffix(queue, ", ") + ". ", NamedTextColor.GREEN))
-                .append(memberButtons(queue))
-                .build();
+        Component members = I18n.tr("core.queue.countdown_members", queue.displayName(), queue.countdown,
+                ballotSuffix(queue, ", "), memberButtons(queue)).color(NamedTextColor.GREEN);
         for (Player member : online(queue)) {
             QUEUE.send(member, members);
         }
-        Component others = Component.text()
-                .append(queue.displayName())
-                .append(Component.text(" starts in " + queue.countdown + "s with " + queue.countText()
-                        + (queue.size() == 1 ? " player" : " players")
-                        + ballotSuffix(queue, ", ") + ". ", NamedTextColor.GRAY))
-                .append(button("Join", queue.command(), "Join this queue"))
-                .build();
+        Component others = I18n.tr("core.queue.countdown_others", queue.displayName(), queue.countdown,
+                queue.countText(), ballotSuffix(queue, ", "),
+                button(I18n.tr("core.button.join"), queue.command(), I18n.tr("core.button.join_queue")))
+                .color(NamedTextColor.GRAY);
         for (Player player : freePlayers()) {
             QUEUE.send(player, others);
         }
     }
 
     private void showWaiting(Queue queue) {
-        Component bar = Component.text()
-                .append(queue.displayName())
-                .append(Component.text(" • waiting for players " + queue.members.size() + "/" + queue.minPlayers()
-                        + ballotSuffix(queue, " • "),
-                        NamedTextColor.GRAY))
-                .build();
+        Component bar = I18n.tr("core.queue.waiting_bar", queue.displayName(), queue.members.size(),
+                queue.minPlayers(), ballotSuffix(queue, " • ")).color(NamedTextColor.GRAY);
         for (Player member : online(queue)) {
             member.sendActionBar(bar);
         }
@@ -797,12 +761,8 @@ public final class QueueService implements Listener {
 
     private void showCountdown(Queue queue) {
         int seconds = queue.countdown;
-        Component bar = Component.text()
-                .append(queue.displayName())
-                .append(Component.text(" • " + queue.countText() + " • starts in " + seconds + "s • votes "
-                        + queue.votesCast() + "/" + queue.votesNeeded() + ballotSuffix(queue, " • "),
-                        NamedTextColor.GRAY))
-                .build();
+        Component bar = I18n.tr("core.queue.countdown_bar", queue.displayName(), queue.countText(), seconds,
+                queue.votesCast(), queue.votesNeeded(), ballotSuffix(queue, " • ")).color(NamedTextColor.GRAY);
         for (Player member : online(queue)) {
             member.sendActionBar(bar);
             if (seconds <= 5) {
@@ -816,35 +776,36 @@ public final class QueueService implements Listener {
     }
 
     /** "difficulty hard" per ballot, each after a separator; "" without ballots. */
-    private static String ballotSuffix(Queue queue, String separator) {
-        StringBuilder suffix = new StringBuilder();
+    private static Component ballotSuffix(Queue queue, String separator) {
+        var suffix = Component.text();
         for (Ballot ballot : queue.ballots()) {
-            suffix.append(separator).append(ballot.title()).append(' ').append(queue.leadingText(ballot));
+            suffix.append(Component.text(separator)).append(I18n.tr("core.ballot.summary",
+                    ballot.titleComponent(), queue.leadingComponent(ballot)));
         }
-        return suffix.toString();
+        return suffix.build();
     }
 
     /** [Vote start] [Difficulty] [Map] [Pick team] [Leave]; the pick buttons only where there is something to pick. */
     private static Component memberButtons(Queue queue) {
         var buttons = Component.text()
-                .append(button("Vote start", "/play vote", "Vote to start early"))
+                .append(button(I18n.tr("core.button.vote_start"), "/play vote", I18n.tr("core.button.vote_start_hover")))
                 .append(Component.space());
         for (Ballot ballot : queue.ballots()) {
-            String label = ballot.title().substring(0, 1).toUpperCase(Locale.ROOT) + ballot.title().substring(1);
-            buttons.append(button(label, "/play " + ballot.key(), "Vote for the " + ballot.title()))
+            buttons.append(button(ballot.titleComponent(), "/play " + ballot.key(),
+                            I18n.tr("core.button.vote_ballot", ballot.titleComponent())))
                     .append(Component.space());
         }
         if (!queue.teamColors().isEmpty()) {
-            buttons.append(button("Pick team", "/play team", "Choose your team colour"))
+            buttons.append(button(I18n.tr("core.button.pick_team"), "/play team", I18n.tr("core.button.pick_team_hover")))
                     .append(Component.space());
         }
-        return buttons.append(button("Leave", "/play leave", "Leave the queue")).build();
+        return buttons.append(button(I18n.tr("core.button.leave"), "/play leave", I18n.tr("core.button.leave_queue"))).build();
     }
 
-    private static Component button(String label, String command, String hover) {
-        return Component.text("[" + label + "]", NamedTextColor.AQUA)
+    private static Component button(Component label, String command, Component hover) {
+        return I18n.tr("core.button.bracket", label).color(NamedTextColor.AQUA)
                 .clickEvent(ClickEvent.runCommand(command))
-                .hoverEvent(HoverEvent.showText(Component.text(hover, NamedTextColor.GRAY)));
+                .hoverEvent(HoverEvent.showText(hover.color(NamedTextColor.GRAY)));
     }
 
     private void touch(Player player) {

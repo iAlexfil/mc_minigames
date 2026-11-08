@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.session;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -226,32 +227,29 @@ public final class ActiveSession {
                 throw commandFailure;
             }
             plugin.getLogger().log(java.util.logging.Level.SEVERE, "Could not start " + game.id(), failure);
-            throw new CommandFailure("The game failed to start: " + failure.getMessage());
+            throw new CommandFailure(I18n.tr("core.session.start_failed", I18n.message(failure)));
         }
 
         ticker = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             elapsedSeconds++;
             session.onSecondTick(elapsedSeconds);
         }, 20L, 20L);
-        messages.broadcastGlobal(Component.text()
-                .append(displayName())
-                .append(Component.text(" started with " + Messages.count(participants.size(), "player")
-                        + (test ? " (test)" : ""), NamedTextColor.GREEN))
-                .build());
+        messages.broadcastGlobal(I18n.tr(test ? "core.session.started_test" : "core.session.started",
+                displayName(), participants.size()).color(NamedTextColor.GREEN));
         messages.playSound(participants.onlinePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.5f);
     }
 
     /** Late join, or puts a knocked-out participant back in. Admin-only. */
     public void join(Player player) throws CommandFailure {
         if (phase != GamePhase.RUNNING) {
-            throw new CommandFailure("No game is running.");
+            throw new CommandFailure(I18n.tr("core.session.no_running"));
         }
         boolean returning = participants.isParticipant(player);
         if (returning && session.isInGame(player)) {
-            throw new CommandFailure(player.getName() + " is already in the game.");
+            throw new CommandFailure(I18n.tr("core.session.player_already_joined", player.getName()));
         }
         if (!session.allowLateJoin()) {
-            throw new CommandFailure(player.getName() + " cannot join this game once it has started.");
+            throw new CommandFailure(I18n.tr("core.session.late_join_denied", player.getName()));
         }
         if (isSpectator(player)) {
             stopSpectating(player, false);
@@ -266,10 +264,8 @@ public final class ActiveSession {
             manager.index(player, this);
         }
         session.onParticipantJoin(player);
-        messages.broadcast(Component.text()
-                .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                .append(Component.text(" joined the game", NamedTextColor.GREEN))
-                .build());
+        messages.broadcast(I18n.tr("core.session.joined", Component.text(player.getName(), NamedTextColor.AQUA))
+                .color(NamedTextColor.GREEN));
     }
 
     public void leave(Player player) throws CommandFailure {
@@ -278,10 +274,10 @@ public final class ActiveSession {
             return;
         }
         if (!participants.isParticipant(player)) {
-            throw new CommandFailure(player.getName() + " is not in the game.");
+            throw new CommandFailure(I18n.tr("core.session.player_not_joined", player.getName()));
         }
         if (phase == GamePhase.RUNNING && !session.allowLeave() && session.isInGame(player)) {
-            throw new CommandFailure("You cannot leave " + game.id() + " once it has started.");
+            throw new CommandFailure(I18n.tr("core.session.leave_denied", game.displayName()));
         }
         sidebar.clear(player);
         bossBars.hideFrom(player);
@@ -289,10 +285,8 @@ public final class ActiveSession {
         manager.unindex(player.getUniqueId(), this);
         session.onParticipantLeave(player);
         lobby.returnPlayer(player);
-        messages.broadcast(Component.text()
-                .append(Component.text(player.getName(), NamedTextColor.AQUA))
-                .append(Component.text(" left the game", NamedTextColor.YELLOW))
-                .build());
+        messages.broadcast(I18n.tr("core.session.left", Component.text(player.getName(), NamedTextColor.AQUA))
+                .color(NamedTextColor.YELLOW));
         if (phase == GamePhase.RUNNING && participants.isEmpty()) {
             endGame(EndReason.ALL_PLAYERS_LEFT);
         }
@@ -300,10 +294,10 @@ public final class ActiveSession {
 
     public void spectate(Player player) throws CommandFailure {
         if (phase == GamePhase.IDLE) {
-            throw new CommandFailure("That game is not running.");
+            throw new CommandFailure(I18n.tr("core.session.not_running"));
         }
         if (participants.isParticipant(player)) {
-            throw new CommandFailure("You are playing in this game.");
+            throw new CommandFailure(I18n.tr("core.session.you_playing"));
         }
         if (!spectators.add(player.getUniqueId())) {
             return;
@@ -313,12 +307,9 @@ public final class ActiveSession {
         player.setGameMode(GameMode.SPECTATOR);
         player.teleport(spectatorLocation(player));
         bossBars.sync(player);
-        messages.send(player, Component.text()
-                .append(Component.text("You are spectating ", NamedTextColor.GRAY))
-                .append(displayName())
-                .append(Component.text(". ", NamedTextColor.GRAY))
-                .append(button("Leave", "/play leave", "Stop spectating"))
-                .build());
+        messages.send(player, I18n.tr("core.session.spectating", displayName(),
+                button(I18n.tr("core.button.leave"), "/play leave", I18n.tr("core.button.stop_spectating")))
+                .color(NamedTextColor.GRAY));
     }
 
     /** Stops spectating without teleporting. */
@@ -397,8 +388,7 @@ public final class ActiveSession {
     private void announceResult() {
         Component result = session.globalResult();
         Component line = result != null ? result
-                : Component.text().append(displayName())
-                        .append(Component.text(" has ended", NamedTextColor.GRAY)).build();
+                : I18n.tr("core.session.ended", displayName()).color(NamedTextColor.GRAY);
         List<Player> audience = audiencePlayers();
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (!audience.contains(player)) {
@@ -416,7 +406,7 @@ public final class ActiveSession {
         List<Component> body = new ArrayList<>(summaryLines != null ? summaryLines : List.of());
         summaryLines = null;
         if (test && !body.isEmpty()) {
-            body.add(Component.text("Test game: no points", NamedTextColor.DARK_GRAY));
+            body.add(I18n.tr("core.session.test_no_points").color(NamedTextColor.DARK_GRAY));
         }
         if (!seeds.isEmpty()) {
             if (!body.isEmpty()) {
@@ -431,10 +421,10 @@ public final class ActiveSession {
             }
             List<Component> buttons = new ArrayList<>();
             if (offerReplay) {
-                buttons.add(button("Play again", command, command));
+                buttons.add(button(I18n.tr("core.button.play_again"), command, Component.text(command)));
             }
             if (lobby.world() != null && !lobby.isLobby(player.getWorld())) {
-                buttons.add(Component.text("[Lobby]", NamedTextColor.GRAY)
+                buttons.add(I18n.tr("core.button.lobby").color(NamedTextColor.GRAY)
                         .clickEvent(ClickEvent.runCommand("/lobby"))
                         .hoverEvent(HoverEvent.showText(Component.text("/lobby", NamedTextColor.GRAY))));
             }
@@ -452,12 +442,10 @@ public final class ActiveSession {
             String text = Long.toString(seed);
             values.add(Component.text(text, NamedTextColor.WHITE)
                     .clickEvent(ClickEvent.copyToClipboard(text))
-                    .hoverEvent(HoverEvent.showText(Component.text("Click to copy", NamedTextColor.GRAY))));
+                    .hoverEvent(HoverEvent.showText(I18n.tr("core.button.copy").color(NamedTextColor.GRAY))));
         }
-        return Component.text()
-                .append(Component.text(seeds.size() == 1 ? "Seed: " : "Seeds: ", NamedTextColor.GRAY))
-                .append(Component.join(net.kyori.adventure.text.JoinConfiguration.commas(true), values))
-                .build();
+        return I18n.tr(seeds.size() == 1 ? "core.session.seed" : "core.session.seeds",
+                Component.join(net.kyori.adventure.text.JoinConfiguration.separator(Component.text(", ")), values)).color(NamedTextColor.GRAY);
     }
 
     private void cleanup(boolean offerReplay, boolean backToQueue) {
@@ -536,10 +524,10 @@ public final class ActiveSession {
         }
     }
 
-    static Component button(String label, String command, String hover) {
-        return Component.text("[" + label + "]", NamedTextColor.AQUA)
+    static Component button(Component label, String command, Component hover) {
+        return I18n.tr("core.button.bracket", label).color(NamedTextColor.AQUA)
                 .clickEvent(ClickEvent.runCommand(command))
-                .hoverEvent(HoverEvent.showText(Component.text(hover, NamedTextColor.GRAY)));
+                .hoverEvent(HoverEvent.showText(hover.color(NamedTextColor.GRAY)));
     }
 
     public Collection<UUID> spectatorIds() {

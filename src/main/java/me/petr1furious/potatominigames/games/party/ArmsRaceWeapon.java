@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
@@ -9,25 +10,26 @@ import org.bukkit.inventory.ItemStack;
 
 /** One kill per weapon, ending with the deliberately difficult golden shovel. */
 enum ArmsRaceWeapon {
-    DIAMOND_SWORD(Material.DIAMOND_SWORD, "Алмазный меч"),
-    IRON_SWORD(Material.IRON_SWORD, "Железный меч"),
-    DIAMOND_AXE(Material.DIAMOND_AXE, "Алмазный топор"),
-    STONE_SWORD(Material.STONE_SWORD, "Каменный меч"),
-    IRON_AXE(Material.IRON_AXE, "Железный топор"),
-    BOW(Material.BOW, "Лук"),
-    CROSSBOW(Material.CROSSBOW, "Арбалет"),
-    STONE_AXE(Material.STONE_AXE, "Каменный топор"),
-    WOODEN_SWORD(Material.WOODEN_SWORD, "Деревянный меч"),
-    WOODEN_AXE(Material.WOODEN_AXE, "Деревянный топор"),
-    GOLDEN_SWORD(Material.GOLDEN_SWORD, "Золотой меч"),
-    GOLDEN_SHOVEL(Material.GOLDEN_SHOVEL, "Золотая лопата");
+    DIAMOND_SWORD(Material.DIAMOND_SWORD),
+    IRON_SWORD(Material.IRON_SWORD),
+    DIAMOND_AXE(Material.DIAMOND_AXE),
+    STONE_SWORD(Material.STONE_SWORD),
+    IRON_AXE(Material.IRON_AXE),
+    BOW(Material.BOW),
+    CROSSBOW(Material.CROSSBOW),
+    STONE_AXE(Material.STONE_AXE),
+    WOODEN_SWORD(Material.WOODEN_SWORD),
+    WOODEN_AXE(Material.WOODEN_AXE),
+    GOLDEN_SWORD(Material.GOLDEN_SWORD),
+    GOLDEN_SHOVEL(Material.GOLDEN_SHOVEL);
 
     final Material material;
-    final String title;
+    final Component title;
 
-    ArmsRaceWeapon(Material material, String title) {
+    ArmsRaceWeapon(Material material) {
         this.material = material;
-        this.title = title;
+        // These vanilla item weapons must also initialize without a running server registry.
+        this.title = Component.translatable("item.minecraft." + material.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     boolean ranged() {
@@ -54,8 +56,8 @@ enum ArmsRaceWeapon {
         inventory.setBoots(PvpClass.item(Material.CHAINMAIL_BOOTS));
         inventory.setItemInOffHand(new ItemStack(Material.AIR));
         ItemStack weapon = PvpClass.item(material);
-        weapon.editMeta(meta -> meta.displayName(Component.text(title, NamedTextColor.GOLD)));
-        inventory.setItem(0, weapon);
+        weapon.editMeta(meta -> meta.displayName(title.color(NamedTextColor.GOLD)));
+        inventory.setItem(0, I18n.item(weapon, player));
         inventory.setHeldItemSlot(0);
         replenish(player);
     }

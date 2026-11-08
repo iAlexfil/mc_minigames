@@ -15,6 +15,7 @@ import java.util.UUID;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 /** Player-owned fixed Fusion mixes; memory changes only after an atomic save succeeds. */
 final class PillarsPresets {
@@ -43,27 +44,27 @@ final class PillarsPresets {
             ConfigurationSection section = yaml.getConfigurationSection("presets");
             if (section == null) {
                 if (!yaml.getKeys(false).isEmpty()) {
-                    throw new IllegalArgumentException("Expected a presets section.");
+                    throw I18n.exception("pillars.play.preset_error.section");
                 }
                 return;
             }
             for (String key : section.getKeys(false)) {
                 String name = checkedName(key);
                 if (!name.equals(key)) {
-                    throw new IllegalArgumentException("Preset names must be lowercase: " + key);
+                    throw I18n.exception("pillars.play.preset_error.lowercase", key);
                 }
                 ConfigurationSection entry = section.getConfigurationSection(key);
                 if (entry == null) {
-                    throw new IllegalArgumentException("Invalid preset: " + key);
+                    throw I18n.exception("pillars.play.preset_error.invalid", key);
                 }
                 UUID owner = UUID.fromString(entry.getString("owner", ""));
                 List<?> raw = entry.getList("modifiers");
                 if (raw == null || raw.stream().anyMatch(value -> !(value instanceof String))) {
-                    throw new IllegalArgumentException("Invalid modifiers for " + key);
+                    throw I18n.exception("pillars.play.preset_error.modifiers", key);
                 }
                 List<String> modifiers = checkedModifiers(raw.stream().map(String.class::cast).toList());
                 if (count(owner) >= LIMIT) {
-                    throw new IllegalArgumentException("More than " + LIMIT + " presets for " + owner);
+                    throw I18n.exception("pillars.play.preset_error.saved_limit", LIMIT, owner.toString());
                 }
                 presets.put(name, new Preset(owner, entry.getString("ownerName", owner.toString()), name, modifiers));
             }
@@ -88,10 +89,10 @@ final class PillarsPresets {
         String name = checkedName(rawName);
         Preset previous = presets.get(name);
         if (previous != null && !previous.owner().equals(owner)) {
-            throw new IllegalArgumentException("That preset belongs to " + previous.ownerName() + ".");
+            throw I18n.exception("pillars.play.preset_error.owner", previous.ownerName());
         }
         if (previous == null && count(owner) >= LIMIT) {
-            throw new IllegalArgumentException("You may save at most " + LIMIT + " presets. Delete one first.");
+            throw I18n.exception("pillars.play.preset_error.limit", LIMIT);
         }
         Preset preset = new Preset(owner, ownerName, name, checkedModifiers(modifiers));
         persist(name, preset);
@@ -103,10 +104,10 @@ final class PillarsPresets {
         String name = checkedName(rawName);
         Preset preset = presets.get(name);
         if (preset == null) {
-            throw new IllegalArgumentException("Unknown Pillars preset: " + name);
+            throw I18n.exception("pillars.play.preset_error.unknown", name);
         }
         if (!preset.owner().equals(owner)) {
-            throw new IllegalArgumentException("Only " + preset.ownerName() + " may delete that preset.");
+            throw I18n.exception("pillars.play.preset_error.delete_owner", preset.ownerName());
         }
         persist(name, null);
         presets.remove(name);
@@ -119,10 +120,10 @@ final class PillarsPresets {
     private String checkedName(String raw) {
         String name = raw.toLowerCase(Locale.ROOT);
         if (!name.matches("[a-z0-9][a-z0-9_-]{0,23}")) {
-            throw new IllegalArgumentException("Use 1-24 letters a-z, digits, _ or -; start with a letter or digit.");
+            throw I18n.exception("pillars.play.preset_error.name");
         }
         if (reserved.contains(name)) {
-            throw new IllegalArgumentException("That name is a built-in Pillars mode: " + name);
+            throw I18n.exception("pillars.play.preset_error.reserved", name);
         }
         return name;
     }
@@ -132,15 +133,14 @@ final class PillarsPresets {
         for (String value : raw) {
             String modifier = value.toLowerCase(Locale.ROOT);
             if (!MODIFIERS.contains(modifier)) {
-                throw new IllegalArgumentException("Unknown modifier: " + value + ". Choose "
-                        + String.join(", ", MODIFIERS) + ".");
+                throw I18n.exception("pillars.play.preset_error.unknown_modifier", value, String.join(", ", MODIFIERS));
             }
             if (!selected.add(modifier)) {
-                throw new IllegalArgumentException("Duplicate modifier: " + modifier);
+                throw I18n.exception("pillars.play.preset_error.duplicate_modifier", modifier);
             }
         }
         if (selected.contains("party") && selected.contains("rave")) {
-            throw new IllegalArgumentException("Choose party or rave, not both.");
+            throw I18n.exception("pillars.play.preset_error.party_rave");
         }
         return MODIFIERS.stream().filter(selected::contains).toList();
     }

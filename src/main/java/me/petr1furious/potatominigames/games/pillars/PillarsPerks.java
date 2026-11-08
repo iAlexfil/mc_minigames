@@ -73,6 +73,7 @@ import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 /** One match owns every effect, entity and listener. No static player state survives a session. */
 final class PillarsPerks implements Listener, AutoCloseable {
@@ -144,7 +145,9 @@ final class PillarsPerks implements Listener, AutoCloseable {
     private boolean blocked(Player p) { return frozen.containsKey(p.getUniqueId()) || ghosts.containsKey(p.getUniqueId()); }
     boolean immuneToVoid(Player p) { return !closed && blocked(p); }
     boolean isGhost(Player p) { return ghosts.containsKey(p.getUniqueId()); }
-    private static void message(Player p, String line) { p.sendActionBar(Component.text(line, NamedTextColor.LIGHT_PURPLE)); }
+    private static void message(Player p, String key, Object... args) {
+        p.sendActionBar(I18n.tr("pillars.effects.feedback." + key, args).color(NamedTextColor.LIGHT_PURPLE));
+    }
     private boolean fits(Location at) {
         if (!at.getWorld().equals(world) || at.getY() < session.deathHeight() || at.getY() >= world.getMaxHeight() - 2
                 || !world.getWorldBorder().isInside(at)) return false;
@@ -179,7 +182,10 @@ final class PillarsPerks implements Listener, AutoCloseable {
             bundle.add(item);
             if (kind == PerkType.BOW && i + 1 < stacks.size() && stacks.get(i + 1).getType() == Material.ARROW) bundle.add(stacks.get(++i).clone());
             String id = UUID.randomUUID().toString();
-            for (ItemStack part : bundle) PerkItems.tag(part, PerkItems.GIFT, id);
+            for (ItemStack part : bundle) {
+                PerkItems.tag(part, PerkItems.GIFT, id);
+                PerkItems.forPlayer(part, p);
+            }
             if (kind != PerkType.REROLL || rerolled) {
                 releaseGift(p, gifts.get(p.getUniqueId()));
                 gifts.put(p.getUniqueId(), new Gift(id, bundle.stream().map(ItemStack::clone).toList()));
@@ -187,8 +193,9 @@ final class PillarsPerks implements Listener, AutoCloseable {
             for (ItemStack part : bundle) {
                 for (ItemStack leftover : p.getInventory().addItem(part.clone()).values()) world.dropItem(p.getLocation(), leftover);
             }
-            if (kind != null) p.sendMessage(Component.text("Перк: " + kind.title + " • " + String.join(" • ", kind.instructions),
-                    kind.legendary ? NamedTextColor.GOLD : NamedTextColor.LIGHT_PURPLE));
+            if (kind != null) p.sendMessage(I18n.tr("pillars.effects.perk.received", kind.title,
+                    Component.join(net.kyori.adventure.text.JoinConfiguration.separator(Component.text(" • ")), kind.instructions))
+                    .color(kind.legendary ? NamedTextColor.GOLD : NamedTextColor.LIGHT_PURPLE));
         }
     }
     private void releaseGift(Player p, Gift previous) {
@@ -220,14 +227,14 @@ final class PillarsPerks implements Listener, AutoCloseable {
         if (!same(held, serial)) return;
         int remaining = PerkItems.charges(held) - 1;
         if (remaining <= 0) p.getInventory().setItem(slot, null);
-        else { ItemStack copy = held.clone(); PerkItems.charges(copy, remaining); p.getInventory().setItem(slot, copy); }
+        else { ItemStack copy = held.clone(); PerkItems.charges(copy, remaining); p.getInventory().setItem(slot, I18n.item(copy, p)); }
     }
     private void consumeHand(Player p, String serial) { consume(p, EquipmentSlot.HAND, serial); }
     private boolean reroll(Player p, String serial) {
         Gift gift = gifts.get(p.getUniqueId());
-        if (gift == null) { message(p, "Пока нечего перекручивать"); return false; }
+        if (gift == null) { message(p, "reroll_empty"); return false; }
         if (gift.id().equals(PerkItems.string(p.getInventory().getItemInMainHand(), PerkItems.GIFT))) {
-            message(p, "Нельзя перекрутить кубик, которым пользуешься"); return false;
+            message(p, "reroll_self"); return false;
         }
         ItemStack[] contents = p.getInventory().getContents();
         int[] wanted = gift.expected().stream().mapToInt(ItemStack::getAmount).toArray();
@@ -236,9 +243,9 @@ final class PillarsPerks implements Listener, AutoCloseable {
             if (!gift.id().equals(PerkItems.string(item, PerkItems.GIFT))) continue;
             boolean matched = false;
             for (int i = 0; i < present.length; i++) if (item.isSimilar(gift.expected().get(i))) { present[i] += item.getAmount(); matched = true; break; }
-            if (!matched) { message(p, "Выдача уже изменена или использована"); return false; }
+            if (!matched) { message(p, "reroll_changed"); return false; }
         }
-        if (!PerkRules.complete(wanted, present)) { message(p, "Нужна вся последняя выдача: непотраченная и в инвентаре"); return false; }
+        if (!PerkRules.complete(wanted, present)) { message(p, "reroll_incomplete"); return false; }
         List<ItemStack> next = roll(ordinaryDraw.get()); // Prepare before removing anything.
         consumeHand(p, serial);
         for (int i = 0; i < contents.length; i++) if (gift.id().equals(PerkItems.string(contents[i], PerkItems.GIFT))) p.getInventory().setItem(i, null);
@@ -330,14 +337,14 @@ final class PillarsPerks implements Listener, AutoCloseable {
             item = item.clone();
             PerkItems.setNumber(item, PerkItems.STARTED, 1);
             PerkItems.tag(item, PerkItems.EXPIRES, match + ":" + (tick + PerkRules.PLANK_TICKS));
-            PerkItems.charges(item, 1); p.getInventory().setBoots(item);
+            PerkItems.charges(item, 1); p.getInventory().setBoots(I18n.item(item, p));
         }
         String until = PerkItems.string(item, PerkItems.EXPIRES);
         long deadline = -1;
         if (until != null && until.startsWith(match + ":")) {
             try { deadline = Long.parseLong(until.substring(match.length() + 1)); } catch (NumberFormatException ignored) { }
         }
-        if (tick >= deadline) { item = item.clone(); PerkItems.charges(item, 0); p.getInventory().setBoots(item); return; }
+        if (tick >= deadline) { item = item.clone(); PerkItems.charges(item, 0); p.getInventory().setBoots(I18n.item(item, p)); return; }
         Location at = p.getLocation();
         if (at.getBlockY() - 1 < world.getMinHeight() || at.getBlockY() - 1 >= world.getMaxHeight()) return;
         Block below = world.getBlockAt(at.getBlockX(), at.getBlockY() - 1, at.getBlockZ());
@@ -360,8 +367,9 @@ final class PillarsPerks implements Listener, AutoCloseable {
             target.setType(Material.AIR, false); terrain.changed(target);
             channels.remove(p.getUniqueId()); p.clearActiveItem(); consumeHand(p, c.serial());
             world.playSound(target.getLocation(), Sound.BLOCK_GLASS_BREAK, 1, .6f);
-        } else if (held && tick % 10 == 0) message(p, "Дезинтегратор: " + String.format(java.util.Locale.ROOT,
-                "%.1f/%.1f с", c.timer().elapsed(tick) / 20.0, PerkRules.BREAK_TICKS / 20.0));
+        } else if (held && tick % 10 == 0) message(p, "disintegrator_progress",
+                String.format(java.util.Locale.ROOT, "%.1f", c.timer().elapsed(tick) / 20.0),
+                String.format(java.util.Locale.ROOT, "%.1f", PerkRules.BREAK_TICKS / 20.0));
         if (!held) channels.remove(p.getUniqueId());
     }
     private void ghost(Player p) {
@@ -408,7 +416,7 @@ final class PillarsPerks implements Listener, AutoCloseable {
         frozen.put(p.getUniqueId(), state); channels.remove(p.getUniqueId());
         p.setVelocity(new Vector()); p.setFallDistance(0);
         terrain.cage(state.at(), state.until());
-        p.sendMessage(Component.text("Заморозка • 4 с • урон отключён", NamedTextColor.AQUA));
+        p.sendMessage(I18n.tr("pillars.effects.feedback.frozen").color(NamedTextColor.AQUA));
     }
     private Player rayTarget(Player p, double distance) {
         RayTraceResult ray = world.rayTrace(p.getEyeLocation(), p.getEyeLocation().getDirection(), distance,
@@ -437,13 +445,13 @@ final class PillarsPerks implements Listener, AutoCloseable {
         ItemStack rod = thief.getInventory().getItemInMainHand();
         if (PerkItems.type(rod) != PerkType.STEAL) return;
         ItemStack taken = victim.getInventory().getItemInMainHand().clone();
-        if (taken.getType().isAir()) { message(thief, "В руке соперника пусто — заряд сохранён"); return; }
+        if (taken.getType().isAir()) { message(thief, "steal_empty"); return; }
         // Consuming the rod frees a slot; otherwise reserve space before deleting the victim's item.
-        if (!receive(thief, taken) && PerkItems.charges(rod) > 1) { message(thief, "Освободи место в инвентаре"); return; }
+        if (!receive(thief, taken) && PerkItems.charges(rod) > 1) { message(thief, "inventory_full"); return; }
         String serial = PerkItems.string(rod, PerkItems.SERIAL);
         victim.getInventory().setItemInMainHand(null); consumeHand(thief, serial);
-        for (ItemStack leftover : thief.getInventory().addItem(taken).values()) world.dropItem(thief.getLocation(), leftover);
-        hook.remove(); message(thief, "Предмет украден!"); message(victim, "У тебя украли предмет из руки!");
+        for (ItemStack leftover : thief.getInventory().addItem(PerkItems.forPlayer(taken, thief)).values()) world.dropItem(thief.getLocation(), leftover);
+        hook.remove(); message(thief, "steal_success"); message(victim, "steal_victim");
     }
     private void track(Entity entity, Player p, long lifetime) {
         entity.setPersistent(false); entities.add(new Tracked(entity, p.getUniqueId(), tick + lifetime));
@@ -454,20 +462,20 @@ final class PillarsPerks implements Listener, AutoCloseable {
     private boolean spawnRoom(Player p, int amount, int ownerLimit) {
         long own = entities.stream().filter(e -> e.entity().isValid() && e.owner().equals(p.getUniqueId())).count();
         own += pendingAnvils.stream().filter(a -> a.owner().equals(p.getUniqueId())).count();
-        if (own + amount > ownerLimit || entities.size() + pendingAnvils.size() + amount > 256) { message(p, "Дождись завершения предыдущих снарядов"); return false; }
+        if (own + amount > ownerLimit || entities.size() + pendingAnvils.size() + amount > 256) { message(p, "projectiles_pending"); return false; }
         return true;
     }
     private boolean anvilRain(Player p) {
         RayTraceResult hit = p.rayTraceBlocks(PerkRules.ANVIL_RANGE, FluidCollisionMode.NEVER);
-        if (hit == null || hit.getHitBlock() == null) { message(p, "Наведи палку на блок в пределах 192 м"); return false; }
+        if (hit == null || hit.getHitBlock() == null) { message(p, "anvil_target"); return false; }
         Block center = hit.getHitBlock();
         int y = Math.min(world.getMaxHeight() - 2, center.getY() + 24);
-        if (y < center.getY() + 8) { message(p, "Над целью слишком мало места для наковален"); return false; }
+        if (y < center.getY() + 8) { message(p, "anvil_height"); return false; }
         var plan = PerkShapes.anvilRain(center.getX(), y, center.getZ(), ThreadLocalRandom.current());
         for (var cell : plan) {
             Location at = new Location(world, cell.x() + .5, cell.y(), cell.z() + .5);
             if (!world.getWorldBorder().isInside(at) || !at.getBlock().getType().isAir()) {
-                message(p, "Над квадратом 3×3 должно быть свободно"); return false;
+                message(p, "anvil_space"); return false;
             }
         }
         if (!spawnRoom(p, 9, 16)) return false;
@@ -480,14 +488,14 @@ final class PillarsPerks implements Listener, AutoCloseable {
     }
     private boolean transmute(Player p) {
         RayTraceResult hit = p.rayTraceBlocks(PerkRules.BUILD_RANGE, FluidCollisionMode.NEVER);
-        if (hit == null || hit.getHitBlock() == null) { message(p, "Алхимик действует только по блоку в пределах 6 м"); return false; }
+        if (hit == null || hit.getHitBlock() == null) { message(p, "transmute_target"); return false; }
         int count = terrain.transmute(hit.getHitBlock(), tick, ThreadLocalRandom.current());
         if (count <= 0) {
-            message(p, count < 0 ? "Постройка слишком большая или выходит за загруженную арену — заряд сохранён" : "Этот блок защищён");
+            message(p, count < 0 ? "transmute_too_large" : "block_protected");
             return false;
         }
         world.playSound(hit.getHitBlock().getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 1, .6f);
-        message(p, "Алхимик: превращено блоков — " + count);
+        message(p, "transmute_success", count);
         return true;
     }
     private void blessing(Player p) {
@@ -500,7 +508,7 @@ final class PillarsPerks implements Listener, AutoCloseable {
     }
     private boolean reverseGravity(Player p) {
         var cycle = gravityCycles.computeIfAbsent(p.getUniqueId(), id -> new PerkRules.GravityCycle());
-        if (!cycle.start(tick)) { message(p, "Перезарядка гравитации: " + ((cycle.remaining(tick) + 19) / 20) + " с"); return false; }
+        if (!cycle.start(tick)) { message(p, "gravity_cooldown", (cycle.remaining(tick) + 19) / 20); return false; }
         gravity.put(p.getUniqueId(), new Gravity(p.hasGravity()));
         p.setGravity(false); p.setFallDistance(0);
         p.setVelocity(p.getVelocity().setY(.25));
@@ -508,20 +516,20 @@ final class PillarsPerks implements Listener, AutoCloseable {
     }
     private boolean pills(Player p) {
         Player victim = PerkRules.randomOpponent(session.perkPlayers().stream().filter(this::active).toList(), p, ThreadLocalRandom.current());
-        if (victim == null) { message(p, "Нет живого соперника — таблетка сохранена"); return false; }
+        if (victim == null) { message(p, "pills_no_opponent"); return false; }
         // Reapplication replaces the schedule instead of stacking several sound loops.
         phantomNoises.put(victim.getUniqueId(), new PerkRules.PhantomNoises(tick, ThreadLocalRandom.current()));
-        message(p, "Таблетка подействовала на " + victim.getName());
+        message(p, "pills_success", victim.name());
         return true;
     }
     private boolean decoy(Player p, PlayerInteractEvent e) {
-        if (e.getClickedBlock() == null) { message(p, "Поставь двойника яйцом: ПКМ по блоку рядом"); return false; }
+        if (e.getClickedBlock() == null) { message(p, "decoy_target"); return false; }
         Location at = e.getClickedBlock().getRelative(e.getBlockFace()).getLocation().add(.5, 0, .5);
         if (at.distanceSquared(p.getEyeLocation()) > PerkRules.BUILD_RANGE * PerkRules.BUILD_RANGE || !fits(at)) {
-            message(p, "Для двойника нужно свободное место рядом"); return false;
+            message(p, "decoy_space"); return false;
         }
         if (decoys.values().stream().filter(d -> d.owner().equals(p.getUniqueId())).count() >= 2 || !spawnRoom(p, 1)) {
-            message(p, "У тебя уже стоят двойники — дождись их исчезновения"); return false;
+            message(p, "decoy_limit"); return false;
         }
         at.setYaw(p.getYaw()); at.setPitch(0);
         Mannequin body = world.spawn(at, Mannequin.class, m -> PerkDecoys.disguise(m, p));
@@ -557,7 +565,7 @@ final class PillarsPerks implements Listener, AutoCloseable {
         for (int x = (int) Math.floor(at.getX() - .49); x <= Math.floor(at.getX() + .49); x++)
             for (int y = at.getBlockY(); y <= Math.floor(at.getY() + .98); y++)
                 for (int z = (int) Math.floor(at.getZ() - .49); z <= Math.floor(at.getZ() + .49); z++)
-                    if (!world.getBlockAt(x, y, z).isPassable()) { message(p, "Для снаряда нужно немного места у стены"); return null; }
+                    if (!world.getBlockAt(x, y, z).isPassable()) { message(p, "projectile_space"); return null; }
         return at;
     }
     private boolean tnt(Player p) {
@@ -583,12 +591,12 @@ final class PillarsPerks implements Listener, AutoCloseable {
         return true;
     }
     private boolean atomicBomb(Player p, PlayerInteractEvent e) {
-        if (e.getClickedBlock() == null) { message(p, "Поставь атомную бомбу ПКМ по блоку"); return false; }
+        if (e.getClickedBlock() == null) { message(p, "atomic_target"); return false; }
         Block space = e.getClickedBlock().getRelative(e.getBlockFace());
         Location at = space.getLocation().add(.5, 0, .5);
         if (space.getY() < world.getMinHeight() || space.getY() >= world.getMaxHeight()
                 || !space.isPassable() || terrain.locked(space, tick) || !world.getWorldBorder().isInside(at)) {
-            message(p, "Нет места для атомной бомбы"); return false;
+            message(p, "atomic_space"); return false;
         }
         if (!spawnRoom(p, 1)) return false;
         TNTPrimed bomb = world.spawn(at, TNTPrimed.class, t -> PerkOrdnance.armAtomic(t, p));
@@ -601,12 +609,12 @@ final class PillarsPerks implements Listener, AutoCloseable {
         // Replacing a helmet must preserve its metadata, including another perk's charges.
         ItemStack helmet = victim.getInventory().getHelmet();
         ItemStack curse = PerkItems.cursedPumpkin();
-        victim.getInventory().setHelmet(curse);
+        victim.getInventory().setHelmet(I18n.item(curse, victim));
         if (helmet != null && !helmet.getType().isAir()) {
             for (ItemStack leftover : victim.getInventory().addItem(helmet.clone()).values())
                 world.dropItem(victim.getLocation(), leftover);
         }
-        message(victim, "Проклятая тыква! Её нельзя снять до смерти.");
+        message(victim, "pumpkin_curse");
         world.playSound(victim.getLocation(), Sound.BLOCK_PUMPKIN_CARVE, 1, .8f);
     }
     private boolean sheep(Player p) {
@@ -618,7 +626,7 @@ final class PillarsPerks implements Listener, AutoCloseable {
         Location at = p.getLocation().clone().add(facing.normalize().multiply(1.5));
         if (!fits(at)) at = p.getLocation();
         Sheep mob = world.spawn(at, Sheep.class, s -> { s.setAdult(); s.setColor(org.bukkit.DyeColor.RED); s.setRemoveWhenFarAway(false);
-            s.customName(Component.text("Овца-камикадзе", NamedTextColor.RED)); s.setCustomNameVisible(true); });
+            s.customName(I18n.tr("pillars.effects.entity.kamikaze_sheep").color(NamedTextColor.RED)); s.setCustomNameVisible(true); });
         TNTPrimed bomb = world.spawn(at, TNTPrimed.class, t -> { t.setSource(p); t.setFuseTicks(100); t.setYield(2); t.setIsIncendiary(false); });
         if (!mob.isValid() || !bomb.isValid()) { mob.remove(); bomb.remove(); return false; }
         mob.addPassenger(bomb); sheep.add(new SheepBomb(mob, bomb, p.getUniqueId()));
@@ -691,17 +699,17 @@ final class PillarsPerks implements Listener, AutoCloseable {
                     Location saved = p.getLocation().clone(); saved.setY(at.getBlockY() - 1); teleport(p, saved);
                 }
                 if (placed) { Vector v = p.getVelocity(); p.setVelocity(v.setY(Math.max(-.5, v.getY()))); p.setFallDistance(0); }
-                else message(p, "Нет места для платформы");
+                else message(p, "platform_space");
                 yield placed;
             }
             case REROLL -> { boolean result = reroll(p, serial); if (result) usedAt.put(p.getUniqueId(), tick); yield false; }
             case GHOST -> { ghost(p); yield true; }
             case REWIND -> {
                 var h = history.get(p.getUniqueId()); Location at = h == null ? null : h.ago(tick);
-                if (at == null || !fits(at)) { message(p, "Позиция 3 секунды назад пока недоступна или занята"); yield false; }
+                if (at == null || !fits(at)) { message(p, "rewind_unavailable"); yield false; }
                 teleport(p, at); yield true;
             }
-            case HOUSE -> { boolean built = terrain.house(p.getLocation()); if (!built) message(p, "Для домика нужно свободное место 3×3"); yield built; }
+            case HOUSE -> { boolean built = terrain.house(p.getLocation()); if (!built) message(p, "house_space"); yield built; }
             case FREEZE -> { beam(p); yield true; }
             case CROSSBOW -> tnt(p);
             case PUMPKIN -> pumpkin(p);
@@ -714,13 +722,13 @@ final class PillarsPerks implements Listener, AutoCloseable {
             case DECOY -> decoy(p, e);
             case FAKE_BLOCK -> {
                 boolean placed = illusions.place(p);
-                if (!placed) message(p, "Наведи на грань блока рядом: нужно свободное место для обманки");
+                if (!placed) message(p, "fake_block_space");
                 yield placed;
             }
             case SHEEP -> sheep(p);
             case SMOKE -> {
                 if (smoke.size() >= 32 || smoke.stream().filter(s -> s.owner().equals(p.getUniqueId())).count() >= 2) {
-                    message(p, "Подожди, пока рассеется предыдущий дым"); yield false;
+                    message(p, "smoke_pending"); yield false;
                 }
                 smoke.add(new Smoke(p.getLocation().clone(), p.getUniqueId(), tick + PerkRules.SMOKE_TICKS)); yield true;
             }
@@ -751,7 +759,7 @@ final class PillarsPerks implements Listener, AutoCloseable {
             if (PerkItems.type(item) != PerkType.JUMP || PerkItems.charges(item) <= 0) continue;
             Vector velocity = p.getVelocity(); velocity.setY(.55); p.setVelocity(velocity); p.setFallDistance(0);
             if (PerkItems.charges(item) == 1) p.getInventory().setItem(slot, null);
-            else { ItemStack copy = item.clone(); PerkItems.charges(copy, PerkItems.charges(copy) - 1); p.getInventory().setItem(slot, copy); }
+            else { ItemStack copy = item.clone(); PerkItems.charges(copy, PerkItems.charges(copy) - 1); p.getInventory().setItem(slot, I18n.item(copy, p)); }
             jumpAt.put(p.getUniqueId(), tick); p.playSound(p.getLocation(), Sound.ENTITY_BREEZE_JUMP, .6f, 1.3f); break;
         }
     }

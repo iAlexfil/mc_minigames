@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.core.config;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -68,6 +70,32 @@ public final class Property<T> {
         return strict ? "one of " + String.join("|", choices.get()) : codec.typeName();
     }
 
+    public Component typeComponent() {
+        if (type == null && strict) {
+            return I18n.tr("core.config.type.one_of", String.join("|", choices.get()));
+        }
+        return typeComponent(type != null ? type : codec.typeName());
+    }
+
+    /** Known built-in UI labels only; extension labels stay literal. */
+    public static Component typeComponent(String label) {
+        return switch (label) {
+            case "text" -> I18n.tr("core.config.type.text");
+            case "list" -> I18n.tr("core.config.type.list");
+            case "int" -> I18n.tr("core.config.type.int");
+            case "number" -> I18n.tr("core.config.type.number");
+            case "boolean" -> I18n.tr("core.config.type.boolean");
+            case "material" -> I18n.tr("core.config.type.material");
+            case "x y z" -> I18n.tr("core.config.type.vector");
+            case "duration like 5min" -> I18n.tr("core.config.type.duration");
+            case "#RRGGBB colour" -> I18n.tr("core.config.type.color");
+            case "block, empty for platformMaterial" -> I18n.tr("core.config.type.block");
+            case "tick or day/noon/night/..." -> I18n.tr("core.config.type.time");
+            case "weight, 0 removes the item" -> I18n.tr("core.config.type.weight");
+            default -> Component.text(label);
+        };
+    }
+
     /** Declared choices, else the codec's (booleans, materials). */
     public List<String> choices() {
         return choices != null ? choices.get() : codec.choices();
@@ -91,7 +119,7 @@ public final class Property<T> {
             List<String> allowed = choices.get();
             String match = allowed.stream().filter(raw::equalsIgnoreCase).findFirst().orElse(null);
             if (match == null) {
-                throw new IllegalArgumentException("options: " + String.join(", ", allowed));
+                throw I18n.exception("core.config.options", String.join(", ", allowed));
             }
             raw = match;
         }
@@ -99,10 +127,10 @@ public final class Property<T> {
         try {
             parsed = codec.parse(raw);
         } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("expected " + typeLabel());
+            throw I18n.exception("core.config.expected", typeComponent());
         }
         if (check != null && !check.test(parsed)) {
-            throw new IllegalArgumentException("expected " + typeLabel());
+            throw I18n.exception("core.config.expected", typeComponent());
         }
         return parsed;
     }

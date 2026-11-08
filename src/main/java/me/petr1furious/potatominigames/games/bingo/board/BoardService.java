@@ -1,5 +1,7 @@
 package me.petr1furious.potatominigames.games.bingo.board;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -33,7 +35,7 @@ public final class BoardService {
 
     public GeneratedBoard generateBoard(GameMode mode, GameDifficulty difficulty, List<BoardEntry> pool) {
         if (pool.isEmpty()) {
-            throw new IllegalStateException("Board entry pool is empty.");
+            throw I18n.exception("bingo.board.empty_pool");
         }
 
         List<Candidate> candidates = new ArrayList<>();
@@ -45,12 +47,12 @@ public final class BoardService {
         }
 
         if (candidates.isEmpty()) {
-            throw new IllegalStateException("No board items fit the selected difficulty score band.");
+            throw I18n.exception("bingo.board.no_matching_items");
         }
 
         int required = mode == GameMode.COLLECTALL ? 9 : 25;
         if (candidates.size() < required) {
-            throw new IllegalStateException("Not enough candidate entries for board generation.");
+            throw I18n.exception("bingo.board.not_enough_items");
         }
 
         Random random = new Random();
@@ -80,7 +82,7 @@ public final class BoardService {
         }
 
         if (bestBoard == null) {
-            throw new IllegalStateException("Could not generate a valid board.");
+            throw I18n.exception("bingo.board.generation_failed");
         }
         return new GeneratedBoard(bestBoard, bestDistance, attemptsTried, candidates.size(),
                 pool.size(), required, bestLowestLineAverage, bestHighestLineAverage, bestAverageLineAverage);

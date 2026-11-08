@@ -17,9 +17,7 @@ public final class BuildMemoryCheck {
                 check(
                         p.blocks().keySet().stream().anyMatch(c -> c.y() >= 2),
                         "Every stage starts with a three-dimensional model");
-                check(
-                        !p.title().isBlank() && p.inventory().size() <= 3,
-                        "Named model with coherent thematic materials");
+                check(p.inventory().size() <= 3, "Coherent thematic materials");
                 check(
                         p.inventory().values().stream().mapToInt(Integer::intValue).sum()
                                 == p.blocks().size(),

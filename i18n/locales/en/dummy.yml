@@ -1,0 +1,7 @@
+mode.default: "Default"
+name: "Dummy"
+round: "Dummy round"
+complete: "Dummy round complete"
+timer: "Dummy round — <arg:0>"
+time_left: "Time left: <arg:0>"
+players: "Players: <arg:0>"

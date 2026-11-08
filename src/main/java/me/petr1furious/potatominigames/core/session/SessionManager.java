@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.session;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -181,20 +182,17 @@ public final class SessionManager {
             boolean queued, Map<String, String> options) throws CommandFailure {
         ActiveSession running = sessions.get(game.id());
         if (running != null) {
-            throw new CommandFailure(Component.text()
-                    .append(running.displayName())
-                    .append(Component.text(" is already " + running.phase().name().toLowerCase() + ".",
-                            NamedTextColor.RED))
-                    .build());
+            throw new CommandFailure(I18n.tr("core.session.already_active", running.displayName(),
+                    running.phase().displayName()));
         }
         if (roster.isEmpty()) {
-            throw new CommandFailure("No players to start the game with.");
+            throw new CommandFailure(I18n.tr("core.session.no_players"));
         }
         for (Player player : roster) {
             ActiveSession other = byPlayer.get(player.getUniqueId());
             if (other != null && other.isParticipant(player)) {
-                throw new CommandFailure(player.getName() + " is already playing "
-                        + other.game().id() + ".");
+                throw new CommandFailure(I18n.tr("core.session.player_busy", player.getName(),
+                        other.game().displayName()));
             }
         }
         // Spectators of another game stop watching.
@@ -264,8 +262,8 @@ public final class SessionManager {
         if (!game.showModes() || mode == null || mode.isEmpty()) {
             return game.displayName();
         }
-        return Component.text().append(game.displayName())
-                .append(Component.text(" (" + game.modeTitle(mode) + ")", NamedTextColor.GRAY)).build();
+        return I18n.tr("core.session.mode_name", game.displayName(),
+                game.modeTitle(mode).colorIfAbsent(NamedTextColor.GRAY));
     }
 
     public String playCommand(Minigame game, String mode) {

@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.Location;
 
@@ -13,7 +15,7 @@ final class TntRunSession extends PartySurvivalSession {
     }
 
     TntRunSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
-        super(services, config, "tnt_run", "TNT Run", context);
+        super(services, config, "tnt_run", context);
         duration = Math.clamp(config.tntRunSeconds.get(), 30, 600);
         collapse = Math.clamp(config.tntRunCollapseTicks.get(), 3, 40);
     }
@@ -45,9 +47,8 @@ final class TntRunSession extends PartySurvivalSession {
     }
 
     @Override
-    String instructions() {
-        return "TNT Run: пол исчезает под ногами! Три яруса, ни одного второго шанса. Беги и прыгай"
-                + " — последний выживший побеждает.";
+    Component instructions() {
+        return I18n.tr("party.rounds.tnt_run.instructions");
     }
 
     @Override
@@ -58,12 +59,8 @@ final class TntRunSession extends PartySurvivalSession {
     }
 
     @Override
-    String status() {
-        return "Пол исчезает за "
-                + String.format(
-                        java.util.Locale.ROOT,
-                        "%.2f",
-                        TntRunArena.delay(collapse, elapsed()) / 20.0)
-                + " с";
+    Component status() {
+        return I18n.tr("party.rounds.tnt_run.status", String.format(
+                java.util.Locale.ROOT, "%.2f", TntRunArena.delay(collapse, elapsed()) / 20.0));
     }
 }

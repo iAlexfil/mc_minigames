@@ -41,12 +41,14 @@ import me.petr1furious.potatominigames.games.party.PartyGame;
 import me.petr1furious.potatominigames.games.dummy.DummyGame;
 import me.petr1furious.potatominigames.games.pillars.PillarsGame;
 import me.petr1furious.potatominigames.games.warfare.WarfareGame;
+import me.petr1furious.potatominigames.i18n.I18n;
 
 public final class PotatoMinigamesPlugin extends JavaPlugin {
     private SessionManager sessions;
 
     @Override
     public void onEnable() {
+        I18n.register();
         Messages messages = new Messages();
         ConfigRegistry configs = new ConfigRegistry(this);
         PlayerStateService playerState = new PlayerStateService(this);
@@ -137,5 +139,6 @@ public final class PotatoMinigamesPlugin extends JavaPlugin {
         if (sessions != null) {
             sessions.stopAll(EndReason.ABORTED);
         }
+        I18n.unregister();
     }
 }

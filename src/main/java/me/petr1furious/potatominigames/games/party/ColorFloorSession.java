@@ -1,6 +1,8 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
 
@@ -13,7 +15,7 @@ final class ColorFloorSession extends PartySurvivalSession {
     private boolean revealing;
 
     ColorFloorSession(SessionServices s, PartyConfig c, PartyRoundContext context) {
-        super(s, c, "color_floor", "Цветной пол", context);
+        super(s, c, "color_floor", context);
         stages = c.colorFloorStages.get();
     }
 
@@ -43,8 +45,8 @@ final class ColorFloorSession extends PartySurvivalSession {
         return true;
     }
 
-    String instructions() {
-        return "Встань на названный цвет! Остальной пол исчезнет. Каждый этап быстрее.";
+    Component instructions() {
+        return I18n.tr("party.rounds.color_floor.instructions");
     }
 
     void beginPlay() {
@@ -56,7 +58,7 @@ final class ColorFloorSession extends PartySurvivalSession {
         round = ColorFloorRound.generate(stage, random);
         arena.show(round, false);
         deadline = elapsed() + ColorFloorRound.choiceTicks(stage);
-        announceTitle(round.title(), "Найди этот цвет! Этап " + stage, 2);
+        announceTitle(round.title(), I18n.tr("party.rounds.color_floor.find", stage), 2);
         PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, 1.1f);
     }
 
@@ -78,13 +80,8 @@ final class ColorFloorSession extends PartySurvivalSession {
         }
     }
 
-    String status() {
-        return "Этап "
-                + stage
-                + " • "
-                + round.title()
-                + " • "
-                + Math.max(0, (deadline - elapsed() + 19) / 20)
-                + " с";
+    Component status() {
+        return I18n.tr("party.rounds.color_floor.status", stage, round.title(),
+                Math.max(0, (deadline - elapsed() + 19) / 20));
     }
 }

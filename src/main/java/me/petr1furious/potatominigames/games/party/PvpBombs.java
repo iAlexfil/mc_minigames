@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.games.party;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,10 +47,10 @@ final class PvpBombs {
     static ItemStack item(int amount) {
         ItemStack item = new ItemStack(Material.TNT, amount);
         item.editMeta(meta -> {
-            meta.displayName(Component.text("Заряд TNT", NamedTextColor.GOLD));
-            meta.lore(List.of(Component.text("ПКМ по блоку — установить • 0,3 с", NamedTextColor.GRAY),
-                    Component.text("ЛКМ — бросить по взгляду • 2 с", NamedTextColor.GRAY),
-                    Component.text("Фитиль 2,5 с • до 4 активных • взрыв ранит и тебя", NamedTextColor.RED)));
+            meta.displayName(I18n.tr("party.duels.bomb.title").color(NamedTextColor.GOLD));
+            meta.lore(List.of(I18n.tr("party.duels.bomb.place").color(NamedTextColor.GRAY),
+                    I18n.tr("party.duels.bomb.throw").color(NamedTextColor.GRAY),
+                    I18n.tr("party.duels.bomb.fuse").color(NamedTextColor.RED)));
             meta.getPersistentDataContainer().set(KEY, PersistentDataType.BYTE, (byte) 1);
         });
         return item;
@@ -64,7 +65,7 @@ final class PvpBombs {
         for (ItemStack stack : inventory.getContents()) if (isBomb(stack)) owned += stack.getAmount();
         int added = PvpPotion.refillAmount(owned, REFILL, STOCK);
         if (added == 0) return 0;
-        return added - inventory.addItem(item(added)).values().stream().mapToInt(ItemStack::getAmount).sum();
+        return added - inventory.addItem(I18n.item(item(added), player)).values().stream().mapToInt(ItemStack::getAmount).sum();
     }
     /** Called only after placement/throw geometry has passed session validation. */
     boolean use(Player player, Location at, boolean thrown, Plugin plugin) {
@@ -74,13 +75,13 @@ final class PvpBombs {
         int tick = Bukkit.getCurrentTick();
         int remaining = cooldowns.remaining(id, tick, thrown);
         if (remaining > 0) {
-            player.sendActionBar(Component.text((thrown ? "Бросок" : "Установка") + ": ещё "
-                    + String.format(java.util.Locale.ROOT, "%.1f", remaining / 20.0) + " с", NamedTextColor.YELLOW));
+            player.sendActionBar(I18n.tr(thrown ? "party.duels.bomb.throw_cooldown" : "party.duels.bomb.place_cooldown",
+                    String.format(java.util.Locale.ROOT, "%.1f", remaining / 20.0)).color(NamedTextColor.YELLOW));
             return false;
         }
         prune();
         if (active(id) >= MAX_ACTIVE) {
-            player.sendActionBar(Component.text("Уже 4 активных TNT — дождись взрыва", NamedTextColor.YELLOW));
+            player.sendActionBar(I18n.tr("party.duels.bomb.active_limit").color(NamedTextColor.YELLOW));
             return false;
         }
         Vector velocity = thrown ? throwVelocity(player.getEyeLocation().getDirection()) : new Vector();

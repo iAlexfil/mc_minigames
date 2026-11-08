@@ -1,5 +1,8 @@
 package me.petr1furious.potatominigames.core.text;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+
 public final class TimeFormat {
     private TimeFormat() {
     }
@@ -17,16 +20,17 @@ public final class TimeFormat {
     }
 
     /** "2m 30s" style, for chat messages. */
-    public static String words(long totalSeconds) {
+    public static Component words(long totalSeconds) {
         long seconds = Math.max(0, totalSeconds);
         long minutes = seconds / 60;
         long secs = seconds % 60;
         if (minutes > 0 && secs > 0) {
-            return minutes + "m " + secs + "s";
+            return I18n.tr("common.time.minutes", minutes).append(Component.space())
+                    .append(I18n.tr("common.time.seconds", secs));
         }
         if (minutes > 0) {
-            return minutes + "m";
+            return I18n.tr("common.time.minutes", minutes);
         }
-        return secs + "s";
+        return I18n.tr("common.time.seconds", secs);
     }
 }

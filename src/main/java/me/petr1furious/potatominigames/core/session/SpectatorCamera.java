@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.session;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -118,14 +119,10 @@ public final class SpectatorCamera implements Listener {
     }
 
     private static void hint(Player viewer, Player target, List<Player> targets) {
-        var bar = Component.text()
-                .append(Component.text("Watching ", NamedTextColor.GRAY))
-                .append(Component.text(target.getName(), NamedTextColor.AQUA));
-        if (targets.size() > 1) {
-            bar.append(Component.text(" • sneak for the next (" + (targets.indexOf(target) + 1) + "/"
-                    + targets.size() + ")", NamedTextColor.GRAY));
-        }
-        viewer.sendActionBar(bar.build());
+        Component name = Component.text(target.getName(), NamedTextColor.AQUA);
+        viewer.sendActionBar((targets.size() > 1
+                ? I18n.tr("core.spectator.watching_next", name, targets.indexOf(target) + 1, targets.size())
+                : I18n.tr("core.spectator.watching", name)).color(NamedTextColor.GRAY));
     }
 
     /** Sneaking lets go of the target; move on to the next one instead. Also fires when the target dies. */

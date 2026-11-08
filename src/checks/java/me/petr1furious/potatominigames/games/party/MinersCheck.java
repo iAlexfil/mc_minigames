@@ -29,7 +29,7 @@ public final class MinersCheck {
         check(game.id().equals("party") && game.modes().containsAll(List.of("pvp", "sumo", "arms_race", "tnt_run", "mob_count", "rhino", "miners")),
                 "Miners is another Party mode; all upstream modes remain available");
         check(game.createSession(null, "miners") instanceof MinersSession && game.maxPlayers("miners") == 12, "The miners queue creates its own FFA session with twelve slots");
-        check(game.modeTitle("miners").equals("Битва шахтёров") && game.icon("miners") == Material.DIAMOND_PICKAXE, "Menu exposes a Russian label and pickaxe icon");
+        check(game.icon("miners") == Material.DIAMOND_PICKAXE, "Menu exposes a pickaxe icon");
         var queueStream = MinersCheck.class.getResourceAsStream("/config.yml");
         var timingsStream = MinersCheck.class.getResourceAsStream("/games/party.yml");
         check(queueStream != null && timingsStream != null, "Shipped configuration resources exist");

@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.core.lobby;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -217,25 +218,25 @@ public final class LobbyService implements Listener {
         if (isExempt(player)) {
             if (java.util.Arrays.stream(player.getInventory().getContents()).noneMatch(this::isMenuItem)) {
                 if (player.getInventory().getItem(menuSlot.get()) == null) {
-                    player.getInventory().setItem(menuSlot.get(), menuItem());
+                    player.getInventory().setItem(menuSlot.get(), I18n.item(menuItem(), player));
                 } else {
-                    player.getInventory().addItem(menuItem());
+                    player.getInventory().addItem(I18n.item(menuItem(), player));
                 }
             }
             return;
         }
         playerState.resetForRound(player, GameMode.ADVENTURE);
         player.setSaturation(20.0f);
-        player.getInventory().setItem(menuSlot.get(), menuItem());
+        player.getInventory().setItem(menuSlot.get(), I18n.item(menuItem(), player));
         player.getInventory().setHeldItemSlot(menuSlot.get());
     }
 
     public ItemStack menuItem() {
         ItemStack item = new ItemStack(Material.COMPASS);
         item.editMeta(meta -> {
-            meta.displayName(Component.text("Play a game", NamedTextColor.GOLD)
+            meta.displayName(I18n.tr("core.menu.play").color(NamedTextColor.GOLD)
                     .decoration(TextDecoration.ITALIC, false));
-            meta.lore(java.util.List.of(Component.text("Right-click to pick a game", NamedTextColor.GRAY)
+            meta.lore(java.util.List.of(I18n.tr("core.lobby.menu_hint").color(NamedTextColor.GRAY)
                     .decoration(TextDecoration.ITALIC, false)));
             meta.getPersistentDataContainer().set(menuKey, PersistentDataType.BYTE, (byte) 1);
         });

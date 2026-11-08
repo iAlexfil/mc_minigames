@@ -80,10 +80,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     private List<Component> result = List.of();
 
     PartySurvivalSession(
-            SessionServices services,
-            PartyConfig config,
-            String id,
-            PartyRoundContext context) {
+            SessionServices services, PartyConfig config, String id, PartyRoundContext context) {
         this.context = context;
         this.services = context.services();
         this.config = config;
@@ -113,6 +110,13 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     void playerOut(Player player) {}
 
+    long arenaTime() {
+        return switch (id) {
+            case "tool_race", "anvils", "color_floor", "build_memory" -> 6000L;
+            default -> 18000L;
+        };
+    }
+
     @Override
     public final void onStart() throws CommandFailure {
         for (var participant : services.participants().all()) {
@@ -133,8 +137,9 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         world = context.createVoid(id);
         services.arena().applyStandardGameRules(world);
         world.setDifficulty(Difficulty.NORMAL);
-        world.setTime(18000);
+        world.setTime(arenaTime());
         world.setStorm(false);
+        world.setThundering(false);
         world.setGameRule(GameRules.PVP, false);
         world.setGameRule(GameRules.IMMEDIATE_RESPAWN, true);
         world.setGameRule(GameRules.ADVANCE_TIME, false);
@@ -319,22 +324,38 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
                         ? (podium.places().isEmpty() ? List.of() : podium.places().getFirst())
                         : List.copyOf(winners);
         List<Component> lines = new ArrayList<>();
-        lines.add(text(champions.isEmpty()
-                ? I18n.tr("party.rounds.draw")
-                : I18n.tr("common.summary.winners",
-                        String.join(", ", champions.stream().map(names::get).toList()))));
+        lines.add(
+                text(
+                        champions.isEmpty()
+                                ? I18n.tr("party.rounds.draw")
+                                : I18n.tr(
+                                        "common.summary.winners",
+                                        String.join(
+                                                ", ",
+                                                champions.stream().map(names::get).toList()))));
         int place = 0;
         for (UUID id : standings.ranking(names.keySet(), tick)) {
-            lines.add(I18n.tr("party.rounds.survival.result", ++place, names.get(id),
-                    TimeFormat.clock(Math.max(0, standings.survived(id, tick) - startedAt) / 20))
-                    .color(NamedTextColor.GRAY));
+            lines.add(
+                    I18n.tr(
+                                    "party.rounds.survival.result",
+                                    ++place,
+                                    names.get(id),
+                                    TimeFormat.clock(
+                                            Math.max(0, standings.survived(id, tick) - startedAt)
+                                                    / 20))
+                            .color(NamedTextColor.GRAY));
         }
         if (podiumAwards()) {
             lines.clear();
             for (var group : podium.places())
                 for (UUID id : group)
-                    lines.add(text(I18n.tr("party.rounds.points.result",
-                            podium.place(id), names.get(id), podium.awards().get(id))));
+                    lines.add(
+                            text(
+                                    I18n.tr(
+                                            "party.rounds.points.result",
+                                            podium.place(id),
+                                            names.get(id),
+                                            podium.awards().get(id))));
         }
         result = List.copyOf(lines);
         if (!context.embedded())
@@ -364,9 +385,12 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     private void hud() {
         if (bar == null || done) return;
-        Component line = !playing
-                ? I18n.tr("party.rounds.starts_in", Math.max(1, (countdownEnd - tick + 19) / 20))
-                : status();
+        Component line =
+                !playing
+                        ? I18n.tr(
+                                "party.rounds.starts_in",
+                                Math.max(1, (countdownEnd - tick + 19) / 20))
+                        : status();
         bar.name(text(I18n.tr("party.rounds.status", title, line)));
         bar.progress(
                 playing
@@ -374,17 +398,17 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
                         : Math.clamp(1f - (float) tick / Math.max(1, countdownEnd), 0, 1));
         for (Player player : services.session().audiencePlayers()) {
             player.showBossBar(bar);
-            services.sidebar()
-                    .update(
-                            player,
-                            text(title),
-                            List.of(
-                                    I18n.tr("party.rounds.remaining", standings.survivors().size(), names.size())
-                                            .color(NamedTextColor.WHITE),
-                                    line.color(NamedTextColor.YELLOW),
-                                    I18n.tr("party.rounds.time", TimeFormat.clock(elapsed() / 20))
-                                            .color(NamedTextColor.GRAY)));
+            services.sidebar().update(player, text(title), sidebarLines(player, line));
         }
+    }
+
+    List<Component> sidebarLines(Player player, Component line) {
+        return List.of(
+                I18n.tr("party.rounds.remaining", standings.survivors().size(), names.size())
+                        .color(NamedTextColor.WHITE),
+                line.color(NamedTextColor.YELLOW),
+                I18n.tr("party.rounds.time", TimeFormat.clock(elapsed() / 20))
+                        .color(NamedTextColor.GRAY));
     }
 
     @Override
@@ -415,9 +439,13 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     @Override
     public final Component globalResult() {
-        return champions.isEmpty() ? null
-                : text(I18n.tr("party.rounds.victory",
-                        String.join(", ", champions.stream().map(names::get).toList()), title));
+        return champions.isEmpty()
+                ? null
+                : text(
+                        I18n.tr(
+                                "party.rounds.victory",
+                                String.join(", ", champions.stream().map(names::get).toList()),
+                                title));
     }
 
     @Override

@@ -2,9 +2,11 @@ package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
+import org.bukkit.entity.Player;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -15,6 +17,7 @@ final class ToolRaceSession extends PartySurvivalSession {
     private final int duration;
     private ToolRaceArena arena;
     private ToolRaceTrack track;
+    private long allFinishedAt = -1;
 
     ToolRaceSession(SessionServices s, PartyConfig c, PartyRoundContext context) {
         super(s, c, "tool_race", context);
@@ -36,7 +39,7 @@ final class ToolRaceSession extends PartySurvivalSession {
     }
 
     double outHeight() {
-        return 25;
+        return 20;
     }
 
     int durationSeconds() {
@@ -86,15 +89,38 @@ final class ToolRaceSession extends PartySurvivalSession {
         e.setDropItems(false);
         e.setExpToDrop(0);
         if (track.finished(id)) {
-            p.sendMessage(text(I18n.tr("party.rounds.tool_race.finish",
-                    String.format(java.util.Locale.ROOT, "%.2f", elapsed() / 20.0))));
+            p.sendMessage(
+                    text(
+                            I18n.tr(
+                                    "party.rounds.tool_race.finish",
+                                    String.format(
+                                            java.util.Locale.ROOT, "%.2f", elapsed() / 20.0))));
             p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .8f, 1.4f);
-            spectate(p);
+            p.getInventory().clear();
         }
     }
 
     void playTick(long elapsed) {
-        if (context.eligible().stream().allMatch(track::finished)) finish(List.of());
+        if (context.eligible().stream().allMatch(track::finished)) {
+            if (allFinishedAt < 0) allFinishedAt = elapsed;
+            standings.holdResults(true);
+            // Give even the last finisher time to fall onto the common landing.
+            if (elapsed - allFinishedAt >= 60) finish(List.of());
+        }
+    }
+
+    @Override
+    List<Component> sidebarLines(Player player, Component line) {
+        UUID id = player.getUniqueId();
+        int place = track.result(context.eligible()).place(id);
+        if (place == 0)
+            return List.of(text(line), text(I18n.tr("party.rounds.tool_race.spectating")));
+        int mined = track.progress(id);
+        return List.of(
+                text(I18n.tr("party.rounds.tool_race.place", place, context.eligible().size())),
+                text(I18n.tr("party.rounds.tool_race.mined", mined)),
+                text(I18n.tr("party.rounds.tool_race.blocks_left", 50 - mined)),
+                text(track.finished(id) ? I18n.tr("party.rounds.tool_race.waiting") : line));
     }
 
     @Override
@@ -103,14 +129,15 @@ final class ToolRaceSession extends PartySurvivalSession {
     }
 
     Component status() {
-        return I18n.tr("party.rounds.tool_race.status",
+        return I18n.tr(
+                "party.rounds.tool_race.status",
                 names.keySet().stream().filter(track::finished).count(),
                 Math.max(0, duration - elapsed() / 20));
     }
 
     @Override
     public boolean isInGame(org.bukkit.entity.Player p) {
-        return alive(p) && !track.finished(p.getUniqueId());
+        return alive(p);
     }
 
     void cleanup() {

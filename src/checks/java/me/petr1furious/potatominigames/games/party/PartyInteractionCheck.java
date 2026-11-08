@@ -29,6 +29,23 @@ public final class PartyInteractionCheck {
                                         case "getUniqueId" -> ID;
                                         case "getName" -> "Test";
                                         case "isDead" -> false;
+                                        case "getLocation" -> new Location(null, .5, 31, .5);
+                                        case "sendMessage", "playSound" -> null;
+                                        case "getInventory" ->
+                                                Proxy.newProxyInstance(
+                                                        org.bukkit.inventory.PlayerInventory.class
+                                                                .getClassLoader(),
+                                                        new Class[] {
+                                                            org.bukkit.inventory.PlayerInventory
+                                                                    .class
+                                                        },
+                                                        (inventory, method, args) -> {
+                                                            if (method.getName().equals("clear"))
+                                                                return null;
+                                                            throw new AssertionError(
+                                                                    "Inventory: "
+                                                                            + method.getName());
+                                                        });
                                         default ->
                                                 throw new AssertionError(
                                                         "Unexpected player mutation: "
@@ -41,6 +58,7 @@ public final class PartyInteractionCheck {
                 List.<Checked>of(
                         PartyInteractionCheck::toolMining,
                         PartyInteractionCheck::memoryMining,
+                        PartyInteractionCheck::daylight,
                         PartyInteractionCheck::armsReconnect,
                         PartyInteractionCheck::cancelRecovery,
                         PartyInteractionCheck::spectatorTeleport,
@@ -88,6 +106,76 @@ public final class PartyInteractionCheck {
         hit = interact(Action.LEFT_CLICK_BLOCK, world.block(0, 79, 0));
         session.onPlayerInteract(hit);
         check(hit.isCancelled(), "Countdown protects the course");
+        set(session, "playing", true);
+        broken = new BlockBreakEvent(world.block(1, 80, 0), PLAYER);
+        session.onBlockBreak(broken);
+        check(broken.isCancelled(), "Glass cannot be broken");
+        for (int depth = 1; depth < 49; depth++) track.mine(ID, depth, depth);
+        // The last-break sound uses Paper's live registry; that event is covered by the server
+        // smoke check.
+        track.mine(ID, 49, 50);
+        check(session.isInGame(PLAYER), "Finisher remains physically present");
+        var context =
+                new PartyRoundContext(
+                        null,
+                        List.of(
+                                new me.petr1furious.potatominigames.core.player.Participant(
+                                        PLAYER)),
+                        PartyRoundOptions.party(),
+                        (r, s) -> {});
+        set(session, "context", context);
+        var serverField = Bukkit.class.getDeclaredField("server");
+        serverField.setAccessible(true);
+        serverField.set(
+                null,
+                Proxy.newProxyInstance(
+                        Server.class.getClassLoader(),
+                        new Class[] {Server.class},
+                        (o, m, a) -> {
+                            if (m.getName().equals("getPlayer"))
+                                return ID.equals(a[0]) ? PLAYER : null;
+                            throw new AssertionError("Server: " + m.getName());
+                        }));
+        set(session, "allFinishedAt", -1L);
+        session.playTick(100);
+        session.playTick(159);
+        check(!context.ended(), "Even the last finisher gets three seconds to land");
+        var lines =
+                session
+                        .sidebarLines(PLAYER, net.kyori.adventure.text.Component.text("Race"))
+                        .stream()
+                        .map(c ->
+                                me.petr1furious.potatominigames.i18n.I18n.plain(
+                                        c, Locale.forLanguageTag("ru")))
+                        .toList();
+        check(
+                lines.contains("Место: 1/1")
+                        && lines.contains("Сломано: 50/50")
+                        && lines.contains("Осталось блоков: 0"),
+                "Personal HUD shows rank, mined and remaining");
+        var english =
+                session
+                        .sidebarLines(PLAYER, net.kyori.adventure.text.Component.text("Race"))
+                        .stream()
+                        .map(c ->
+                                me.petr1furious.potatominigames.i18n.I18n.plain(c, Locale.ENGLISH))
+                        .toList();
+        check(
+                english.contains("Place: 1/1")
+                        && english.contains("Mined: 50/50")
+                        && english.contains("Blocks left: 0"),
+                "Personal HUD respects English locale after rebase");
+        serverField.set(null, null);
+    }
+
+    private static void daylight() throws Exception {
+        var session = fixture(ToolRaceSession.class);
+        for (String mode : List.of("tool_race", "anvils", "color_floor", "build_memory")) {
+            set(session, "id", mode);
+            check(session.arenaTime() == 6000, "Daylight in " + mode);
+        }
+        set(session, "id", "hole_in_the_wall");
+        check(session.arenaTime() == 18000, "Other round lighting is preserved");
     }
 
     private static void memoryMining() throws Exception {
@@ -183,9 +271,16 @@ public final class PartyInteractionCheck {
         set(session, "eliminated", Set.of(ID));
         // A defeated player remains in the roster but must be able to use spectator follow.
         var location = new Location(null, 0, 88, 0);
-        var event = new PlayerTeleportEvent(PLAYER, location, location.clone(), PlayerTeleportEvent.TeleportCause.SPECTATE);
+        var event =
+                new PlayerTeleportEvent(
+                        PLAYER,
+                        location,
+                        location.clone(),
+                        PlayerTeleportEvent.TeleportCause.SPECTATE);
         session.onPlayerTeleport(event);
-        check(!event.isCancelled(), "Eliminated spectators can teleport to follow surviving fighters");
+        check(
+                !event.isCancelled(),
+                "Eliminated spectators can teleport to follow surviving fighters");
     }
 
     private static PlayerInteractEvent interact(Action action, org.bukkit.block.Block block) {

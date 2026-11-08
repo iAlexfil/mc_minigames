@@ -16,13 +16,21 @@ final class ToolRaceArena {
     }
 
     void build(ToolRaceTrack track) {
+        int end = columns.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+        for (int x = -2; x <= end + 2; x++)
+            for (int z = -3; z <= 3; z++) {
+                world.getBlockAt(x, 25, z).setType(Material.SMOOTH_QUARTZ, false);
+                if (x == -2 || x == end + 2 || Math.abs(z) == 3)
+                    for (int y = 26; y <= 29; y++)
+                        world.getBlockAt(x, y, z).setType(Material.GLASS, false);
+            }
         for (int center : columns.values())
             for (int x = -1; x <= 1; x++)
                 for (int z = -1; z <= 1; z++)
-                    for (int y = 30; y <= 83; y++) {
+                    for (int y = 31; y <= 83; y++) {
                         Material material =
-                                (x != 0 || z != 0 || y == 30)
-                                        ? Material.BEDROCK
+                                (x != 0 || z != 0)
+                                        ? Material.GLASS
                                         : y <= 80 ? track.block(80 - y) : Material.AIR;
                         world.getBlockAt(center + x, y, z).setType(material, false);
                     }

@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
@@ -27,6 +28,7 @@ final class BuildMemorySession extends PartySurvivalSession {
     private long deadline;
     private Component modelTitle = Component.empty();
     private final Map<UUID, BuildMemoryPattern> patterns = new LinkedHashMap<>();
+    private List<Integer> models;
 
     BuildMemorySession(SessionServices s, PartyConfig c, PartyRoundContext context) {
         super(s, c, "build_memory", context);
@@ -63,6 +65,7 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
 
     void beginPlay() {
+        models = BuildMemoryPattern.deck(random);
         showPattern();
     }
 
@@ -70,7 +73,8 @@ final class BuildMemorySession extends PartySurvivalSession {
         phase = Phase.SHOW;
         arena.screens(false);
         patterns.clear();
-        BuildMemoryPattern shared = BuildMemoryPattern.generate(stage, random);
+        BuildMemoryPattern shared =
+                BuildMemoryPattern.generate(stage, models.get(stage - 1), random);
         modelTitle = shared.title();
         for (Player p : alivePlayers()) {
             var pattern = shared.rotate(random.nextInt(4));
@@ -99,12 +103,12 @@ final class BuildMemorySession extends PartySurvivalSession {
                 for (Player p : alivePlayers()) {
                     arena.clear(p.getUniqueId());
                     clearKit(p);
-                    patterns.get(p.getUniqueId())
-                            .inventory()
-                            .forEach((m, n) -> p.getInventory().addItem(new ItemStack(m, n)));
                     p.getInventory().setItem(6, PvpClass.item(Material.IRON_PICKAXE));
                     p.getInventory().setItem(7, PvpClass.item(Material.IRON_AXE));
                     p.getInventory().setItem(8, PvpClass.item(Material.SHEARS));
+                    patterns.get(p.getUniqueId())
+                            .inventory()
+                            .forEach((m, n) -> p.getInventory().addItem(new ItemStack(m, n)));
                 }
                 deadline = elapsed + (20 + 2L * (stage - 1)) * 20;
                 announceTitle(
@@ -128,7 +132,8 @@ final class BuildMemorySession extends PartySurvivalSession {
                 deadline = elapsed + 60;
                 announceTitle(
                         I18n.tr("party.rounds.build_memory.review"),
-                        failed.isEmpty() ? I18n.tr("party.rounds.build_memory.correct")
+                        failed.isEmpty()
+                                ? I18n.tr("party.rounds.build_memory.correct")
                                 : I18n.tr("party.rounds.build_memory.failed", failed.size()),
                         2);
             }
@@ -160,7 +165,8 @@ final class BuildMemorySession extends PartySurvivalSession {
                 || !e.getBlockReplacedState().getType().isAir()
                 || !patterns.get(e.getPlayer().getUniqueId())
                         .inventory()
-                        .containsKey(e.getBlock().getType())) e.setCancelled(true);
+                        .containsKey(MemoryBlock.capture(e.getBlock().getBlockData()).item()))
+            e.setCancelled(true);
     }
 
     @Override
@@ -170,11 +176,34 @@ final class BuildMemorySession extends PartySurvivalSession {
         if (!building(p)
                 || arena.localCell(p.getUniqueId(), e.getBlock()) == null
                 || e.getBlock().getType().isAir()) return;
-        Material material = e.getBlock().getType();
-        e.getBlock().setType(Material.AIR, false);
-        p.getInventory().addItem(new ItemStack(material));
+        var refund = arena.remove(p.getUniqueId(), e.getBlock(), blocks -> canRefund(p, blocks));
+        if (refund.isEmpty()) {
+            p.sendMessage(text(I18n.tr("party.rounds.build_memory.refund_space")));
+            return;
+        }
+        for (MemoryBlock block : refund)
+            p.getInventory().addItem(new ItemStack(block.item(), block.itemCount()));
         e.setDropItems(false);
         e.setExpToDrop(0);
+    }
+
+    private boolean canRefund(Player player, List<MemoryBlock> blocks) {
+        var contents = player.getInventory().getStorageContents();
+        int freeSlots = 0;
+        for (ItemStack stack : contents) if (stack == null || stack.getType().isAir()) freeSlots++;
+        Map<Material, Integer> counts = new EnumMap<>(Material.class);
+        for (MemoryBlock block : blocks)
+            counts.merge(block.item(), block.itemCount(), Integer::sum);
+        for (var entry : counts.entrySet()) {
+            ItemStack item = new ItemStack(entry.getKey());
+            int remaining = entry.getValue();
+            for (ItemStack stack : contents)
+                if (stack != null && stack.isSimilar(item))
+                    remaining -= Math.max(0, stack.getMaxStackSize() - stack.getAmount());
+            if (remaining > 0)
+                freeSlots -= (remaining + item.getMaxStackSize() - 1) / item.getMaxStackSize();
+        }
+        return freeSlots >= 0;
     }
 
     @Override
@@ -187,7 +216,24 @@ final class BuildMemorySession extends PartySurvivalSession {
             if (e.getClickedBlock() == null
                     || arena.localCell(e.getPlayer().getUniqueId(), e.getClickedBlock()) == null)
                 e.setCancelled(true);
-        } else if (!e.getAction().isRightClick()) e.setCancelled(true);
+        } else if (e.getAction().isRightClick()) {
+            e.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
+        } else e.setCancelled(true);
+    }
+
+    @org.bukkit.event.EventHandler
+    public void onSignOpen(io.papermc.paper.event.player.PlayerOpenSignEvent e) {
+        if (e.getPlayer().getWorld().equals(world)) e.setCancelled(true);
+    }
+
+    @org.bukkit.event.EventHandler
+    public void onAttachmentPhysics(BlockPhysicsEvent e) {
+        if (!e.getBlock().getWorld().equals(world)) return;
+        // Corrections remove dependent decorations and refund them atomically in arena.remove.
+        // Native physics would drop their items, bypassing the exact kit and pickup protection.
+        String name = e.getBlock().getType().name();
+        if (name.endsWith("SIGN") || name.endsWith("TORCH") || name.endsWith("LANTERN"))
+            e.setCancelled(true);
     }
 
     @Override
@@ -201,11 +247,15 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
 
     Component status() {
-        return I18n.tr("party.rounds.build_memory.status", stage,
-                I18n.tr(switch (phase) {
-                    case SHOW -> "party.rounds.build_memory.show";
-                    case BUILD -> "party.rounds.build_memory.building";
-                    case REVIEW -> "party.rounds.build_memory.review";
-                }), Math.max(0, (deadline - elapsed() + 19) / 20));
+        return I18n.tr(
+                "party.rounds.build_memory.status",
+                stage,
+                I18n.tr(
+                        switch (phase) {
+                            case SHOW -> "party.rounds.build_memory.show";
+                            case BUILD -> "party.rounds.build_memory.building";
+                            case REVIEW -> "party.rounds.build_memory.review";
+                        }),
+                Math.max(0, (deadline - elapsed() + 19) / 20));
     }
 }

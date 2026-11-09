@@ -204,6 +204,10 @@ public final class I18n {
                 Map<String, String> messages = new LinkedHashMap<>();
                 for (String domain : domains) {
                     YamlConfiguration yaml = new YamlConfiguration();
+                    // Catalog keys are literal dotted IDs. Bukkit's default '.' separator
+                    // replaces "miners.open" with a section when "miners.open.subtitle" loads.
+                    // Catalog IDs never contain NUL, so none of their dots becomes a path.
+                    yaml.options().pathSeparator('\0');
                     try (var reader = resource("i18n/" + language + "/" + domain.replace('.', '/') + ".yml")) {
                         yaml.load(reader);
                     }

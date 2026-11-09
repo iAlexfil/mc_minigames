@@ -28,7 +28,7 @@ final class AnvilRain {
     }
 
     static int batchSize(int wave) {
-        return 4 * (24 + 2 * Math.clamp(wave, 1, 6));
+        return 2 * (24 + 2 * Math.clamp(wave, 1, 6));
     }
 
     AnvilRain(World world, AnvilArena arena, Random random, Consumer<Player> hit) {
@@ -52,7 +52,7 @@ final class AnvilRain {
     void tick(long tick, int wave, List<Player> targets) {
         int interval = spawnInterval(wave);
         if (tick % interval == 0)
-            for (int i = 0; i < batchSize(wave) && drops.size() < 5120; i++) {
+            for (int i = 0; i < batchSize(wave) && drops.size() < 2560; i++) {
                 int width = AnvilArena.WIDTH;
                 // Shuffle complete sweeps, never independent coordinates: no cell can be skipped.
                 if (cellIndex == cells.size()) {

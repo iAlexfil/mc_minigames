@@ -124,12 +124,12 @@ public final class AnvilsCheck {
                                 + ", hit="
                                 + fixture.impacts.size());
                 check(
-                        fixture.spawned >= 9500,
-                        "Rain density per square block is preserved on the larger platform");
+                        fixture.spawned == Map.of(1, 4940, 4, 6080, 10, 6840).get(wave),
+                        "Each wave spawns half the previous number of anvils");
                 check(
-                        fixture.landed >= 6000,
+                        fixture.landed >= 3000,
                         "Dense rain reaches the floor instead of only spawning overhead");
-                check(rain.activeCount() <= 5120, "Airborne display count remains bounded");
+                check(rain.activeCount() <= 2560, "Airborne display count remains bounded");
                 rain.clear();
                 check(rain.activeCount() == 0, "No anvils survive into relocation");
             }

@@ -17,7 +17,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Bingo** | `/bingo` | `default`, `butfast`, `collectall`, `lockout` | Teams race to collect items on a generated board. Cage drop into a random arena; deaths are short spectator punishments. In `lockout` each item goes to the team that collects it first: a line wins, else the most items when time runs out. |
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
-| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random loot and underground PvP. |
+| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. |
 
 ### Party Games and new party games
 
@@ -37,7 +37,7 @@ its own four-second countdown after its arena is ready and players have spawned.
 The current game owns the
 sidebar during play; total points appear between games. Arms Race uses six weapon
 stages only inside Party Games (standalone keeps twelve), with a three-minute limit;
-Miners uses 60 seconds preparation, 90 seconds combat and a 30-second finale.
+Miners uses 15 seconds preparation, 90 seconds combat and a 30-second finale.
 
 Four games are also independently available:
 
@@ -513,33 +513,87 @@ Open the compass → **Вечеринка** → **Битва шахтёров**,
 The mode accepts **2–12 players**; `/party test miners` starts a solo training game.
 Each participant starts inside a separate **16×16×16** stone box with the same
 ore counts, shuffled independently. The starter kit is an unbreakable Efficiency III
-iron pickaxe, stone sword, leather armour, 64 cobblestone and food. Night Vision
+iron pickaxe, stone sword, leather armour and 64 cobblestone; no starting food. Night Vision
 and Haste I last through the match. Construction is spread across ticks, then a
 five-second countdown freezes players before mining begins.
 
-Players have **two minutes** to mine privately. Ores drop **physical random loot**
-onto the ground: pick it up, choose equipment and equip armour yourself. There is
-no fixed sequence of upgrades. Ordinary/good/rare rolls have **70%/25%/5%** odds;
-combat enchantments reach level II and mining efficiency reaches V.
+Players have **15 seconds** to mine privately. Ores roll **random equipment upgrades
+and consumables**. A stronger pickaxe, weapon or armor piece automatically replaces
+the matching equipment; weaker or equal finds are discarded. The comparison includes
+Efficiency, Sharpness, Protection, Power and Quick Charge. Swords, axes, bows,
+crossbows and maces upgrade independently, so a ranged weapon never replaces the melee weapon.
+Moved gear is found throughout the inventory. New weapon types prefer hotbar slots
+2 (sword), 4 (axe), 5 (bow) and 6 (crossbow) and 7 (mace); the pickaxe starts in slot 1.
+Consumables and ammunition still drop on the ground for pickup. Identical
+consumables have the same metadata across rarity rolls and stack up to their normal
+limits (class splash potions: eight). Food is found in coal ore, rather than supplied
+in the starter kit.
+There is no fixed progression or guaranteed improvement from each ore. Existing
+ordinary/good/rare rolls keep their **70%/25%/5%** odds; combat enchantments reach
+level II and mining efficiency reaches V.
 
 | Ore | Blocks per private box | Rewards |
 | --- | ---: | --- |
-| Coal | 80 | Food or faster iron/diamond pickaxes |
-| Iron | 64 | Random chainmail/iron armour; rare diamond pieces |
-| Diamond | 24 | Swords, axes, bows or crossbows; every ranged drop includes arrows |
-| Lapis | 24 | Healing, speed, harming, poison, slowness or weakness splash potions |
-| Redstone | 32 | Primed TNT charges, ender pearls or wind charges |
-| Emerald | 8 | Good/rare loot from the other pools, or a golden apple |
-| Gold | 16 | A personal health bonus instead of an item: every four ores grants two maximum hearts, capped at fourteen hearts |
+| Coal | 80 | Food or automatic faster iron/diamond pickaxe upgrades |
+| Iron | 64 | Random automatic armor upgrades; rare diamond pieces; a 6% overall chance of an unbreakable shield |
+| Diamond | 24 | Automatic weapon upgrades, including Fire Aspect I sword variants. A 1/60 overall chance of a Density I–II mace with 4 wind charges. Bows/crossbows include 32–64 regular and 4–8 spectral arrows |
+| Lapis | 24 | Combat splashes, plus Regeneration I (8 s), Fire Resistance (10 s), rare Strength I (5 s) or Absorption I (8 s). Detection Potion remains a 2.5% roll |
+| Redstone | 32 | TNT, pearls, wind charges, 1–3 cobwebs, 1–2 Gust Feathers or Leap Charms |
+| Emerald | 8 | A separate 10% roll for one Totem of Undying; otherwise good/rare loot from the other pools or a golden apple |
+| Gold | 16 | Each ore immediately grants +1 maximum heart (80%) or +2 (20%); capped at fourteen total hearts |
+| Lapis block | 8 | One uniformly random enchanted miners perk from the seven-item pool below |
+
+Each private mine has eight perk blocks, separate from ordinary lapis ore.
+Perks drop as finite enchanted items and can be traded or saved for later. Single-use
+perks stack to 16; drills keep individual three-use counters. Except
+for the drill, use them with right-click in the main hand. Invalid targets or
+attempts to reactivate an active perk do not spend an item.
+
+| Perk | Item | Effect |
+| --- | --- | --- |
+| Drill | Enchanted diamond pickaxe | Three mining operations, each breaking a 3×3 plane perpendicular to the look direction |
+| Tunnel Borer | Enchanted end rod | One right-click mines ten cells deep from the aimed block, along the look direction |
+| Ore Vision | Enchanted quartz | Private glowing ore outlines within eight blocks, refreshed as you move, for three seconds |
+| Lucky Vein | Enchanted emerald | Next three ordinary reward ores roll 50/40/10 quality instead of 70/25/5; gold and perk blocks do not consume the buff |
+| Sifter | Enchanted flint | Next twenty natural stone blocks each have a 15% chance of a small consumable reward instead of cobblestone |
+| Mining Bomb | Enchanted respawn anchor | Right-click placement immediately mines a three-block-radius sphere; during combat damages players, including the owner, within four blocks, up to 10 raw damage at the centre with distance falloff |
+| Geological Audit | Enchanted book | Twenty seconds of ore counts within five blocks, updated once per second as you move; includes neighbouring mines |
+
+Perk mining shares the normal ore provenance and automatic equipment upgrades;
+no ore pays twice. Bursts can also find perk blocks. Before the partitions open,
+mining remains confined to the owner's cell. The shell and closed partitions are
+never mined, and tunnels stop at protected walls. Perk bombs do not ignite anything
+or use native respawn-anchor block destruction. Combat blast damage keeps native
+armor and shields; preparation still prevents health damage. All timed effects,
+private outline entities and counters are cleared on elimination, leaving and end.
 
 At the end of preparation all shared partitions open and **PvP begins**. Continue
 mining, dig tunnels, build with cobblestone and use the tracking compass to locate
 the nearest surviving opponent. PvP has a **three-minute** phase followed by a
-**one-minute** shrinking border with glowing players. Increasing damage after
+**one-minute** shrinking border with glowing players. Nametags are hidden before the finale; opponents remain visible when encountered
+in tunnels. Spectral arrows keep their native temporary glowing effect. Detection
+Potions can be drunk after the partitions open to make all other surviving players
+glow for five seconds, visible to everyone. They are finite loot (one bottle),
+and repeated uses refresh rather than stack the duration. Persistent automatic
+glowing starts only in the finale. Increasing damage after
 the final minute prevents indefinite camping/healing. One life: the last survivor
 wins three Party points; simultaneous final deaths draw. Disconnecting withdraws
 a player and reconnecting only spectates. Solo training and aborted matches award
 no points. Deaths show the killer and a three-second death-screen pause.
+
+Gold fills only the newly added hearts; excess gold at the cap provides no healing.
+The bonus is a temporary max-health modifier, removed on leaving, spectating and
+match end. A two-heart roll near the cap is clipped to the remaining bonus.
+Totems use native Minecraft resurrection and must be held in either hand; they
+are not automatically activated from storage. Cobweb loot can be placed during
+combat and broken inside the editable arena; breaking it never produces stone rewards.
+
+Gust Feathers give one forward dash; Leap Charms launch upward, including in midair.
+Use them with right-click in the main hand after mines open. Each use consumes one
+item; both share a one-second cooldown. They grant no invulnerability or fall immunity.
+They stack by type, independently of rarity. Shield finds are physical loot: hold
+one in either hand to block. Equipment upgrades and consumables remain random;
+new potions do not change the starting kits of PvP classes.
 
 Preparation blocks damage, pearls and wind charges. The bedrock shell is always
 protected; TNT damages players without destroying terrain or ore rewards.
@@ -1042,7 +1096,10 @@ and withdrawal/reconnect rules.
 `checkPartyMiners` checks Party menu/queue integration, equal ore quotas for 1–12
 players, sliced construction/opening, protected shells and unused cells, single-use
 ore rewards, random loot grades and ammunition, phase timing, capped extra hearts,
-TNT spawn clearance and bounded ground-item cleanup.
+TNT spawn clearance and bounded ground-item cleanup. It also checks perk mining
+geometry, seven eligible perks, the 50/40/10 lucky distribution, finite personal
+perk budgets, the 10% totem roll, 80/20 gold hearts and equipment replacement plans
+that preserve a drill even when the inventory is full.
 
 `checkPvpClasses` additionally verifies Shadow's finite invisibility stock, leather
 loadout, client-only armour hiding/restoration, equipment changes and viewer tracking,

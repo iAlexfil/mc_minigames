@@ -67,7 +67,7 @@ public final class PartyConfig {
                     .validate(n -> n >= 1 && n <= 10);
 
     public final Property<Integer> minersPreparationSeconds =
-            bag.define("miners.preparationSeconds", PropertyCodec.INT, 120)
+            bag.define("miners.preparationSeconds", PropertyCodec.INT, 15)
                     .validate(n -> n >= 10 && n <= 300);
     public final Property<Integer> minersCombatSeconds =
             bag.define("miners.combatSeconds", PropertyCodec.INT, 180)
@@ -109,7 +109,7 @@ public final class PartyConfig {
             bag.define("partyGames.armsRaceSeconds", PropertyCodec.INT, 180)
                     .validate(n -> n >= 60 && n <= 600);
     public final Property<Integer> partyMinersPreparation =
-            bag.define("partyGames.minersPreparationSeconds", PropertyCodec.INT, 60)
+            bag.define("partyGames.minersPreparationSeconds", PropertyCodec.INT, 15)
                     .validate(n -> n >= 10 && n <= 300);
     public final Property<Integer> partyMinersCombat =
             bag.define("partyGames.minersCombatSeconds", PropertyCodec.INT, 90)

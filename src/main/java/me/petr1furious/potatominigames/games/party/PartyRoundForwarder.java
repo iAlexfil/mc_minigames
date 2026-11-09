@@ -164,6 +164,13 @@ abstract class PartyRoundForwarder implements GameSession {
     }
 
     @Override
+    public void onPlayerItemConsume(org.bukkit.event.player.PlayerItemConsumeEvent event) {
+        GameSession active = delegate();
+        if (active != null) active.onPlayerItemConsume(event);
+        else event.setCancelled(true);
+    }
+
+    @Override
     public void onPotionSplash(PotionSplashEvent event) {
         GameSession active = delegate();
         if (active != null) active.onPotionSplash(event);

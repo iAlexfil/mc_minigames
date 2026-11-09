@@ -18,7 +18,7 @@ rhino:
   mineFuseSeconds: 8
   mineSpawnSeconds: 4
 miners:
-  preparationSeconds: 120
+  preparationSeconds: 15
   combatSeconds: 180
   finaleSeconds: 60
 
@@ -40,6 +40,6 @@ partyGames:
   rounds: 6
   intermissionSeconds: 4
   armsRaceSeconds: 180
-  minersPreparationSeconds: 60
+  minersPreparationSeconds: 15
   minersCombatSeconds: 90
   minersFinaleSeconds: 30

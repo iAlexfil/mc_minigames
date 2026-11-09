@@ -93,6 +93,22 @@ final class MinersArena {
         return opened;
     }
     boolean opened() { return opened; }
+    MinersOre oreAt(Block block) {
+        MinersOre ore = ores.get(Pos.of(block));
+        return ore != null && block.getType() == ore.material ? ore : null;
+    }
+    Map<Pos, MinersOre> oresNear(Location center, int radius) {
+        Map<Pos, MinersOre> result = new HashMap<>();
+        if (!world.equals(center.getWorld())) return result;
+        for (var entry : ores.entrySet()) {
+            Pos p = entry.getKey();
+            double dx = p.x() + .5 - center.getX(), dy = p.y() + .5 - center.getY(), dz = p.z() + .5 - center.getZ();
+            if (dx * dx + dy * dy + dz * dz <= radius * radius
+                    && world.getBlockAt(p.x(), p.y(), p.z()).getType() == entry.getValue().material)
+                result.put(p, entry.getValue());
+        }
+        return result;
+    }
     MinersOre takeOre(Block block) {
         Pos p = Pos.of(block);
         MinersOre ore = ores.remove(p);

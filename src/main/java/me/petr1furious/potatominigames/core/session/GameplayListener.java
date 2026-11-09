@@ -25,6 +25,7 @@ import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
@@ -168,6 +169,11 @@ public final class GameplayListener implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onProjectileHit(ProjectileHitEvent event) {
         dispatch(event.getEntity().getWorld(), session -> session.onProjectileHit(event), event.getEntity(), event.getHitEntity());
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onPlayerItemConsume(PlayerItemConsumeEvent event) {
+        dispatch(event.getPlayer().getWorld(), session -> session.onPlayerItemConsume(event), event.getPlayer());
     }
 
     @EventHandler(ignoreCancelled = true)

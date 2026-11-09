@@ -21,7 +21,7 @@ import org.bukkit.entity.Item;
 /** Exercise real generated geometry/mutations, loot draws and match rules without a server. */
 public final class MinersCheck {
     public static void main(String[] args) {
-        integration(); quotas(); geometry(); loot(); clock(); gold(); drops();
+        integration(); quotas(); geometry(); loot(); clock(); gold(); drops(); MinersPerksCheck.run();
         System.out.println("Party Miners: menu/queue/config, fair private cells and sliced walls, random physical loot pools/ammo, finite gold health, phase protection and bounded ground drops passed");
     }
     private static void integration() {
@@ -37,8 +37,8 @@ public final class MinersCheck {
         var timings = YamlConfiguration.loadConfiguration(new InputStreamReader(timingsStream, StandardCharsets.UTF_8));
         check(queues.getBoolean("queues.party.miners.enabled") && queues.getInt("queues.party.miners.minPlayers") == 2
                 && queues.getInt("queues.party.miners.maxPlayers") == 12, "Party miners has an enabled public queue");
-        check(timings.getInt("miners.preparationSeconds") == 120 && timings.getInt("miners.combatSeconds") == 180
-                && timings.getInt("miners.finaleSeconds") == 60, "Defaults give two-minute mining, three-minute combat and a one-minute finale");
+        check(timings.getInt("miners.preparationSeconds") == 15 && timings.getInt("miners.combatSeconds") == 180
+                && timings.getInt("miners.finaleSeconds") == 60, "Defaults give fifteen-second mining, three-minute combat and a one-minute finale");
     }
     private static void quotas() {
         for (int players = 1; players <= 12; players++) {
@@ -119,7 +119,7 @@ public final class MinersCheck {
             Set<MinersLoot.Drop> variants = new HashSet<>();
             for (int i = 0; i < 4000; i++) {
                 var result = MinersLoot.roll(ore, random);
-                if (ore == MinersOre.GOLD) { check(result.isEmpty(), "Extra hearts never masquerade as a physical loot item"); continue; }
+                if (ore == MinersOre.GOLD || ore == MinersOre.PERKS) { check(result.isEmpty(), "Gold and perk blocks use their own rewards instead of ordinary loot"); continue; }
                 check(!result.isEmpty(), "Every other ore produces physical loot");
                 variants.addAll(result);
                 for (var drop : result) {
@@ -131,7 +131,7 @@ public final class MinersCheck {
                     if (ore == MinersOre.EMERALD) check(drop.quality() != MinersLoot.Quality.COMMON, "Emeralds draw from the stronger loot grades");
                 }
             }
-            if (ore != MinersOre.GOLD) check(variants.size() > 3, "Each ore has varied rewards instead of a deterministic item sequence");
+            if (ore != MinersOre.GOLD && ore != MinersOre.PERKS) check(variants.size() > 3, "Each ore has varied rewards instead of a deterministic item sequence");
         }
     }
     private static void clock() {
@@ -155,13 +155,26 @@ public final class MinersCheck {
         check(round.phase() == MinersRound.Phase.DONE, "An ended round cannot restart through a delayed build callback");
     }
     private static void gold() {
-        MinersGold gold = new MinersGold(); UUID a = new UUID(0, 1), b = new UUID(0, 2);
-        for (int i = 1; i <= 8; i++) {
-            check(gold.collect(a) && gold.count(a) == i && gold.level(a) == i / 4, "Gold grants exactly two finite four-ore health thresholds");
-            check(gold.level(b) == 0, "Gold progress is personal");
+        int[] rolls = new int[3];
+        for (int i = 0; i < 100; i++) {
+            int draw = i;
+            rolls[MinersGold.roll(new Random(0) {
+                @Override public int nextInt(int bound) { check(bound == 100, "Gold uses percent odds"); return draw; }
+            })]++;
         }
-        check(!gold.collect(a) && gold.level(a) == 2 && gold.count(a) == 8, "At fourteen hearts, more gold cannot generate healing");
-        gold.clear(); check(gold.count(a) == 0, "Ending the match clears gold progress");
+        check(rolls[1] == 80 && rolls[2] == 20, "Gold gives one heart 80% and two hearts 20% of the time");
+        MinersGold gold = new MinersGold(); UUID a = new UUID(0, 1), b = new UUID(0, 2);
+        Random single = new Random(0) { @Override public int nextInt(int bound) { return 99; } };
+        Random doubleHeart = new Random(0) { @Override public int nextInt(int bound) { return 0; } };
+        for (int i = 1; i <= 3; i++)
+            check(gold.collect(a, single) == 1 && gold.bonus(a) == i, "Each ore immediately adds a heart");
+        check(gold.bonus(b) == 0, "Gold bonuses are personal");
+        check(gold.collect(a, doubleHeart) == 1 && gold.bonus(a) == 4, "A lucky roll cannot exceed fourteen hearts");
+        check(gold.collect(a, new Random(0) {
+            @Override public int nextInt(int bound) { throw new AssertionError("Capped gold must not roll or heal"); }
+        }) == 0, "Extra gold at the cap cannot become repeatable healing");
+        check(gold.collect(b, doubleHeart) == 2 && gold.bonus(b) == 2, "Lucky ore immediately grants two hearts");
+        gold.clear(); check(gold.bonus(a) == 0 && gold.bonus(b) == 0, "Ending clears all bonuses");
     }
     private static void drops() {
         MinersDrops drops = new MinersDrops(); List<FakeItem> all = new ArrayList<>();

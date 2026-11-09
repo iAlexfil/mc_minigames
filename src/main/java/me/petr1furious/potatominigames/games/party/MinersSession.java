@@ -22,10 +22,15 @@ import org.bukkit.GameMode;
 import org.bukkit.GameRules;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.block.Block;
+import org.bukkit.damage.DamageSource;
+import org.bukkit.damage.DamageType;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Item;
@@ -49,6 +54,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -73,12 +79,13 @@ import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
-/** Party FFA: private mining cells, physical random loot, then one-life underground PvP. */
+/** Party FFA: private mining, random auto-upgrades and consumable loot, then underground PvP. */
 final class MinersSession implements PartyRoundSession {
     private record Hit(UUID attacker, long tick) {}
 
     private static final NamespacedKey COMPASS =
             new NamespacedKey("potatominigames", "miners_compass");
+    private static final NamespacedKey GOLD_HEALTH = new NamespacedKey("potatominigames", "miners_gold_health");
     private final SessionServices services;
     private final PartyRoundContext context;
     private final PartyConfig config;
@@ -88,11 +95,14 @@ final class MinersSession implements PartyRoundSession {
     private final Set<UUID> connected = new LinkedHashSet<>();
     private final Map<UUID, Hit> lastHit = new HashMap<>();
     private final Map<UUID, Long> deadAt = new HashMap<>();
+    private final Map<UUID, Long> gadgetReadyAt = new HashMap<>();
     private final CountdownFreeze freeze = new CountdownFreeze();
     private final ArenaProjectiles shots = new ArenaProjectiles();
     private final PvpBombs bombs = new PvpBombs(PvpBombs.MINERS_THROW_COOLDOWN);
     private final MinersDrops drops = new MinersDrops();
     private final MinersGold gold = new MinersGold();
+    private final MinersVisibility visibility = new MinersVisibility();
+    private final MinersPerks perks = new MinersPerks();
     private SurvivalStandings standings;
     private MinersRound round;
     private MinersArena arena;
@@ -235,6 +245,7 @@ final class MinersSession implements PartyRoundSession {
             freeze.freeze(p);
             p.showBossBar(bar);
         }
+        hud();
         say(I18n.tr("party.rounds.miners.instructions"));
         if (services.isTest()) say(I18n.tr("party.rounds.miners.test"));
         ticker =
@@ -292,7 +303,6 @@ final class MinersSession implements PartyRoundSession {
         inv.setItem(0, pick);
         inv.setItem(1, PvpClass.item(Material.STONE_SWORD));
         inv.setItem(2, new ItemStack(Material.COBBLESTONE, 64));
-        inv.setItem(8, new ItemStack(Material.COOKED_BEEF, 16));
         inv.setHelmet(PvpClass.item(Material.LEATHER_HELMET));
         inv.setChestplate(PvpClass.item(Material.LEATHER_CHESTPLATE));
         inv.setLeggings(PvpClass.item(Material.LEATHER_LEGGINGS));
@@ -316,12 +326,14 @@ final class MinersSession implements PartyRoundSession {
     private void tickGame() {
         if (round.phase() == MinersRound.Phase.DONE || !services.session().isRunning()) return;
         tick++;
+        perks.tick(tick, arena, services.plugin(), this::playing);
         if (connected.isEmpty()) {
             context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty());
             return;
         }
         if (round.phase() == MinersRound.Phase.BUILDING && arena.buildSlice(4096)) {
             for (Player p : survivors()) equip(p);
+            hud();
             round.ready(tick);
         }
         MinersRound.Phase previous = round.phase();
@@ -339,6 +351,9 @@ final class MinersSession implements PartyRoundSession {
                 say(I18n.tr("party.rounds.miners.open.instructions"));
             }
             if (round.phase() == MinersRound.Phase.FINALE) {
+                visibility.clear();
+                for (Player p : survivors())
+                    p.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, 40, 0, false, false));
                 services.arena()
                         .applyBorder(world, arena.center(), arena.borderSize(), 3, finaleSeconds);
                 announce(I18n.tr("party.rounds.miners.finale"),
@@ -445,17 +460,15 @@ final class MinersSession implements PartyRoundSession {
         bar.progress(round.phase() == MinersRound.Phase.BUILDING ? arena.progress() : 1);
         for (Player p : services.session().audiencePlayers()) {
             p.showBossBar(bar);
-            services.sidebar()
-                    .update(
-                            p,
-                            text(PartyRoundFactory.title("miners")),
-                            List.of(
-                                    line.color(NamedTextColor.YELLOW),
-                                    I18n.tr("party.rounds.miners.in_game", standings.survivors().size(), names.size())
-                                            .color(NamedTextColor.WHITE),
-                                    I18n.tr("party.rounds.miners.gold.status", gold.count(p.getUniqueId()))
-                                            .color(NamedTextColor.GOLD)));
+            List<Component> lines = new ArrayList<>(List.of(
+                    line.color(NamedTextColor.YELLOW),
+                    I18n.tr("party.rounds.miners.in_game", standings.survivors().size(), names.size()).color(NamedTextColor.WHITE),
+                    I18n.tr("party.rounds.miners.gold.status", gold.bonus(p.getUniqueId())).color(NamedTextColor.GOLD)));
+            lines.addAll(perks.hud(p, tick));
+            services.sidebar().update(p, text(PartyRoundFactory.title("miners")), lines);
         }
+        if (round.phase() != MinersRound.Phase.FINALE && round.phase() != MinersRound.Phase.RESULT)
+            visibility.hideNames(services.session().audiencePlayers(), names.values());
     }
 
     @Override
@@ -465,59 +478,151 @@ final class MinersSession implements PartyRoundSession {
 
     @Override
     public void onBlockBreak(BlockBreakEvent event) {
-        Player p = event.getPlayer();
-        if (!playing(p)
-                || !arena.editable(event.getBlock())
-                || !round.fighting()
-                        && !arena.owns(
-                                event.getBlock().getLocation(), cells.get(p.getUniqueId()))) {
-            event.setCancelled(true);
-            return;
-        }
-        Material material = event.getBlock().getType();
-        boolean oreBlock =
-                java.util.Arrays.stream(MinersOre.values())
-                        .anyMatch(ore -> ore.material == material);
-        if (material != Material.STONE && material != Material.COBBLESTONE && !oreBlock) {
-            event.setCancelled(true);
-            return;
-        }
         event.setCancelled(true);
         event.setDropItems(false);
         event.setExpToDrop(0);
-        MinersOre ore = arena.takeOre(event.getBlock());
-        Location at = event.getBlock().getLocation().add(.5, .25, .5);
-        event.getBlock()
-                .setType(
-                        Material.AIR,
-                        false); // Consume provenance before creating rewards; Fortune cannot
-        // duplicate them.
+        Player p = event.getPlayer();
+        Block block = event.getBlock();
+        if (!canMine(p, block)) return;
+        MinersPerk perk = MinersPerk.from(p.getInventory().getItemInMainHand());
+        if (perk != null && perk != MinersPerk.DRILL) return;
+        if (perk == MinersPerk.DRILL) {
+            consumePerk(p, perk);
+            for (MinersArena.Pos pos : MinersMining.drill(MinersArena.Pos.of(block), p.getEyeLocation().getDirection()))
+                mineBlock(p, world.getBlockAt(pos.x(), pos.y(), pos.z()));
+        } else mineBlock(p, block);
+    }
+
+    private boolean canMine(Player p, Block block) {
+        if (!playing(p) || !arena.editable(block)
+                || !round.fighting() && !arena.owns(block.getLocation(), cells.getOrDefault(p.getUniqueId(), -1))) return false;
+        Material type = block.getType();
+        return type == Material.STONE || type == Material.COBBLESTONE || type == Material.COBWEB
+                || arena.oreAt(block) != null;
+    }
+
+    /** Every mining source consumes ore provenance exactly once and uses the same reward rules. */
+    private boolean mineBlock(Player p, Block block) {
+        if (!canMine(p, block)) return false;
+        Material material = block.getType();
+        MinersOre ore = arena.takeOre(block);
+        Location at = block.getLocation().add(.5, .25, .5);
+        block.setType(Material.AIR, false);
         if (ore == MinersOre.GOLD) collectGold(p);
-        else if (ore != null)
-            for (MinersLoot.Drop loot : MinersLoot.roll(ore, random)) {
-                Item item = world.dropItem(at, loot.item());
-                item.setPickupDelay(8);
-                drops.track(item);
+        else if (ore == MinersOre.PERKS) {
+            MinersPerk perk = MinersPerk.random(random);
+            dropReward(at, perk.item(perk.charges));
+            p.sendActionBar(text(I18n.tr("party.rounds.miners.perk.found", I18n.tr(perk.key() + ".name"))));
+        } else if (ore != null) {
+            boolean lucky = perks.lucky(p.getUniqueId());
+            for (MinersLoot.Drop loot : MinersLoot.roll(ore, random, lucky)) reward(p, at, loot);
+        } else if (material == Material.STONE && perks.sift(p.getUniqueId(), random)) {
+            for (MinersLoot.Drop loot : MinersLoot.sift(random)) reward(p, at, loot);
+        } else if (material != Material.COBWEB) giveCobble(p);
+        return true;
+    }
+
+    private void reward(Player p, Location at, MinersLoot.Drop loot) {
+        ItemStack item = loot.item();
+        if (!MinersEquipment.apply(p, item, drops)) dropReward(at, item);
+    }
+
+    private void dropReward(Location at, ItemStack stack) {
+        Item item = world.dropItem(at, stack);
+        item.setPickupDelay(8);
+        drops.track(item);
+    }
+
+    private void consumePerk(Player p, MinersPerk perk) {
+        ItemStack held = p.getInventory().getItemInMainHand();
+        int remaining = MinersPerk.charges(held) - 1;
+        if (remaining > 0) p.getInventory().setItemInMainHand(drops.forViewer(perk.item(remaining), p));
+        else if (held.getAmount() > 1) {
+            ItemStack rest = held.clone();
+            rest.setAmount(held.getAmount() - 1);
+            p.getInventory().setItemInMainHand(rest);
+        } else p.getInventory().setItemInMainHand(null);
+    }
+
+    private void usePerk(Player p, MinersPerk perk, PlayerInteractEvent event) {
+        if (perk == MinersPerk.DRILL) return;
+        if (perk == MinersPerk.TUNNEL) {
+            var hit = p.rayTraceBlocks(6);
+            if (hit == null || hit.getHitBlock() == null || !canMine(p, hit.getHitBlock())) {
+                p.sendActionBar(text(I18n.tr("party.rounds.miners.perk.aim")));
+                return;
             }
-        else giveCobble(p);
+            consumePerk(p, perk);
+            for (MinersArena.Pos pos : MinersMining.tunnel(MinersArena.Pos.of(hit.getHitBlock()), p.getEyeLocation().getDirection())) {
+                Block block = world.getBlockAt(pos.x(), pos.y(), pos.z());
+                if (!arena.editable(block) || !round.fighting()
+                        && !arena.owns(block.getLocation(), cells.getOrDefault(p.getUniqueId(), -1))) break;
+                if (block.getType().isAir()) continue;
+                if (!mineBlock(p, block)) break;
+            }
+        } else if (perk == MinersPerk.BOMB) {
+            if (event.getClickedBlock() == null) return;
+            Block target = event.getClickedBlock().getRelative(event.getBlockFace());
+            if (!target.getType().isAir() || !arena.editable(target)
+                    || target.getLocation().add(.5, .5, .5).distanceSquared(p.getEyeLocation()) > 36
+                    || !round.fighting() && !arena.owns(target.getLocation(), cells.getOrDefault(p.getUniqueId(), -1))) {
+                p.sendActionBar(text(I18n.tr("party.rounds.miners.perk.bomb.invalid")));
+                return;
+            }
+            consumePerk(p, perk);
+            explodePerk(p, target);
+        } else {
+            if (!perks.activate(p, perk, tick, arena, services.plugin())) {
+                p.sendActionBar(text(I18n.tr("party.rounds.miners.perk.active")));
+                return;
+            }
+            consumePerk(p, perk);
+        }
+        p.playSound(p.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, .7f, 1.2f);
+        hud();
+    }
+
+    private void explodePerk(Player owner, Block target) {
+        Location center = target.getLocation().add(.5, .5, .5);
+        for (MinersArena.Pos pos : MinersMining.blast(MinersArena.Pos.of(target)))
+            mineBlock(owner, world.getBlockAt(pos.x(), pos.y(), pos.z()));
+        world.spawnParticle(Particle.EXPLOSION_EMITTER, center, 1);
+        world.playSound(center, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, .9f);
+        if (!round.fighting()) return;
+        // Native explosion damage type keeps armour/shields and attributes kills to the owner.
+        DamageSource source = DamageSource.builder(DamageType.PLAYER_EXPLOSION)
+                .withCausingEntity(owner).withDirectEntity(owner).withDamageLocation(center).build();
+        List<Player> targets = new ArrayList<>(survivors());
+        targets.remove(owner); targets.add(owner); // Self-damage last allows one blast to trade kills.
+        for (Player p : targets) {
+            if (!fighting(p) || !p.getWorld().equals(world)) continue;
+            double distance = p.getLocation().distance(center);
+            if (distance < 4) p.damage(10 * (1 - distance / 4), source);
+        }
     }
 
     private void collectGold(Player p) {
-        int before = gold.level(p.getUniqueId());
-        if (!gold.collect(p.getUniqueId())) {
+        var max = p.getAttribute(Attribute.MAX_HEALTH);
+        if (max == null) return;
+        int added = gold.collect(p.getUniqueId(), random);
+        if (added == 0) {
             p.sendActionBar(text(I18n.tr("party.rounds.miners.gold.maximum")));
             return;
         }
-        int level = gold.level(p.getUniqueId());
-        if (level > before) {
-            p.addPotionEffect(
-                    new PotionEffect(PotionEffectType.HEALTH_BOOST, 60000, level - 1, true, false));
-            var max = p.getAttribute(Attribute.MAX_HEALTH);
-            if (max != null) p.setHealth(Math.min(max.getValue(), p.getHealth() + 4));
-            p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.4f);
-            p.sendMessage(text(I18n.tr("party.rounds.miners.gold.increased", 10 + level * 2)));
-        } else
-            p.sendActionBar(text(I18n.tr("party.rounds.miners.gold.progress", gold.count(p.getUniqueId()) % 4)));
+        double health = p.getHealth();
+        max.removeModifier(GOLD_HEALTH);
+        max.addTransientModifier(new AttributeModifier(GOLD_HEALTH, gold.bonus(p.getUniqueId()) * 2,
+                AttributeModifier.Operation.ADD_NUMBER));
+        p.setHealth(Math.min(max.getValue(), health + added * 2));
+        p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, added == 2 ? 1.8f : 1.4f);
+        p.sendMessage(text(I18n.tr("party.rounds.miners.gold.increased", added, 10 + gold.bonus(p.getUniqueId()))));
+    }
+
+    private static void clearGoldHealth(Player p) {
+        var max = p.getAttribute(Attribute.MAX_HEALTH);
+        if (max == null) return;
+        max.removeModifier(GOLD_HEALTH);
+        if (!p.isDead() && p.getHealth() > max.getValue()) p.setHealth(max.getValue());
     }
 
     private void giveCobble(Player p) {
@@ -529,9 +634,11 @@ final class MinersSession implements PartyRoundSession {
 
     @Override
     public void onBlockPlace(BlockPlaceEvent event) {
+        if (MinersPerk.from(event.getItemInHand()) != null) { event.setCancelled(true); return; }
         Player p = event.getPlayer();
         if (!playing(p)
                 || event.getBlock().getType() != Material.COBBLESTONE
+                        && !(event.getBlock().getType() == Material.COBWEB && round.fighting())
                 || !event.getBlockReplacedState().getType().isAir()
                 || !arena.editable(event.getBlock())
                 || !round.fighting()
@@ -611,12 +718,15 @@ final class MinersSession implements PartyRoundSession {
         if (!standings.eliminate(p.getUniqueId(), tick)) return;
         freeze.release(p.getUniqueId());
         bombs.eliminate(p.getUniqueId());
+        gadgetReadyAt.remove(p.getUniqueId());
+        perks.remove(p.getUniqueId());
         deadAt.put(p.getUniqueId(), tick);
         if (!p.isDead()) spectate(p);
     }
 
     private void spectate(Player p) {
         if (p.isDead()) return;
+        clearGoldHealth(p);
         if (p.getGameMode() == GameMode.SPECTATOR) p.setSpectatorTarget(null);
         p.closeInventory();
         p.setItemOnCursor(null);
@@ -640,10 +750,17 @@ final class MinersSession implements PartyRoundSession {
     }
 
     private void result(List<UUID> winners) {
+        visibility.clear();
+        for (Player p : survivors()) {
+            p.removePotionEffect(PotionEffectType.GLOWING);
+            p.setGlowing(false);
+        }
         champions = List.copyOf(winners);
         round.result(tick);
         shots.clearAll();
         bombs.clear();
+        gadgetReadyAt.clear();
+        perks.clear();
         drops.clear();
         freeze.releaseAll();
         say(champions.isEmpty() ? I18n.tr("party.rounds.draw")
@@ -668,12 +785,18 @@ final class MinersSession implements PartyRoundSession {
     }
 
     private void leave(Player p) {
+        clearGoldHealth(p);
+        visibility.release(p.getScoreboard());
+        p.removePotionEffect(PotionEffectType.GLOWING);
+        p.setGlowing(false);
         context.withdraw(p.getUniqueId());
         if (standings == null) return;
         standings.eliminate(p.getUniqueId(), tick);
         connected.remove(p.getUniqueId());
         freeze.release(p.getUniqueId());
         bombs.remove(p.getUniqueId());
+        gadgetReadyAt.remove(p.getUniqueId());
+        perks.remove(p.getUniqueId());
         shots.clear(p.getUniqueId());
         lastHit.remove(p.getUniqueId());
         p.closeInventory();
@@ -684,11 +807,13 @@ final class MinersSession implements PartyRoundSession {
     public void onParticipantRejoin(Player p) {
         connected.add(p.getUniqueId());
         spectate(p);
+        hud();
     }
 
     @Override
     public void onParticipantJoin(Player p) {
         spectate(p);
+        hud();
     }
 
     @Override
@@ -740,6 +865,38 @@ final class MinersSession implements PartyRoundSession {
         Player p = event.getPlayer();
         if (!playing(p)) {
             event.setCancelled(true);
+            return;
+        }
+        MinersPerk perk = MinersPerk.from(event.getItem());
+        if (perk != null) {
+            event.setCancelled(true);
+            if (event.getHand() == EquipmentSlot.HAND && event.getAction().isRightClick()) usePerk(p, perk, event);
+            return;
+        }
+        MinersGadget gadget = MinersGadget.from(event.getItem());
+        if (gadget != null) {
+            event.setCancelled(true);
+            if (!event.getAction().isRightClick() || event.getHand() != EquipmentSlot.HAND) return;
+            if (!fighting(p)) {
+                p.sendActionBar(text(I18n.tr("party.rounds.miners.gadget.wait")));
+                return;
+            }
+            long remaining = gadgetReadyAt.getOrDefault(p.getUniqueId(), 0L) - tick;
+            if (remaining > 0) {
+                p.sendActionBar(text(I18n.tr("party.rounds.miners.gadget.cooldown", (remaining + 19) / 20)));
+                return;
+            }
+            gadget.activate(p);
+            gadgetReadyAt.put(p.getUniqueId(), tick + 20);
+            ItemStack held = p.getInventory().getItemInMainHand();
+            if (held.getAmount() == 1) p.getInventory().setItemInMainHand(null);
+            else held.setAmount(held.getAmount() - 1);
+            return;
+        }
+        if (MinersReveal.is(event.getItem()) && !fighting(p)) {
+            event.setCancelled(true);
+            if (event.getAction().isRightClick())
+                p.sendActionBar(text(I18n.tr("party.rounds.miners.reveal.wait")));
             return;
         }
         if (PvpBombs.isBomb(event.getItem())) {
@@ -810,6 +967,23 @@ final class MinersSession implements PartyRoundSession {
         }
         if (event.getProjectile() instanceof AbstractArrow arrow)
             arrow.setPickupStatus(AbstractArrow.PickupStatus.DISALLOWED);
+    }
+
+    @Override
+    public void onPlayerItemConsume(PlayerItemConsumeEvent event) {
+        if (!MinersReveal.is(event.getItem())) return;
+        Player caster = event.getPlayer();
+        if (!fighting(caster)) {
+            event.setCancelled(true);
+            caster.sendActionBar(text(I18n.tr("party.rounds.miners.reveal.wait")));
+            return;
+        }
+        for (Player opponent : survivors())
+            if (!opponent.getUniqueId().equals(caster.getUniqueId()) && opponent.getWorld().equals(world))
+                opponent.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING,
+                        MinersReveal.DURATION_TICKS, 0, false, false));
+        caster.sendActionBar(text(I18n.tr("party.rounds.miners.reveal.used", MinersReveal.DURATION_TICKS / 20)));
+        // Native consumption removes the potion and leaves an empty bottle.
     }
 
     @Override
@@ -891,14 +1065,21 @@ final class MinersSession implements PartyRoundSession {
     }
 
     private void cleanup() {
+        visibility.clear();
         if (ticker != null) {
             ticker.cancel();
             ticker = null;
         }
         freeze.releaseAll();
         bombs.clear();
+        gadgetReadyAt.clear();
+        perks.clear();
         shots.clearAll();
         drops.clear();
+        for (UUID id : names.keySet()) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) clearGoldHealth(p);
+        }
         gold.clear();
         for (Player p : services.participants().onlinePlayers()) {
             p.closeInventory();

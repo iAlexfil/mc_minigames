@@ -23,7 +23,11 @@ enum PvpPotion {
     WEAKNESS(true, 120, 0x626262),
     NAUSEA(true, 160, 0x695370),
     SPEED(false, 120, 0x7CAFC6),
-    INVISIBILITY(false, 400, 0x444C64);
+    INVISIBILITY(false, 400, 0x444C64),
+    STRENGTH(false, 100, 0x9D3838),
+    REGENERATION(false, 160, 0xCD5CAB),
+    ABSORPTION(false, 160, 0xE8C94B),
+    FIRE_RESISTANCE(false, 200, 0xE99436);
 
     private static final NamespacedKey KEY = new NamespacedKey("potatominigames", "pvp_potion");
     final Component title;
@@ -45,6 +49,10 @@ enum PvpPotion {
             case NAUSEA -> PotionEffectType.NAUSEA;
             case SPEED -> PotionEffectType.SPEED;
             case INVISIBILITY -> PotionEffectType.INVISIBILITY;
+            case STRENGTH -> PotionEffectType.STRENGTH;
+            case REGENERATION -> PotionEffectType.REGENERATION;
+            case ABSORPTION -> PotionEffectType.ABSORPTION;
+            case FIRE_RESISTANCE -> PotionEffectType.FIRE_RESISTANCE;
         };
     }
     boolean affects(boolean caster, boolean activeFighter) { return activeFighter && (harmful ? !caster : caster); }

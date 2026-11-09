@@ -2,19 +2,21 @@ package me.petr1furious.potatominigames.games.party;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
-/** Two finite +2-heart steps. Further gold never becomes repeatable healing. */
+/** Each ore rolls one or two extra hearts; reaching the cap cannot generate repeatable healing. */
 final class MinersGold {
-    static final int PER_LEVEL = 4, MAX_ORES = 8;
-    private final Map<UUID, Integer> gold = new HashMap<>();
-    int count(UUID player) { return gold.getOrDefault(player, 0); }
-    int level(UUID player) { return count(player) / PER_LEVEL; }
-    boolean collect(UUID player) {
-        int current = count(player);
-        if (current >= MAX_ORES) return false;
-        gold.put(player, current + 1);
-        return true;
+    static final int MAX_BONUS_HEARTS = 4;
+    private final Map<UUID, Integer> hearts = new HashMap<>();
+    int bonus(UUID player) { return hearts.getOrDefault(player, 0); }
+    static int roll(Random random) { return random.nextInt(100) < 20 ? 2 : 1; }
+    int collect(UUID player, Random random) {
+        int current = bonus(player);
+        if (current >= MAX_BONUS_HEARTS) return 0;
+        int added = Math.min(roll(random), MAX_BONUS_HEARTS - current);
+        hearts.put(player, current + added);
+        return added;
     }
-    void clear() { gold.clear(); }
+    void clear() { hearts.clear(); }
 }

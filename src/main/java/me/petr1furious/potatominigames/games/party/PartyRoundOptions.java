@@ -8,7 +8,7 @@ record PartyRoundOptions(
         int minersCombatSeconds,
         int minersFinaleSeconds) {
     static PartyRoundOptions party() {
-        return new PartyRoundOptions(true, 4, 180, 60, 90, 30);
+        return new PartyRoundOptions(true, 4, 180, 15, 90, 30);
     }
 
     PartyRoundOptions forRound(int index) {
@@ -23,6 +23,6 @@ record PartyRoundOptions(
     }
 
     static PartyRoundOptions standalone() {
-        return new PartyRoundOptions(false, 5, 600, 120, 180, 60);
+        return new PartyRoundOptions(false, 5, 600, 15, 180, 60);
     }
 }

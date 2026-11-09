@@ -18,6 +18,7 @@ import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
@@ -174,6 +175,9 @@ public interface GameSession {
     }
 
     default void onProjectileHit(ProjectileHitEvent event) {
+    }
+
+    default void onPlayerItemConsume(PlayerItemConsumeEvent event) {
     }
 
     default void onPotionSplash(PotionSplashEvent event) {

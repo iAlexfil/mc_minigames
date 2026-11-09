@@ -12,7 +12,8 @@ enum MinersOre {
     GOLD(Material.GOLD_ORE, 16),
     LAPIS(Material.LAPIS_ORE, 24),
     REDSTONE(Material.REDSTONE_ORE, 32),
-    EMERALD(Material.EMERALD_ORE, 8);
+    EMERALD(Material.EMERALD_ORE, 8),
+    PERKS(Material.LAPIS_BLOCK, 8);
     final Material material;
     final int perCell;
     final Component description;

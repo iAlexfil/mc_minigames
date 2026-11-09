@@ -101,6 +101,13 @@ public final class I18nCheck {
             check(english.indexOf("FIRST_ARGUMENT") < english.indexOf("SECOND_ARGUMENT"), "English argument order changed");
             check(russian.indexOf("SECOND_ARGUMENT") < russian.indexOf("FIRST_ARGUMENT"), "Russian cannot reorder arguments");
             check(english.contains("FIRST_ARGUMENT") && russian.contains("SECOND_ARGUMENT"), "Fixture lost arguments");
+            for (String key : List.of("open", "open.subtitle", "open.instructions", "finale", "finale.subtitle")) {
+                String id = "probe." + key;
+                check(I18n.has(id), "A dotted child key erased its parent or sibling: " + id);
+                for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru")))
+                    check(!I18n.plain(I18n.tr(id), locale).contains("potatominigames."),
+                            "Overlapping flat keys must render in both locales: " + id);
+            }
         } finally {
             I18n.unregister();
         }
@@ -115,9 +122,14 @@ public final class I18nCheck {
             Files.writeString(root.resolve("catalogs.txt"), "probe\n");
             Path english = root.resolve("en/probe.yml");
             Path russian = root.resolve("ru/probe.yml");
-            String validEnglish = "reorder: \"<arg:0> then <arg:1>\"\n";
+            String overlapping = "open: \"Mines open\"\n"
+                    + "open.subtitle: \"Fight begins\"\n"
+                    + "open.instructions: \"Keep mining\"\n"
+                    + "finale.subtitle: \"Border shrinks\"\n"
+                    + "finale: \"Finale\"\n";
+            String validEnglish = "reorder: \"<arg:0> then <arg:1>\"\n" + overlapping;
             Files.writeString(english, validEnglish);
-            Files.writeString(russian, "reorder: \"<arg:1> затем <arg:0>\"\n");
+            Files.writeString(russian, "reorder: \"<arg:1> затем <arg:0>\"\n" + overlapping);
             runFixture(directory, "valid");
             for (String invalid : List.of("other: \"missing key\"\n", "reorder: \"<arg:0>\"\n",
                     "reorder: [broken", "reorder: 42\n", "reorder: \"<red><arg:0> <arg:1>\"\n")) {

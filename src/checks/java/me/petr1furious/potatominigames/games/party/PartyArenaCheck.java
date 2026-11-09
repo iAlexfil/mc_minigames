@@ -11,6 +11,7 @@ import java.util.*;
 /** Exercises actual arena mutations, not copies of the generators. */
 public final class PartyArenaCheck {
     public static void main(String[] args) {
+        installDataFactory();
         WorldMap w = new WorldMap();
         List<UUID> ids = new ArrayList<>();
         for (int i = 0; i < 12; i++) ids.add(new UUID(0, i + 1));
@@ -40,6 +41,29 @@ public final class PartyArenaCheck {
         check(
                 memory.capture(ids.get(1)).equals(pattern.blocks()),
                 "Clearing own model preserves neighbor");
+        var owner = ids.getFirst();
+        var anchor = memory.spawn(owner);
+        int ax = anchor.getBlockX() - 2, az = anchor.getBlockZ() + 3;
+        memory.show(
+                owner,
+                new BuildMemoryPattern(
+                        net.kyori.adventure.text.Component.text("Support"),
+                        Map.of(
+                                new BuildMemoryPattern.Cell(2, 0, 2),
+                                        MemoryBlock.of(Material.OAK_PLANKS),
+                                new BuildMemoryPattern.Cell(2, 1, 2),
+                                        MemoryBlock.of(Material.OAK_SIGN))));
+        check(
+                memory.remove(owner, w.block(ax + 2, 81, az + 2), refund -> false).isEmpty(),
+                "Full inventory rejects correction atomically");
+        check(
+                memory.capture(owner).size() == 2,
+                "Support and attached sign stay intact if refund cannot fit");
+        var refund = memory.remove(owner, w.block(ax + 2, 81, az + 2), blocks -> true);
+        check(
+                refund.size() == 2 && refund.stream().anyMatch(b -> b.item() == Material.OAK_SIGN),
+                "Removing support refunds sign as well");
+        check(memory.capture(owner).isEmpty(), "No floating attachment or dropped item remains");
         w = new WorldMap();
         ToolRaceTrack track = new ToolRaceTrack(ids, ToolRaceTrack.generate(new Random(7)));
         ToolRaceArena shafts = new ToolRaceArena(w.world, ids);
@@ -52,8 +76,15 @@ public final class PartyArenaCheck {
                 check(shafts.depth(id, b) == d, "Only own depth");
             }
             check(
-                    w.world.getBlockAt(spawn.getBlockX(), 30, 0).getType() == Material.BEDROCK,
-                    "Safe bottom");
+                    w.world.getBlockAt(spawn.getBlockX(), 30, 0).getType() == Material.AIR,
+                    "Finisher falls out of the shaft");
+            check(
+                    w.world.getBlockAt(spawn.getBlockX(), 25, 0).getType()
+                            == Material.SMOOTH_QUARTZ,
+                    "Landing platform beneath the finish");
+            check(
+                    w.world.getBlockAt(spawn.getBlockX() + 1, 60, 0).getType() == Material.GLASS,
+                    "Can see neighboring racers through the shaft wall");
         }
         check(
                 shafts.depth(ids.getFirst(), w.world.getBlockAt(4, 80, 0)) == -1,
@@ -74,6 +105,7 @@ public final class PartyArenaCheck {
 
     static final class WorldMap {
         final Map<String, Material> blocks = new HashMap<>();
+        final Map<String, org.bukkit.block.data.BlockData> data = new HashMap<>();
         final World world =
                 (World)
                         Proxy.newProxyInstance(
@@ -101,8 +133,25 @@ public final class PartyArenaCheck {
                                     switch (m.getName()) {
                                         case "setType" -> {
                                             blocks.put(key, (Material) a[0]);
+                                            data.remove(key);
                                             yield null;
                                         }
+                                        case "setBlockData" -> {
+                                            var state = (org.bukkit.block.data.BlockData) a[0];
+                                            blocks.put(key, state.getMaterial());
+                                            data.put(key, state);
+                                            yield null;
+                                        }
+                                        case "getBlockData" ->
+                                                data.getOrDefault(
+                                                        key,
+                                                        blockData(
+                                                                MemoryBlock.of(
+                                                                                blocks.getOrDefault(
+                                                                                        key,
+                                                                                        Material
+                                                                                                .AIR))
+                                                                        .dataString()));
                                         case "getType" -> blocks.getOrDefault(key, Material.AIR);
                                         case "getWorld" -> world;
                                         case "getX" -> x;
@@ -112,5 +161,40 @@ public final class PartyArenaCheck {
                                                 throw new AssertionError("Block: " + m.getName());
                                     });
         }
+    }
+
+    // A narrow BlockData serialization boundary; production equality/rotation stays real.
+    static void installDataFactory() {
+        try {
+            var server = Bukkit.class.getDeclaredField("server");
+            server.setAccessible(true);
+            server.set(
+                    null,
+                    Proxy.newProxyInstance(
+                            Server.class.getClassLoader(),
+                            new Class[] {Server.class},
+                            (o, m, a) -> {
+                                if (m.getName().equals("createBlockData") && a.length == 1)
+                                    return blockData((String) a[0]);
+                                throw new AssertionError("Server: " + m.getName());
+                            }));
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    static org.bukkit.block.data.BlockData blockData(String text) {
+        Material material = Material.valueOf(text.split("[\\[:]", 3)[1].toUpperCase(Locale.ROOT));
+        return (org.bukkit.block.data.BlockData)
+                Proxy.newProxyInstance(
+                        org.bukkit.block.data.BlockData.class.getClassLoader(),
+                        new Class[] {org.bukkit.block.data.BlockData.class},
+                        (o, m, a) ->
+                                switch (m.getName()) {
+                                    case "getMaterial" -> material;
+                                    case "getAsString" -> text;
+                                    default ->
+                                            throw new AssertionError("BlockData: " + m.getName());
+                                });
     }
 }

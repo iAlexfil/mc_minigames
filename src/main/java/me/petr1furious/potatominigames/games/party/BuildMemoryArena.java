@@ -68,7 +68,37 @@ final class BuildMemoryArena {
                                         c.getBlockX() + cell.x(),
                                         81 + cell.y(),
                                         c.getBlockZ() + cell.z())
-                                .setType(m, false));
+                                .setBlockData(Bukkit.createBlockData(m.dataString()), false));
+        // Derive fence connections and powered lamps just as the player's build does.
+        for (var cell : p.blocks().keySet()) {
+            Block block =
+                    world.getBlockAt(
+                            c.getBlockX() + cell.x(), 81 + cell.y(), c.getBlockZ() + cell.z());
+            var data = block.getBlockData();
+            if (data instanceof org.bukkit.block.data.type.Fence fence) {
+                for (var face : fence.getAllowedFaces()) {
+                    Block neighbor = block.getRelative(face);
+                    fence.setFace(
+                            face,
+                            neighbor.getType().name().endsWith("_FENCE")
+                                    || neighbor.getType().isOccluding());
+                }
+                block.setBlockData(fence, false);
+            } else if (block.getType() == Material.REDSTONE_LAMP
+                    && data instanceof org.bukkit.block.data.Lightable lamp) {
+                lamp.setLit(
+                        p.blocks().entrySet().stream()
+                                .anyMatch(e ->
+                                        e.getValue().material() == Material.REDSTONE_BLOCK
+                                                && Math.abs(e.getKey().x() - cell.x())
+                                                                + Math.abs(
+                                                                        e.getKey().y() - cell.y())
+                                                                + Math.abs(
+                                                                        e.getKey().z() - cell.z())
+                                                        == 1));
+                block.setBlockData(lamp, false);
+            }
+        }
     }
 
     void clear(UUID id) {
@@ -80,8 +110,8 @@ final class BuildMemoryArena {
                             .setType(Material.AIR, false);
     }
 
-    Map<BuildMemoryPattern.Cell, Material> capture(UUID id) {
-        Map<BuildMemoryPattern.Cell, Material> result = new HashMap<>();
+    Map<BuildMemoryPattern.Cell, MemoryBlock> capture(UUID id) {
+        Map<BuildMemoryPattern.Cell, MemoryBlock> result = new HashMap<>();
         Location c = centers.get(id);
         for (int x = 0; x < 5; x++)
             for (int y = 0; y < 4; y++)
@@ -90,9 +120,47 @@ final class BuildMemoryArena {
                             world.getBlockAt(c.getBlockX() + x, 81 + y, c.getBlockZ() + z)
                                     .getType();
                     if (m != Material.AIR && m != Material.CAVE_AIR && m != Material.VOID_AIR)
-                        result.put(new BuildMemoryPattern.Cell(x, y, z), m);
+                        result.put(
+                                new BuildMemoryPattern.Cell(x, y, z),
+                                MemoryBlock.capture(
+                                        world.getBlockAt(
+                                                        c.getBlockX() + x,
+                                                        81 + y,
+                                                        c.getBlockZ() + z)
+                                                .getBlockData()));
                 }
         return result;
+    }
+
+    List<MemoryBlock> remove(
+            UUID id, Block block, java.util.function.Predicate<List<MemoryBlock>> canRefund) {
+        var cell = localCell(id, block);
+        if (cell == null) return List.of();
+        var current = capture(id);
+        Set<BuildMemoryPattern.Cell> removed = new HashSet<>(Set.of(cell));
+        boolean changed;
+        do {
+            changed = false;
+            for (var entry : current.entrySet()) {
+                var support = entry.getValue().support(entry.getKey());
+                if (support != null && removed.contains(support))
+                    changed |= removed.add(entry.getKey());
+            }
+        } while (changed);
+        List<MemoryBlock> refund =
+                removed.stream().map(current::get).filter(Objects::nonNull).toList();
+        if (!canRefund.test(refund)) return List.of();
+        Location c = centers.get(id);
+        for (var position : removed) {
+            var value = current.get(position);
+            if (value == null) continue;
+            world.getBlockAt(
+                            c.getBlockX() + position.x(),
+                            81 + position.y(),
+                            c.getBlockZ() + position.z())
+                    .setType(Material.AIR, false);
+        }
+        return refund;
     }
 
     void screens(boolean show) {

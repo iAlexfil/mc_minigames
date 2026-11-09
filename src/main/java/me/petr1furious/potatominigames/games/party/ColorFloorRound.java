@@ -1,6 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.Material;
@@ -14,10 +15,17 @@ final class ColorFloorRound {
         Material.YELLOW_CONCRETE,
         Material.LIME_CONCRETE,
         Material.ORANGE_CONCRETE,
-        Material.PURPLE_CONCRETE
+        Material.PURPLE_CONCRETE,
+        Material.WHITE_CONCRETE,
+        Material.BLACK_CONCRETE,
+        Material.CYAN_CONCRETE,
+        Material.PINK_CONCRETE,
+        Material.GRAY_CONCRETE,
+        Material.BROWN_CONCRETE
     };
     static final String[] TITLES = {
-        "red", "blue", "yellow", "lime", "orange", "purple"
+        "red", "blue", "yellow", "lime", "orange", "purple",
+        "white", "black", "cyan", "pink", "gray", "brown"
     };
     private final Material[][] cells = new Material[21][21];
     private final int target;
@@ -27,10 +35,11 @@ final class ColorFloorRound {
     }
 
     static ColorFloorRound generate(int stage, Random random) {
-        var r = new ColorFloorRound(random.nextInt(COLORS.length));
-        var palette = new ArrayList<>(List.of(COLORS));
+        int colorCount = stage >= 9 ? 12 : stage >= 6 ? 10 : stage >= 3 ? 8 : 6;
+        var r = new ColorFloorRound(random.nextInt(colorCount));
+        var palette = new ArrayList<>(List.of(COLORS).subList(0, colorCount));
         Collections.shuffle(palette, random);
-        // Unequal rectangles merge into larger patches; two colors appear only in small islands.
+        // Unequal rectangles form large patches; later stages add more rare color islands.
         for (int z = 0; z < 21; ) {
             int height = 2 + random.nextInt(4);
             for (int x = 0; x < 21; ) {
@@ -48,13 +57,27 @@ final class ColorFloorRound {
         for (int i = 0; i < 4; i++)
             r.paint(i % 2 == 0 ? 1 : 17, i < 2 ? 1 : 17, 3, 3, palette.get(i));
         r.paint(7, 7, 6, 6, palette.getFirst());
-        for (int i = 0; i < 4; i++)
+        var islands =
+                new ArrayList<>(
+                        List.of(
+                                new int[] {3, 3},
+                                new int[] {16, 3},
+                                new int[] {3, 16},
+                                new int[] {16, 16},
+                                new int[] {9, 3},
+                                new int[] {3, 9},
+                                new int[] {16, 9},
+                                new int[] {9, 16}));
+        Collections.shuffle(islands, random);
+        for (int i = 4; i < palette.size(); i++) {
+            var island = islands.get(i - 4);
             r.paint(
-                    i % 2 == 0 ? 3 : 16,
-                    i < 2 ? 3 : 16,
+                    island[0],
+                    island[1],
                     1 + random.nextInt(2),
                     1 + random.nextInt(2),
-                    palette.get(i == 0 || i == 3 ? 4 : 5));
+                    palette.get(i));
+        }
         // Repair only unreachable gaps instead of placing a target in every 3x3 square.
         // Eight blocks leaves reaction time even at the two-second lower limit.
         for (int attempts = 0; attempts < 441; attempts++) {
@@ -80,7 +103,7 @@ final class ColorFloorRound {
             double distance = Double.POSITIVE_INFINITY;
             for (int x = 0; x < 21; x++)
                 for (int z = 0; z < 21; z++)
-                    if (!palette.subList(4, 6).contains(r.cells[x][z])) {
+                    if (!palette.subList(4, palette.size()).contains(r.cells[x][z])) {
                         double d = (x - farX) * (x - farX) + (z - farZ) * (z - farZ);
                         if (d < distance) {
                             distance = d;
@@ -90,7 +113,8 @@ final class ColorFloorRound {
                     }
             for (int x = px; x <= Math.min(20, px + 1); x++)
                 for (int z = pz; z <= Math.min(20, pz + 1); z++)
-                    if (!palette.subList(4, 6).contains(r.cells[x][z])) r.cells[x][z] = r.target();
+                    if (!palette.subList(4, palette.size()).contains(r.cells[x][z]))
+                        r.cells[x][z] = r.target();
         }
         return r;
     }
@@ -101,7 +125,7 @@ final class ColorFloorRound {
     }
 
     static int choiceTicks(int stage) {
-        return (int) Math.max(40, 120 - 8L * (Math.max(1, stage) - 1));
+        return (int) Math.max(40, 120 - 16L * (Math.max(1, stage) - 1));
     }
 
     Material target() {

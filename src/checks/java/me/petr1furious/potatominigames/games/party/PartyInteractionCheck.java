@@ -189,7 +189,46 @@ public final class PartyInteractionCheck {
         hit = interact(Action.LEFT_CLICK_BLOCK, world.block(16, 80, 0));
         session.onPlayerInteract(hit);
         check(hit.isCancelled(), "Platform stays protected");
+        hit = interact(Action.RIGHT_CLICK_BLOCK, world.block(16, 80, 0));
+        session.onPlayerInteract(hit);
+        check(
+                hit.useInteractedBlock() != org.bukkit.event.Event.Result.DENY
+                        && hit.useItemInHand() != org.bukkit.event.Event.Result.DENY,
+                "Building clicks reach native placement instead of returning before item use");
+        var placed = world.block(16, 81, 0);
+        placed.setType(Material.OAK_PLANKS, false);
+        var replaced =
+                (org.bukkit.block.BlockState)
+                        Proxy.newProxyInstance(
+                                org.bukkit.block.BlockState.class.getClassLoader(),
+                                new Class[] {org.bukkit.block.BlockState.class},
+                                (o, method, args) -> {
+                                    if (method.getName().equals("getType")) return Material.AIR;
+                                    throw new AssertionError("BlockState: " + method.getName());
+                                });
+        var place =
+                new org.bukkit.event.block.BlockPlaceEvent(
+                        placed,
+                        replaced,
+                        world.block(16, 80, 0),
+                        null,
+                        PLAYER,
+                        true,
+                        org.bukkit.inventory.EquipmentSlot.HAND);
+        var outside =
+                new org.bukkit.event.block.BlockPlaceEvent(
+                        world.block(15, 81, 0),
+                        replaced,
+                        world.block(15, 80, 0),
+                        null,
+                        PLAYER,
+                        true,
+                        org.bukkit.inventory.EquipmentSlot.HAND);
+        session.onBlockPlace(outside);
+        check(outside.isCancelled(), "Outside the footprint remains protected");
         phase(session, "SHOW");
+        session.onBlockPlace(place);
+        check(place.isCancelled(), "Cannot alter the model while memorizing");
         hit = interact(Action.LEFT_CLICK_BLOCK, world.block(16, 81, 0));
         session.onPlayerInteract(hit);
         check(hit.isCancelled(), "Cannot mine the model while memorizing");

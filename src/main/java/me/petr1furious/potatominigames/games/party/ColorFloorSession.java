@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
@@ -68,7 +69,8 @@ final class ColorFloorSession extends PartySurvivalSession {
             return;
         }
         if (!revealing) {
-            for (var p : alivePlayers()) if (!arena.safe(p.getLocation(), round)) eliminate(p);
+            // A missed color removes support, not the player. The common height check eliminates
+            // only after an actual fall, allowing a last-second jump onto a remaining tile.
             arena.show(round, true);
             revealing = true;
             deadline = elapsed + 40;
@@ -81,7 +83,10 @@ final class ColorFloorSession extends PartySurvivalSession {
     }
 
     Component status() {
-        return I18n.tr("party.rounds.color_floor.status", stage, round.title(),
+        return I18n.tr(
+                "party.rounds.color_floor.status",
+                stage,
+                round.title(),
                 Math.max(0, (deadline - elapsed() + 19) / 20));
     }
 }

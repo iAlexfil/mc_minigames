@@ -11,7 +11,7 @@ final class AnvilRound {
     }
 
     AnvilRound(int players, int rainTicks, int moveTicks, int waves, int pvpWave) {
-        initial = Math.min(players + 2, 14);
+        initial = 4;
         this.rainTicks = rainTicks;
         this.moveTicks = moveTicks;
         this.waves = waves;
@@ -44,7 +44,7 @@ final class AnvilRound {
     }
 
     int shelters() {
-        return Math.max(1, initial - wave + 1);
+        return Math.max(1, initial - (wave - 1) / 2);
     }
 
     boolean raining() {

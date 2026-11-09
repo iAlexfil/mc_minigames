@@ -20,7 +20,8 @@ final class AnvilRain {
     private final Consumer<Player> hit;
     private final List<Drop> drops = new ArrayList<>();
     private final List<Integer> cells = new ArrayList<>();
-    private int cellIndex;
+    private final int[] sparsePhases = new int[AnvilArena.WIDTH * AnvilArena.WIDTH];
+    private int cellIndex, sweep;
     private long nextImpactSound;
 
     static int spawnInterval(int wave) {
@@ -50,21 +51,32 @@ final class AnvilRain {
     }
 
     void tick(long tick, int wave, List<Player> targets) {
+        var bodies = new LinkedHashMap<Player, BoundingBox>();
+        for (Player p : targets)
+            if (p.getGameMode() == GameMode.SURVIVAL && p.getWorld().equals(world))
+                bodies.put(p, p.getBoundingBox());
         int interval = spawnInterval(wave);
         if (tick % interval == 0)
             for (int i = 0; i < batchSize(wave) && drops.size() < 2560; i++) {
                 int width = AnvilArena.WIDTH;
-                // Shuffle complete sweeps, never independent coordinates: no cell can be skipped.
+                // Dense cells get every sweep; distant cells rotate through one of four groups.
                 if (cellIndex == cells.size()) {
-                    if (cells.isEmpty())
-                        for (int cell = 0; cell < width * width; cell++) cells.add(cell);
+                    boolean first = cells.isEmpty();
+                    if (first) for (int cell = 0; cell < width * width; cell++) cells.add(cell);
+                    else sweep = (sweep + 1) % 4;
                     Collections.shuffle(cells, random);
+                    if (first)
+                        for (int index = 0; index < cells.size(); index++)
+                            sparsePhases[cells.get(index)] = index % 4;
                     cellIndex = 0;
                 }
                 int cell = cells.get(cellIndex++);
+                double x = cell % width + AnvilArena.MIN + .5;
+                double z = cell / width + AnvilArena.MIN + .5;
+                if (sparsePhases[cell] != sweep && !nearPlayer(x, z, bodies.values())) continue;
                 Drop d = new Drop();
-                d.x = cell % width + AnvilArena.MIN + .5;
-                d.z = cell / width + AnvilArena.MIN + .5;
+                d.x = x;
+                d.z = z;
                 d.display =
                         world.spawn(
                                 new Location(world, d.x - .5, d.y, d.z - .5),
@@ -77,9 +89,6 @@ final class AnvilRain {
                 drops.add(d);
             }
         List<BoundingBox> solid = arena.collisionBoxes();
-        var bodies = new LinkedHashMap<Player, BoundingBox>();
-        for (Player p : targets)
-            if (p.getGameMode() == GameMode.SURVIVAL) bodies.put(p, p.getBoundingBox());
         if (tick % 20 == 0) PartySounds.play(targets, Sound.ENTITY_WIND_CHARGE_THROW, .25f, .6f);
         for (var it = drops.iterator(); it.hasNext(); ) {
             Drop d = it.next();
@@ -127,10 +136,19 @@ final class AnvilRain {
         return drops.size();
     }
 
+    private static boolean nearPlayer(double x, double z, Collection<BoundingBox> bodies) {
+        for (BoundingBox body : bodies) {
+            double dx = x - body.getCenterX(), dz = z - body.getCenterZ();
+            if (dx * dx + dz * dz <= 64) return true;
+        }
+        return false;
+    }
+
     void clear() {
         drops.forEach(d -> d.display.remove());
         drops.clear();
         cells.clear();
         cellIndex = 0;
+        sweep = 0;
     }
 }

@@ -212,13 +212,13 @@ final class BuildMemorySession extends PartySurvivalSession {
             e.setCancelled(true);
             return;
         }
+        // Denying block use also short-circuits native block placement on Paper.
+        // Let right clicks reach placement; handleBlockPlace protects the build area and kit.
         if (e.getAction() == Action.LEFT_CLICK_BLOCK) {
             if (e.getClickedBlock() == null
                     || arena.localCell(e.getPlayer().getUniqueId(), e.getClickedBlock()) == null)
                 e.setCancelled(true);
-        } else if (e.getAction().isRightClick()) {
-            e.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
-        } else e.setCancelled(true);
+        } else if (!e.getAction().isRightClick()) e.setCancelled(true);
     }
 
     @org.bukkit.event.EventHandler

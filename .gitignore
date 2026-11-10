@@ -6,3 +6,5 @@ build/
 *.iml
 .tools/
 .superpowers/
+__pycache__/
+*.py[cod]

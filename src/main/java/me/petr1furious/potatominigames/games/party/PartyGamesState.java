@@ -14,6 +14,7 @@ final class PartyGamesState {
                     "mob_count",
                     "rhino",
                     "miners",
+                    "magic_battle",
                     "color_floor",
                     "anvils",
                     "build_memory",

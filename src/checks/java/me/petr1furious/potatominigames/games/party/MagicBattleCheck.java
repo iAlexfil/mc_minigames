@@ -1,0 +1,236 @@
+package me.petr1furious.potatominigames.games.party;
+
+import me.petr1furious.potatominigames.i18n.I18n;
+
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.util.BoundingBox;
+
+import java.io.InputStreamReader;
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+
+/** Imported map provenance/geometry, mana budgets, personal clocks and queue/round integration. */
+public final class MagicBattleCheck {
+    public static void main(String[] args) throws Exception {
+        map();
+        spells();
+        mana();
+        movement();
+        integration();
+        survival();
+        System.out.println(
+                "Magic Battle: imported Lighthouse asset, safe spawn columns, 42 spell choices,"
+                        + " finite mana, independent cooldowns and one-life integration passed");
+    }
+
+    private static void map() {
+        var source = MagicBattleArena.Blueprint.load();
+        check(
+                source.blocks().size() == 40571 && source.spawns().size() == 12,
+                "The bundled arena is the full imported Lighthouse asset, not generated islands");
+        Map<MagicBattleArena.Pos, String> blocks = new HashMap<>();
+        for (var cell : source.blocks()) {
+            String data = source.palette().get(cell.palette());
+            check(data.startsWith("minecraft:"), "No external custom blocks required");
+            String name = data.substring(10).split("\\[")[0];
+            check(Material.matchMaterial(name) != null, "Imported Java material exists: " + name);
+            check(blocks.put(cell.pos(), data) == null, "Map has unique coordinates");
+        }
+        var spawns = new HashSet<String>();
+        for (var spawn : source.spawns()) {
+            int x = (int) Math.floor(spawn.x()), z = (int) Math.floor(spawn.z());
+            check(spawns.add(x + ":" + z), "Each player gets a different source island");
+            check(
+                    blocks.get(new MagicBattleArena.Pos(x, 59, z)).contains("planks"),
+                    "Original raised cage markers have a real island surface below");
+            check(
+                    !blocks.containsKey(new MagicBattleArena.Pos(x, 60, z))
+                            && !blocks.containsKey(new MagicBattleArena.Pos(x, 61, z)),
+                    "Spawn surface has two clear body blocks");
+        }
+        check(
+                source.palette().stream()
+                        .noneMatch(
+                                s -> s.contains("command_block") || s.contains("structure_block")),
+                "Map conversion contains terrain only, without executable blocks");
+    }
+
+    private static void spells() {
+        check(
+                MagicSpell.values().length == 42 && MagicSpell.School.values().length == 6,
+                "Six schools with forty-two distinct spells");
+        for (var school : MagicSpell.School.values()) {
+            check(
+                    school.spells().size() == 7 && new HashSet<>(school.spells()).size() == 7,
+                    "Seven available choices per wand");
+            MagicMana state = new MagicMana();
+            var first = state.selected(school);
+            check(
+                    state.cycle(school, false, 0) && state.selected(school) != first,
+                    "Left-click changes the selected spell");
+            check(
+                    !state.cycle(school, false, 1),
+                    "Duplicate attack/interact events cannot skip a spell");
+            check(
+                    state.cycle(school, true, 6) && state.selected(school) == first,
+                    "Sneak selection cycles backward");
+            for (int i = 0; i < school.spells().size(); i++)
+                check(
+                        state.cycle(school, false, 12 + i * 6),
+                        "Every choice is reachable through left-click cycling");
+            check(state.selected(school) == first, "Cycling wraps across all seven choices");
+            for (MagicSpell choice : school.spells()) {
+                state.select(choice);
+                check(
+                        state.selected(school) == choice,
+                        "The spellbook can directly select every spell");
+            }
+        }
+        for (var spell : MagicSpell.values()) {
+            check(
+                    spell.mana > 0 && spell.mana <= MagicMana.MAX && spell.cooldown > 0,
+                    "Each spell costs finite mana and has a cooldown");
+            for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                check(
+                        !I18n.plain(spell.title(), locale).contains("potatominigames."),
+                        "Every spell name renders in both locales: " + spell);
+                check(
+                        !I18n.plain(spell.description(), locale).contains("potatominigames."),
+                        "Every spell description renders in both locales: " + spell);
+            }
+            if (spell.aimed()) {
+                check(
+                        spell.range() > 0 && spell.radius() > 0 && spell.warningTicks() > 0,
+                        "Aimed spells expose a bounded preview and a dodgeable warning: " + spell);
+            }
+        }
+    }
+
+    private static void mana() {
+        MagicMana a = new MagicMana(), b = new MagicMana();
+        check(
+                a.spend(MagicSpell.METEOR, 0) && a.mana() == 50,
+                "A powerful spell spends half the pool");
+        check(
+                !a.spend(MagicSpell.FIREBOLT, 1) && a.mana() == 50,
+                "Global cast lock blocks simultaneous casts without spending mana");
+        check(
+                a.remaining(MagicSpell.FIREBOLT, 1) == 3,
+                "Switching spells shows the shared cast lock rather than zero cooldown");
+        check(
+                a.spend(MagicSpell.FIREBALL, 4) && a.mana() == 18,
+                "Another wand can cast after the shared lock");
+        a.select(MagicSpell.METEOR);
+        check(!a.spend(MagicSpell.METEOR, 8), "Spellbook selection cannot reset a spell cooldown");
+        check(b.ready(MagicSpell.METEOR, 0) && b.mana() == 100, "Pools and cooldowns are personal");
+        a.restore(-999);
+        check(
+                a.mana() == 0 && !a.spend(MagicSpell.STONE_SHOT, 2000),
+                "Empty mana blocks offensive casts");
+        for (int i = 0; i < 20; i++) a.tick();
+        check(Math.abs(a.mana() - 7) < 1e-8, "Passive regeneration is seven mana per second");
+        a.restore(1000);
+        check(a.mana() == 100, "Chests and sanctuary cannot overfill mana");
+        check(a.spend(MagicSpell.METEOR, 240), "Cooldown expires at its exact server tick");
+    }
+
+    private static void movement() {
+        Player occupant =
+                (Player)
+                        Proxy.newProxyInstance(
+                                Player.class.getClassLoader(),
+                                new Class<?>[] {Player.class},
+                                (proxy, method, arguments) ->
+                                        switch (method.getName()) {
+                                            case "getWorld" -> null;
+                                            case "getBoundingBox" ->
+                                                    new BoundingBox(-.3, 64, -.3, .3, 65.8, .3);
+                                            default ->
+                                                    throw new AssertionError(
+                                                            "Unexpected movement fixture call: "
+                                                                    + method.getName());
+                                        });
+        check(
+                MagicCombat.occupied(new Location(null, 0, 65.2, 0), List.of(occupant)),
+                "A destination above another player's feet can still overlap their head");
+        check(
+                !MagicCombat.occupied(new Location(null, 0, 65.8, 0), List.of(occupant)),
+                "Body boundaries may touch without intersecting");
+        check(
+                !MagicCombat.occupied(new Location(null, 0, 64, 0), List.of(occupant), occupant),
+                "The caster's old position does not block their own rewind");
+    }
+
+    private static void integration() throws Exception {
+        var game = new PartyGame((PartyConfig) null);
+        check(
+                game.modes().contains("magic_battle") && game.maxPlayers("magic_battle") == 12,
+                "Party exposes the twelve-player mode");
+        check(
+                game.createSession(null, "magic_battle") instanceof MagicBattleSession,
+                "Standalone queue creates the spell round");
+        check(
+                PartyGamesState.MODES.contains("magic_battle"),
+                "Mixed Party Games can include magic");
+        var context =
+                new PartyRoundContext(
+                        null, List.of(), PartyRoundOptions.party(), (reason, result) -> {});
+        check(
+                PartyRoundFactory.create("magic_battle", null, null, context)
+                        instanceof MagicBattleSession,
+                "Embedded round uses the same implementation");
+        try (var stream = MagicBattleCheck.class.getResourceAsStream("/config.yml")) {
+            check(stream != null, "Default queue configuration is bundled");
+            var queues =
+                    YamlConfiguration.loadConfiguration(
+                            new InputStreamReader(stream, StandardCharsets.UTF_8));
+            check(
+                    queues.getBoolean("queues.party.magic_battle.enabled")
+                            && queues.getInt("queues.party.magic_battle.minPlayers") == 2
+                            && queues.getInt("queues.party.magic_battle.maxPlayers") == 12,
+                    "The public magic queue is enabled for two to twelve players");
+        }
+        try (var stream = MagicBattleCheck.class.getResourceAsStream("/games/party.yml")) {
+            check(stream != null, "Default Party configuration is bundled");
+            var defaults =
+                    YamlConfiguration.loadConfiguration(
+                            new InputStreamReader(stream, StandardCharsets.UTF_8));
+            check(
+                    List.of(defaults.getString("partyGames.modes").split(","))
+                            .contains("magic_battle"),
+                    "Fresh servers include magic in mixed Party Games");
+            check(
+                    defaults.getInt("magicBattle.roundSeconds") == 180
+                            && defaults.getInt("magicBattle.countdownSeconds") == 5
+                            && defaults.getInt("magicBattle.chestRechargeSeconds") == 45,
+                    "Bundled duration, countdown and mana-cache defaults match the mode");
+        }
+    }
+
+    private static void survival() {
+        UUID a = new UUID(0, 1), b = new UUID(0, 2), c = new UUID(0, 3);
+        var state = new SurvivalStandings(List.of(a, b, c));
+        state.eliminate(a, 1);
+        check(!state.decided(false, 3), "One death does not restart or end a three-player fight");
+        state.eliminate(b, 5);
+        check(
+                !state.decided(false, 6) && state.decided(false, 7),
+                "Victory waits for the simultaneous-death window");
+        check(state.result(java.util.Set.of(a, b, c), 7).place(c) == 1, "Last survivor wins");
+        state.eliminate(c, 5);
+        check(state.survivors().isEmpty(), "All deaths can produce a draw, without a respawn life");
+    }
+
+    private static void check(boolean condition, String message) {
+        if (!condition) throw new AssertionError(message);
+    }
+}

@@ -46,6 +46,7 @@ public final class PartyGame implements Minigame {
                 "mob_count",
                 "rhino",
                 "miners",
+                "magic_battle",
                 "color_floor",
                 "anvils",
                 "build_memory",
@@ -74,6 +75,7 @@ public final class PartyGame implements Minigame {
     @Override
     public Material icon(String mode) {
         return switch (mode) {
+            case "magic_battle" -> Material.BLAZE_ROD;
             case "miners", "tool_race" -> Material.DIAMOND_PICKAXE;
             case "color_floor" -> Material.LIME_CONCRETE;
             case "pvp_ffa" -> Material.DIAMOND_SWORD;
@@ -91,6 +93,7 @@ public final class PartyGame implements Minigame {
         return mode.equals("pvp")
                         || mode.equals("sumo")
                         || mode.equals("miners")
+                        || mode.equals("magic_battle")
                         || List.of(
                                         "color_floor",
                                         "anvils",
@@ -121,6 +124,7 @@ public final class PartyGame implements Minigame {
             return new BuildMemorySession(services, config, PartyRoundContext.standalone(services));
         if (mode.equals("tool_race"))
             return new ToolRaceSession(services, config, PartyRoundContext.standalone(services));
+        if (mode.equals("magic_battle")) return new MagicBattleSession(services, config);
         if (mode.equals("miners")) return new MinersSession(services, config);
         if (mode.equals("arms_race")) return new ArmsRaceSession(services, config);
         if (mode.equals("tnt_run")) return new TntRunSession(services, config);

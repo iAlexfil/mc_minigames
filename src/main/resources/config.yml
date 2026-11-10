@@ -64,6 +64,7 @@ queues:
     mob_count: {enabled: true, minPlayers: 2, maxPlayers: 16}
     rhino: {enabled: true, minPlayers: 2, maxPlayers: 16}
     miners: {enabled: true, minPlayers: 2, maxPlayers: 12}
+    magic_battle: {enabled: true, minPlayers: 2, maxPlayers: 12}
     color_floor: {enabled: true, minPlayers: 2, maxPlayers: 12}
     anvils: {enabled: true, minPlayers: 2, maxPlayers: 12}
     build_memory: {enabled: true, minPlayers: 2, maxPlayers: 12}

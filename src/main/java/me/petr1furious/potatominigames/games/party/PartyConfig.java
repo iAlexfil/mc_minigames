@@ -99,9 +99,9 @@ public final class PartyConfig {
             bag.define(
                     "partyGames.modes",
                     PropertyCodec.STRING,
-                    "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race,hole_in_the_wall");
+                    "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race,hole_in_the_wall,magic_battle");
     public final Property<Integer> partyRounds =
-            bag.define("partyGames.rounds", PropertyCodec.INT, 6).validate(n -> n >= 1 && n <= 12);
+            bag.define("partyGames.rounds", PropertyCodec.INT, 6).validate(n -> n >= 1 && n <= 13);
     public final Property<Integer> partyIntermission =
             bag.define("partyGames.intermissionSeconds", PropertyCodec.INT, 4)
                     .validate(n -> n >= 3 && n <= 30);
@@ -122,6 +122,13 @@ public final class PartyConfig {
             .validate(n -> n >= 20 && n <= 600);
     public final Property<Integer> sumoFfaOvertimeSeconds = bag.define("sumoFfa.overtimeSeconds", PropertyCodec.INT, 45)
             .validate(n -> n >= 20 && n <= 300);
+
+    public final Property<Integer> magicSeconds = bag.define("magicBattle.roundSeconds", PropertyCodec.INT, 180)
+            .validate(n -> n >= 60 && n <= 600);
+    public final Property<Integer> magicCountdown = bag.define("magicBattle.countdownSeconds", PropertyCodec.INT, 5)
+            .validate(n -> n >= 3 && n <= 15);
+    public final Property<Integer> magicChestSeconds = bag.define("magicBattle.chestRechargeSeconds", PropertyCodec.INT, 45)
+            .validate(n -> n >= 10 && n <= 120);
 
     public PartyConfig(ConfigRegistry configs) {
         configs.register(bag, "games/party.yml", "");

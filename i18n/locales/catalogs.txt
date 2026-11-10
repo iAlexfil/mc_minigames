@@ -10,3 +10,4 @@ chase
 finals
 dummy
 gadgets
+party.magic

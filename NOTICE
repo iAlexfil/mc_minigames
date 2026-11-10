@@ -17,3 +17,10 @@ This fork contains downstream modifications maintained by tiom4eg (2026):
 queue voting, spectator cameras, solo test games, Warfare map rotation,
 Bingo lockout, Pillars modes and events, player-owned Pillars presets,
 and world lifecycle and gadget fixes.
+
+Magic Battle map asset: Lighthouse (SW-Lighthouse)
+Builder credit: JangoMango; published by NetherGames Network.
+Source: https://github.com/NetherGamesMC/assets/tree/5cfda13ef2873c3a048d4a665fe100d1d24542b1/Skywars/arenas/SW-Lighthouse
+Licensed separately under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+Converted from Bedrock blocks to Java palette/coordinates; see
+assets/maps/nethergames-lighthouse/SOURCE.md and LICENSE.txt for source and changes.

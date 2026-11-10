@@ -261,3 +261,10 @@ for ((taskName, checkClass) in mapOf(
     }
     tasks.check { dependsOn(finalsCheck) }
 }
+
+val checkMagicBattle by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.MagicBattleCheck")
+}
+tasks.check { dependsOn(checkMagicBattle) }

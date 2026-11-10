@@ -17,7 +17,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Bingo** | `/bingo` | `default`, `butfast`, `collectall`, `lockout` | Teams race to collect items on a generated board. Cage drop into a random arena; deaths are short spectator punishments. In `lockout` each item goes to the team that collects it first: a line wins, else the most items when time runs out. |
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
-| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. |
+| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
 | **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
 
 ### The Finals
@@ -113,7 +113,7 @@ occupied port and supports a clean shutdown with `stop`.
 ### Party Games and new party games
 
 Join **Вечеринка → Party Games**, or run `/play party party_games`.
-The default match picks six distinct games at random from the twelve-game pool, with
+The default match picks six distinct games at random from the thirteen-game pool, with
 2–12 players. PvP and Sumo become simultaneous, one-life free-for-alls inside
 this match; their standalone modes retain the existing round-robin BO3 rules.
 Eliminated players spectate until the next game. Each completed game awards
@@ -134,8 +134,8 @@ These games are also independently available:
 
 | Mode | Command | Rules |
 | --- | --- | --- |
-| Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, falling to two seconds; twelve stages. Colors form patches of different sizes, with two rare colors. A target remains within eight blocks of every floor cell. |
-| Наковальни | `/play party anvils` | Dodge dense, staggered rain on a 42×42 platform or shelter under slabs. Each six-second wave is followed by ten rain-free seconds to cross the larger arena: old anvils disappear and shelters move randomly. One fewer shelter each wave, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves, starting at 1040 anvils per second and capped at 2560 airborne anvils, with half the previous rain density with rate-limited impact sounds. Shuffled complete sweeps guarantee rain over all 1764 floor cells each wave; slabs intercept anvils above shelters. |
+| Цветной пол | `/play party color_floor` | Reach the named color before the other tiles disappear. Starts with six seconds, reaching two seconds by stage six; twelve stages. Wrong tiles disappear and players are eliminated only after falling below the platform, so jumping to safety remains possible. The palette grows from 6 colors to 8 at stage 3, 10 at stage 6, and 12 at stage 9. Colors form patches of different sizes with rare islands. A target remains within eight blocks of every floor cell. |
+| Наковальни | `/play party anvils` | Dodge staggered rain on a 42×42 platform or shelter under slabs. Each six-second wave is followed by ten rain-free seconds: old anvils disappear and shelters move randomly. Start with four shelters; remove one every two waves, minimum one. From wave four, punches push without health damage. Anvil contact eliminates. Ten waves. Rain keeps full density within a horizontal radius of eight blocks around living players and falls four times less densely elsewhere; overlapping zones do not stack. Distant cells rotate evenly over four sweeps instead of guaranteeing every cell is hit each wave. At most 2560 airborne anvils, with rate-limited impact sounds; slabs intercept anvils above shelters. |
 | Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize one of fourteen recognizable models (market stall, well, bridge, workshop, fireplace, gazebo and more), selected without repeats within the game and varied through materials, details and rotations, then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The exact kit grows from 18 to 46 blocks, adding four pieces per stage, including stairs, slabs, signs, fences, chains, torches and lamps; memorization drops from 12 to 5 seconds, while construction starts at 20 seconds and increases by two seconds per stage, up to 34. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Facing and upper/lower placement matter; sign text and automatic connections do not. Opaque screens prevent copying. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. Unbreakable glass walls reveal other racers. The personal scoreboard shows current place, blocks mined and blocks remaining. Finishers fall onto a shared landing and remain in survival mode; the last finisher gets three seconds to land. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
 | Дырка в стене | `/play party hole_in_the_wall` | A smaller plus-shaped platform spans 17×17 with initially five-block-wide arms (145 floor blocks), narrowing to three blocks exactly halfway after a three-second warning, and shrinking to 13×13 and 9×9 while keeping the plus. Ten wall silhouettes include arches, stairs, columns, teeth, hurdles, zigzags and overhead beams. Ground passages are offset from the center; every wall requires moving or jumping instead of idling there. New walls arrive every 4→2 seconds, up to four active at once, with perpendicular approaches and two-second warnings. Every shuffled group of four arrivals uses all four directions; opposing arrivals wait only until the earlier wall can clear the platform before the new one reaches it. Passages are prepared for the narrower arms before halfway, with compatible height clearance. Walls push; falling eliminates; PvP is off. Platform ends shrink exactly at one third and two thirds of the round after three-second warnings; walls keep moving and spawning. Configure `holeInTheWall.durationSeconds` (45–300, default 120). Survival awards 3/2/1. |
@@ -599,6 +599,112 @@ limit, so one player can train every mechanic. Admin commands also support
 `/party start <mode> @a` and `/party stop`. Countdown is configured with
 `survival.countdownSeconds`; these initial balance values apply next session
 and are intended for live playtesting.
+
+### Party Magic Battle / Магическая битва
+
+Join **Вечеринка → Магическая битва**, or use `/play party magic_battle`.
+This is a one-life, spell-first free-for-all for **2–12 players**, also included
+in the default mixed Party Games pool. Each mage starts with six reusable wands,
+64 wool and a spellbook; native melee and vanilla health regeneration are disabled.
+The last survivor wins; standings award the usual 3/2/1 Party points.
+
+The arena is the ready-made **Lighthouse** map by **JangoMango / NetherGames**,
+released under **CC BY 4.0**, rather than generated islands. The bundled palette
+contains all 40,571 source terrain blocks and twelve original island spawn columns.
+Players stand on the existing island ground below the old cage markers. The map
+is copied into an isolated disposable world in bounded slices; no WorldEdit,
+resource pack, runtime download or external map setup is required. Source world,
+license, pinned revision and conversion tool are in
+`assets/maps/nethergames-lighthouse/` and `tools/import_magic_lighthouse.py`.
+
+**Controls:** hotbar slots 1–6 select a school. **Right-click** casts the selected
+spell; **left-click** cycles that wand's seven spells. Sneak + left-click cycles
+backward. Slot 7 contains building wool; right-click the spellbook in slot 8 to
+open a six-row menu with all **42 spells**. Click a spell to select it and equip
+its wand; selection never spends mana or resets cooldowns.
+The action bar shows mana, selected spell and cooldown. Aimed area spells show
+private target rings; a cast locks the position and gives everyone a warning.
+
+Mana starts at **100**, regenerates **7/s**, and gains another **5/s** near the
+central lighthouse. Source chests are shared mana caches: right-click one while
+holding wool or with an empty hand for **35 mana** and up to **16 wool**; each cache
+recharges after **45 s**. Full mana does not waste the cache. Switching wands
+never resets cooldowns. A shared four-tick cast interval prevents same-tick burst
+exploits, and every successful spell has its own mana cost and cooldown.
+
+Damage values below are health points (two points equal one heart):
+
+| School | Spell | Mana / cooldown | Effect |
+| --- | --- | --- | --- |
+| Fire | Firebolt | 16 / 1.8 s | Swept projectile, 6 damage and 3 s burning |
+| Fire | Fireball | 32 / 5 s | Impact explosion, 10→4 damage in radius 3, 4 s burning; destroys built cover |
+| Fire | Meteor | 50 / 12 s | Fixed target after 1.2 s warning, 14→4 damage in radius 4.5 |
+| Fire | Flame Cone | 26 / 4 s | Scorches a visible cone up to 8 blocks away: 7 damage and burning for 4 s. |
+| Fire | Cinder Rain | 38 / 9 s | After a 1 s warning, creates a radius-4 zone for 5 s up to 48 blocks away: 3 damage/s and burning. Cover blocks it. |
+| Fire | Phoenix Step | 24 / 6 s | Dashes forward, leaving a 3 s flame trail that deals 3 damage/s and ignites enemies. No fall immunity. |
+| Fire | Combustion | 30 / 7 s | Consumes burning on visible enemies within 10 blocks to deal 10 instant damage. Needs a burning target. |
+| Ice | Ice Lance | 14 / 2 s | 5 damage, Slowness II for 3 s |
+| Ice | Frost Nova | 30 / 6 s | Visible enemies within 6 blocks take 6 damage and Slowness III for 2 s |
+| Ice | Ice Wall | 25 / 7 s | Temporary 5×3 wall within 12 blocks, lasts 8 s; cannot suffocate players |
+| Ice | Blizzard | 36 / 9 s | After a 0.7 s warning, creates a radius-4 blizzard for 5 s up to 48 blocks away: 2 damage/s and Slowness II. |
+| Ice | Frozen Orb | 28 / 5 s | Explodes on impact: 6→3 damage within 3.5 blocks and Slowness II for 4 s. Can be reflected. |
+| Ice | Ice Armor | 26 / 10 s | Grants 6 absorption health for 5 s. Unspent temporary hearts disappear when it expires. |
+| Ice | Shatter | 28 / 6 s | Hits a visible cone up to 9 blocks away: 11 damage against slowed enemies, otherwise 4. Consumes Slowness on hit. |
+| Storm | Gale | 18 / 3.5 s | 4 damage and strong knockback |
+| Storm | Wind Step | 20 / 5 s | Forward dash and lift, usable in midair |
+| Storm | Thunderstrike | 38 / 6 s | 0.8 s warning, 10→4 damage in radius 3, 4 s Glowing |
+| Storm | Chain Lightning | 36 / 8 s | Aim at an enemy within 36 blocks: lightning jumps to up to two more enemies within 8 blocks per jump, dealing 8/6/4 damage. Stops at cover. |
+| Storm | Updraft | 28 / 9 s | After a 0.7 s warning, creates a radius-3 updraft for 4 s within 48 blocks. Lifts every mage inside; enemies take 1 damage/s. |
+| Storm | Dispel | 30 / 9 s | Removes visible enemy projectiles, marked strikes and magic zones within 7 blocks; nearby enemies take 2 damage and are pushed away. Leaves buildings intact. |
+| Storm | Skyhook | 22 / 6 s | Aim at a block within 32 blocks to launch yourself towards it. Respects physical walls; does not teleport or prevent fall damage. |
+| Earth | Stone Shot | 14 / 2 s | Accurate projectile dealing 7 damage |
+| Earth | Earth Bridge | 25 / 6 s | Up to 12 planks underfoot ahead, lasting 20 s |
+| Earth | Earthquake | 40 / 8 s | 0.7 s warning, 8 damage in radius 5, launches targets |
+| Earth | Stone Dome | 34 / 12 s | Builds a small 5×5 shelter with a roof around you for 5 s. Skips terrain and bodies; opponents can break its blocks. |
+| Earth | Fault Line | 30 / 7 s | A narrow piercing ground-level wave travels up to 20 blocks, dealing 8 damage and launching enemies. Solid cover stops it. |
+| Earth | Erosion | 24 / 7 s | After a 0.7 s warning, removes player-built and temporary blocks in radius 4 within 48 blocks. Deals no damage; original map stays protected. |
+| Earth | Stone Pillar | 22 / 6 s | Raises you 3 blocks on a temporary pillar lasting 8 s. Needs clear space above; cannot push through a ceiling or another player. |
+| Life | Mend | 24 / 7 s | Heal 6 health; full health spends nothing |
+| Life | Aegis | 28 / 8 s | For 3 s reflect projectiles and halve other damage; each projectile reflects at most once |
+| Life | Sanctuary | 40 / 18 s | Fixed radius-4 zone for 6 s; caster gains 1 health and 8 mana/s inside |
+| Life | Purify | 18 / 6 s | Removes harmful potion effects, burning and freezing, then heals 2 health. Needs a harmful effect to cleanse. |
+| Life | Second Wind | 55 / 30 s | For 8 s, the first lethal hit instead leaves you alive with 6 health and extinguishes you. One trigger; cannot save you from the void. |
+| Life | Life Tether | 24 / 6 s | A reflectable projectile deals 5 damage and heals you for 2 health only on a damaging hit. |
+| Life | Mana Channel | 8 / 18 s | At 65 mana or less, spend 8 mana and stand still without casting for 2 s to regain 48 mana. Movement or damage interrupts; spent mana is not refunded. |
+| Void | Rift Bolt | 20 / 3 s | 7 damage, drains up to 8 enemy mana and restores half to caster |
+| Void | Blink | 26 / 6 s | Up to ten blocks along gaze, including air; respects walls, bodies and border |
+| Void | Gravity Well | 45 / 12 s | 0.7 s warning; pulls visible enemies in radius 5 for 3 s, 2 damage/s |
+| Void | Silence | 28 / 9 s | A reflectable projectile deals 3 damage and prevents the enemy from casting for 2 s. They can still move and build. |
+| Void | Exchange | 42 / 14 s | Aim at an enemy within 24 blocks to swap positions. Both must stand on solid ground with clear bodies, inside the border. |
+| Void | Rewind | 30 / 12 s | Returns you to your position 3 s ago without changing health, mana or cooldowns. Fails if that position is occupied, blocked or outside the border. |
+| Void | Dark Veil | 32 / 10 s | Grants invisibility for 5 s and leaves a radius-5 veil for 5 s that briefly blinds visible enemies inside. Held items remain visible. |
+
+Fire and ice have setup/finisher combinations: ignite a target before Combustion,
+or slow it before Shatter. Dispel removes visible enemy projectiles, pending area
+strikes and zones near the caster, while Erosion counters construction. Exchange
+requires two grounded endpoints; Rewind restores only position, respects occupied
+space and the moving border, and requires three seconds of recorded history.
+Mana Channel takes two stationary seconds and blocks casting; movement or damage
+interrupts it without refund. Second Wind lasts eight seconds and saves one lethal
+hit with six health, excluding the void. Temporary absorption capacity, active
+channels, personal history and other spell state are cleaned up at round end.
+
+Cover blocks offensive areas and projectile travel. The original map stays
+protected; only blocks built by players or spells can be removed. Bursts can break
+those bridges/walls. Temporary construction restores live state on expiry/end;
+spell projectiles, delayed casts and zones have bounded lifetimes and stop when
+their caster leaves or is eliminated. Countdown locks movement and spell use.
+Deaths retain the native death screen for three seconds, then spectate; early
+respawns and reconnects do not grant another life. After 180 s (120 s inside a
+mixed match) the border shrinks toward the lighthouse over 30 s; increasing damage
+then prevents infinite camping. Test solo with `/party test magic_battle`.
+
+Configure `magicBattle.roundSeconds`, `magicBattle.countdownSeconds` and
+`magicBattle.chestRechargeSeconds` in `games/party.yml`. On existing servers, add
+`magic_battle` to a customized `partyGames.modes` list to include it in mixed matches.
+All built-in text is available in English and Russian in `i18n/locales/*/party/magic.yml`.
+Compilation and automated model checks do not replace live multiplayer balance
+and visual testing, especially knockback, spell cover and mana economy.
 
 ### Party Битва шахтёров / Miners
 

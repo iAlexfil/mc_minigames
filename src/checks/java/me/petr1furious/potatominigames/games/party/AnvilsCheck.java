@@ -5,6 +5,7 @@ import static me.petr1furious.potatominigames.games.party.PartyScoringCheck.chec
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Player;
 import org.bukkit.util.BoundingBox;
 
 import java.lang.reflect.Proxy;
@@ -14,19 +15,32 @@ public final class AnvilsCheck {
     public static void main(String[] args) throws Exception {
         AnvilRound r = new AnvilRound(12);
         r.start(0);
-        check(!r.raining() && r.shelters() == 14, "Move before first rain");
+        check(!r.raining() && r.shelters() == 4, "Four shelters before first rain");
         r.advance(199);
         check(!r.raining(), "Full ten seconds to cross the larger arena");
         r.advance(200);
         check(r.raining(), "Rain begins");
         r.advance(320);
-        check(!r.raining() && r.wave() == 2 && r.shelters() == 13, "Rain lasts six seconds");
+        check(
+                !r.raining() && r.wave() == 2 && r.shelters() == 4,
+                "Second wave keeps four shelters");
         r.advance(520);
         r.advance(640);
         r.advance(840);
         check(!r.pvpEnabled(), "No PvP through third rain");
         r.advance(960);
         check(r.pvpEnabled(), "PvP from fourth wave");
+        for (int players : new int[] {1, 4, 12}) {
+            var round = new AnvilRound(players);
+            round.start(0);
+            for (int wave = 1; wave <= 10; wave++) {
+                check(
+                        round.shelters() == new int[] {4, 4, 3, 3, 2, 2, 1, 1, 1, 1}[wave - 1],
+                        "Remove one shelter every two waves, independent of player count");
+                round.advance((wave - 1) * 320L + 200);
+                round.advance(wave * 320L);
+            }
+        }
         platformGeometry();
         check(
                 AnvilRain.batchSize(1) * 20 / AnvilRain.spawnInterval(1) >= 100,
@@ -49,7 +63,7 @@ public final class AnvilsCheck {
         check(
                 AnvilRain.impact(.5, .5, 84, 81, body) > 0,
                 "Swept collision cannot tunnel through body");
-        fullPlatformRain();
+        localizedRain();
         System.out.println("Anvil waves passed");
     }
 
@@ -92,52 +106,117 @@ public final class AnvilsCheck {
         }
     }
 
-    private static void fullPlatformRain() throws Exception {
+    private static void localizedRain() throws Exception {
         for (int seed = 0; seed < 8; seed++) {
             RainWorld fixture = new RainWorld();
+            Location[] position = {new Location(fixture.world, -9.5, 1000, .5)};
+            Player player = target(position, org.bukkit.GameMode.SURVIVAL);
+            Player overlapping = target(position, org.bukkit.GameMode.SURVIVAL);
+            Location[] secondPosition = {new Location(fixture.world, .5, 1000, -9.5)};
+            Player second = target(secondPosition, org.bukkit.GameMode.SURVIVAL);
+            Player spectator =
+                    target(
+                            new Location[] {new Location(fixture.world, 15.5, 1000, 15.5)},
+                            org.bukkit.GameMode.SPECTATOR);
             var rain =
                     new AnvilRain(
                             fixture.world,
                             new AnvilArena(fixture.world),
                             new Random(seed),
                             p -> {
-                                throw new AssertionError("No players");
+                                throw new AssertionError("Players above rain cannot be hit");
                             });
             var sound = AnvilRain.class.getDeclaredField("nextImpactSound");
             sound.setAccessible(true);
             sound.setLong(rain, Long.MAX_VALUE);
-            for (int wave : new int[] {1, 4, 10}) {
+            for (int section = 0; section < 3; section++) {
                 fixture.impacts.clear();
                 fixture.landed = 0;
                 fixture.spawned = 0;
-                // Even the shortest configurable wave must cover the whole floor before cleanup.
-                // Omit five audio ticks: Bukkit's sound registry requires a server. This gives
-                // the rain fewer simulation steps than production, a stricter coverage deadline.
-                for (int tick = 0; tick < 100; tick++)
-                    if (tick % 20 != 0) rain.tick(tick, wave, List.of());
-                check(
-                        fixture.impacts.size() == 1764,
-                        "Every floor cell is struck before wave ends; seed="
-                                + seed
-                                + ", wave="
-                                + wave
-                                + ", hit="
-                                + fixture.impacts.size());
-                check(
-                        fixture.spawned == Map.of(1, 4940, 4, 6080, 10, 6840).get(wave),
-                        "Each wave spawns half the previous number of anvils");
-                check(
-                        fixture.landed >= 3000,
-                        "Dense rain reaches the floor instead of only spawning overhead");
+                fixture.spawnCells.clear();
+                // Four complete sweeps at 72 candidates per call; skip only server-backed audio.
+                // Moving the same target without clearing rain must move the dense zone as well.
+                position[0].setX(section == 0 ? -9.5 : 9.5);
+                List<Player> targets =
+                        section == 2
+                                ? List.of(spectator)
+                                : section == 0
+                                        ? List.of(player, overlapping, second, spectator)
+                                        : List.of(player, overlapping, spectator);
+                for (int step = 0; step < 98; step++) {
+                    int tick = step + 1 + step / 19;
+                    rain.tick(tick, 6, targets);
+                }
+                for (int x = -21; x <= 20; x++)
+                    for (int z = -21; z <= 20; z++) {
+                        double dx = x + .5 - position[0].getX(), dz = z + .5 - position[0].getZ();
+                        double dx2 = x + .5 - secondPosition[0].getX(),
+                                dz2 = z + .5 - secondPosition[0].getZ();
+                        int expected =
+                                section < 2
+                                                && (dx * dx + dz * dz <= 64
+                                                        || section == 0
+                                                                && dx2 * dx2 + dz2 * dz2 <= 64)
+                                        ? 4
+                                        : 1;
+                        check(
+                                fixture.spawnCells.getOrDefault(x + ":" + z, 0) == expected,
+                                "Full density within horizontal radius eight, quarter outside;"
+                                        + " seed="
+                                        + seed
+                                        + " cell="
+                                        + x
+                                        + ":"
+                                        + z);
+                    }
+                check(fixture.landed > 0, "Rain reaches the floor");
                 check(rain.activeCount() <= 2560, "Airborne display count remains bounded");
-                rain.clear();
-                check(rain.activeCount() == 0, "No anvils survive into relocation");
             }
+            rain.clear();
+            check(rain.activeCount() == 0, "No anvils survive into relocation");
+            fixture.impacts.clear();
+            for (int step = 0; step < 95; step++)
+                rain.tick(step + 1 + step / 19, 1, List.of(player));
+            for (int x = -21; x <= 20; x++)
+                for (int z = -21; z <= 20; z++) {
+                    double dx = x + .5 - position[0].getX(), dz = z + .5 - position[0].getZ();
+                    if (dx * dx + dz * dz <= 64)
+                        check(
+                                fixture.impacts.contains(x + ":" + z),
+                                "Every nearby cell is hit even in a short first wave");
+                }
+            rain.clear();
         }
+    }
+
+    private static Player target(Location[] position, org.bukkit.GameMode mode) {
+        return (Player)
+                Proxy.newProxyInstance(
+                        Player.class.getClassLoader(),
+                        new Class[] {Player.class},
+                        (proxy, method, args) ->
+                                switch (method.getName()) {
+                                    case "getGameMode" -> mode;
+                                    case "getWorld" -> position[0].getWorld();
+                                    case "getBoundingBox" ->
+                                            new BoundingBox(
+                                                    position[0].getX() - .3,
+                                                    position[0].getY(),
+                                                    position[0].getZ() - .3,
+                                                    position[0].getX() + .3,
+                                                    position[0].getY() + 1.8,
+                                                    position[0].getZ() + .3);
+                                    case "hashCode" -> System.identityHashCode(proxy);
+                                    case "equals" -> proxy == args[0];
+                                    default ->
+                                            throw new AssertionError(
+                                                    "Unexpected target call: " + method.getName());
+                                });
     }
 
     private static final class RainWorld {
         final Set<String> impacts = new HashSet<>();
+        final Map<String, Integer> spawnCells = new HashMap<>();
         int spawned, landed;
         final World world =
                 (World)
@@ -150,9 +229,15 @@ public final class AnvilsCheck {
                                             // physics/coverage fixture.
                                             case "spawn" -> {
                                                 spawned++;
+                                                Location at = (Location) a[0];
+                                                spawnCells.merge(
+                                                        at.getBlockX() + ":" + at.getBlockZ(),
+                                                        1,
+                                                        Integer::sum);
                                                 yield display(((Location) a[0]).clone());
                                             }
                                             case "playSound" -> null;
+                                            case "equals" -> proxy == a[0];
                                             default ->
                                                     throw new AssertionError(
                                                             "Unexpected world call: "

@@ -56,6 +56,10 @@ final class BuildMemorySession extends PartySurvivalSession {
         return 500;
     }
 
+    static int buildSeconds(int stage) {
+        return 30 + 5 * (stage - 1);
+    }
+
     boolean podiumAwards() {
         return true;
     }
@@ -110,7 +114,7 @@ final class BuildMemorySession extends PartySurvivalSession {
                             .inventory()
                             .forEach((m, n) -> p.getInventory().addItem(new ItemStack(m, n)));
                 }
-                deadline = elapsed + (20 + 2L * (stage - 1)) * 20;
+                deadline = elapsed + buildSeconds(stage) * 20L;
                 announceTitle(
                         I18n.tr("party.rounds.build_memory.build", modelTitle),
                         I18n.tr("party.rounds.build_memory.reproduce"),

@@ -24,21 +24,31 @@ public final class AnvilsCheck {
         check(
                 !r.raining() && r.wave() == 2 && r.shelters() == 4,
                 "Second wave keeps four shelters");
-        r.advance(520);
-        r.advance(640);
-        r.advance(840);
-        check(!r.pvpEnabled(), "No PvP through third rain");
-        r.advance(960);
-        check(r.pvpEnabled(), "PvP from fourth wave");
+        check(r.remaining(320) == 9, "Second relocation is one second shorter");
+        r.advance(500);
+        check(!r.pvpEnabled(), "Second wave still has no PvP");
+        r.advance(620);
+        check(r.pvpEnabled(), "PvP from third wave");
         for (int players : new int[] {1, 4, 12}) {
             var round = new AnvilRound(players);
             round.start(0);
+            long tick = 0;
             for (int wave = 1; wave <= 10; wave++) {
                 check(
                         round.shelters() == new int[] {4, 4, 3, 3, 2, 2, 1, 1, 1, 1}[wave - 1],
                         "Remove one shelter every two waves, independent of player count");
-                round.advance((wave - 1) * 320L + 200);
-                round.advance(wave * 320L);
+                int move = new int[] {10, 9, 8, 7, 6, 6, 6, 6, 6, 6}[wave - 1];
+                check(
+                        round.shelterSize() == (wave < 6 ? 2 : 1),
+                        "Shelters shrink to one block from wave six");
+                check(round.remaining(tick) == move, "Relocation shortens to a six-second floor");
+                check(
+                        !round.advance(tick + move * 20 - 1),
+                        "Relocation lasts its full announced time");
+                tick += move * 20;
+                check(round.advance(tick) && round.raining(), "Wave begins at shortened deadline");
+                tick += 120;
+                round.advance(tick);
             }
         }
         platformGeometry();
@@ -46,14 +56,34 @@ public final class AnvilsCheck {
                 AnvilRain.batchSize(1) * 20 / AnvilRain.spawnInterval(1) >= 100,
                 "Dense rain already from the first wave");
         check(AnvilRain.batchSize(10) > AnvilRain.batchSize(1), "Rain intensifies");
-        var a = AnvilArena.layout(8, new Random(1));
-        var b = AnvilArena.layout(7, new Random(2));
+        var a = AnvilArena.layout(8, 2, new Random(1));
+        var b = AnvilArena.layout(7, 2, new Random(2));
         check(!a.containsAll(b), "New shelter layout is not just removed old shelter");
         for (int seed = 0; seed < 50; seed++)
-            for (var s : AnvilArena.layout(14, new Random(seed)))
-                check(
-                        s.x() >= -21 && s.x() + 2 <= 21 && s.z() >= -21 && s.z() + 2 <= 21,
-                        "Shelters stay on floor");
+            for (int size : new int[] {1, 2})
+                for (var s : AnvilArena.layout(14, size, new Random(seed))) {
+                    check(
+                            s.x() >= -21
+                                    && s.x() + size <= 21
+                                    && s.z() >= -21
+                                    && s.z() + size <= 21,
+                            "Shelters stay on floor");
+                    check(
+                            s.size() == size
+                                    && s.bounds().getWidthX() == size
+                                    && s.bounds().getWidthZ() == size,
+                            "Roof geometry and collision shrink together");
+                    check(
+                            !Double.isNaN(
+                                    AnvilRain.impact(s.x() + .5, s.z() + .5, 90, 80, s.bounds())),
+                            "A one-block roof still intercepts rain");
+                    if (size == 1)
+                        check(
+                                Double.isNaN(
+                                        AnvilRain.impact(
+                                                s.x() + 1.5, s.z() + .5, 90, 80, s.bounds())),
+                                "Adjacent former roof cell is no longer sheltered");
+                }
         BoundingBox slab = new BoundingBox(0, 83, 0, 1, 83.5, 1),
                 body = new BoundingBox(.2, 81, .2, .8, 82.8, .8);
         check(

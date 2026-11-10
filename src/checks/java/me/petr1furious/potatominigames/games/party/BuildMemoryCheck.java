@@ -12,6 +12,36 @@ import java.util.*;
 
 public final class BuildMemoryCheck {
     public static void main(String[] args) {
+        for (int stage = 1; stage <= 8; stage++)
+            check(
+                    BuildMemorySession.buildSeconds(stage)
+                            == new int[] {30, 35, 40, 45, 50, 55, 60, 65}[stage - 1],
+                    "Construction starts at thirty seconds and gains five per stage");
+        int[] coreSizes = {11, 12, 14, 13, 18, 14, 13, 13, 16, 14, 13, 16, 13, 15};
+        for (int model = 0; model < BuildMemoryPattern.MODEL_COUNT; model++)
+            for (int seed = 0; seed < 20; seed++) {
+                var first = BuildMemoryPattern.generate(1, model, new Random(seed));
+                check(
+                        first.blocks().size() == coreSizes[model],
+                        "Opening contains only the recognizable model: "
+                                + model
+                                + ", actual="
+                                + first.blocks().size());
+                for (int stage = 2; stage <= 3; stage++)
+                    check(
+                            BuildMemoryPattern.generate(stage, model, new Random(seed))
+                                    .blocks()
+                                    .equals(first.blocks()),
+                            "No random extra paving or posts in the first three stages");
+                for (var entry : first.blocks().entrySet()) {
+                    var support = entry.getValue().support(entry.getKey());
+                    check(
+                            support == null
+                                    || support.y() == -1
+                                    || first.blocks().containsKey(support),
+                            "Opening decorations do not depend on removed extra blocks");
+                }
+            }
         Set<Component> openingModels = new HashSet<>();
         for (int seed = 0; seed < 100; seed++)
             openingModels.add(BuildMemoryPattern.generate(1, new Random(seed)).title());
@@ -20,8 +50,10 @@ public final class BuildMemoryCheck {
             for (int seed = 0; seed < 50; seed++) {
                 var p = BuildMemoryPattern.generate(stage, new Random(seed));
                 check(
-                        p.blocks().size() == 18 + 4 * (stage - 1),
-                        "Faster progression: four extra pieces per stage");
+                        stage <= 3
+                                ? p.blocks().size() >= 11 && p.blocks().size() <= 18
+                                : p.blocks().size() == 18 + 4 * (stage - 3),
+                        "Simple opening, then four extra pieces per stage");
                 check(
                         p.blocks().keySet().stream().anyMatch(c -> c.y() >= 2),
                         "Every stage starts with a three-dimensional model");

@@ -9,3 +9,4 @@ warfare
 chase
 dummy
 gadgets
+party.magic

@@ -23,4 +23,6 @@
 - [x] Persistent loadout UI/commands and session integration with class restoration.
 - [x] Cashout prompts/progress and interruption regression checks.
 - [x] Merge localized strings, update README and English launcher.
-- [ ] Full build/i18n, native server smoke, independent review and fixes; package verified JAR.
+- [x] Full build/i18n, native server smoke, independent review and fixes; package verified JAR.
+
+Completed in the managed codex/finals worktree based on origin/main. See ../verification/2026-11-11-finals-expansion.md for final evidence.

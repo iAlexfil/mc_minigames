@@ -4,7 +4,7 @@ Server fork of [Petr1Furious/potato-minigames](https://github.com/Petr1Furious/p
 preserving the upstream Git history and the server's downstream patches.
 The original Apache-2.0 license and attribution are retained in `LICENSE` and `NOTICE`.
 
-One Paper plugin with five game categories on a shared framework, built for a server
+One Paper plugin with six game categories on a shared framework, built for a server
 anybody can join and play at any time: players queue for a game, wait in a lobby,
 and the game starts by itself. Different games run side by side.
 Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Java 25.
@@ -18,6 +18,97 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
 | **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. |
+| **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
+
+### The Finals
+
+Join with `/play finals` or use the lobby compass. Two players can play against
+each other; the queue supports 2–12 players split between red and blue teams.
+This is a Minecraft adaptation using vanilla items, sounds and particles; no
+client mod or resource pack is required.
+
+Right-click the emerald vault to open it in five seconds, then touch the cashbox.
+The carrier glows and moves slowly; Q drops it. Right-click gold cashout A or B
+to deposit it. After 40 seconds the current owner banks $10,000. To steal an
+ongoing enemy cashout, **sneak + right-click the station and stay within three
+blocks for five seconds**. Damage, death, leaving the area or releasing sneak
+interrupts the steal. The action bar shows progress, and the boss bar shows the
+current owner and payout time. Stealing never resets that timer; a payout that
+finishes on the same tick wins over a steal.
+
+First to $20,000 wins; the richer team wins after six minutes, with equal cash
+a draw. Death has a five-second respawn delay and two seconds of spawn protection,
+during which combat and objectives are disabled. Teams remain fixed; a disconnected
+team has 15 seconds to return before the match ends without points. Connected
+winners receive three points; practice, draws and aborted matches award none.
+
+**Loadouts:** `/finals loadout` opens the menu. You can also use
+`/finals class S|M|L` (or `light|medium|heavy`) and `/finals weapon <id>`.
+Choices are saved per player in `finals/loadouts.yml`. Countdown changes apply
+immediately; combat changes apply on the next spawn. Opening the menu does not
+protect you from enemy damage. Original health and movement settings return when
+you leave.
+
+| Class | Health / movement | Weapons | Specialization and gadgets |
+|---|---|---|---|
+| Light (S) | 15 HP / 120% | M11 (`m11`), XP-54 (`xp54`), SR-84 (`sr84`), Sword (`sword`), Dagger (`dagger`) | Evasive Dash; Frag Grenade, Sonar Grenade, Vanishing Bomb |
+| Medium (M) | 25 HP / 100% | AKM (`akm`), FCAR (`fcar`), Model 1887 (`model1887`), Riot Shield (`riotshield`), Dual Blades (`dualblades`) | Healing Beam; Frag Grenade, Jump Pad, Defibrillator |
+| Heavy (L) | 35 HP / 85% | M60 (`m60`), Lewis Gun (`lewisgun`), SA1216 (`sa1216`), Sledgehammer (`sledgehammer`), Spear (`spear`) | Charge 'n' Slam; RPG-7, Dome Shield, Barricade |
+
+The primary weapon is in slot 1, three gadgets in slots 2–4, specialization in
+slot 5, demolition pickaxe in slot 8, and loadout menu in slot 9. Right-click to
+fire/use a gadget, left-click for melee, and **F to reload**. Guns have magazines,
+timed reloads and unlimited reserve ammunition. Gadget charges recharge and reset
+on respawn. Weapon values are balanced for Minecraft; team leather armor reduces
+the displayed base damage. The dagger rewards backstabs, the spear has longer
+reach, and the hammer's right-click destroys nearby cover. Hold right-click with
+the Riot Shield or Dual Blades to reduce frontal damage.
+
+Sonar reveals hidden enemies. Carrying a cashbox or attacking ends invisibility.
+The Healing Beam can heal allies (or the user more slowly); Defibrillator revives
+a nearby teammate at their death position during the respawn delay. Dome Shield
+blocks enemy attacks from outside while enemies can still enter it; cashbox
+carriers do not receive dome protection. Explosives can hurt their owner.
+Arena cover and temporary barricades are destructible, while objectives, spawn
+areas and the protected floor remain intact.
+
+**Custom maps:** the generated arena is a fallback. You can import a vanilla Java
+overworld folder or ZIP, or register an existing persistent world. Put imports in
+`plugins/PotatoMinigames/finals/imports/`; use quotes around a filename with spaces.
+Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
+
+1. `/finals map import rooftop "Rooftop.zip"`, then `/finals map goto rooftop`.
+   Alternatively, stand in an existing world and run `/finals map create rooftop`.
+2. Look at opposite corner blocks and run `/finals map pos1 rooftop` and
+   `/finals map pos2 rooftop`. Include the floor and room above the players.
+3. Stand at each desired team spawn and run `/finals map spawn rooftop red`
+   or `/finals map spawn rooftop blue`. Repeat for multiple spawns per team;
+   `/finals map spawnclear rooftop red|blue` clears that team's draft list.
+4. Stand at the objective positions and run `/finals map vault rooftop`,
+   `/finals map cashout rooftop a` and `/finals map cashout rooftop b`.
+5. `/finals map save rooftop`, then `/finals map use rooftop`.
+   Use `/finals map info rooftop` or `/finals map list` to inspect setup.
+   Select `generated` to return to the fallback arena.
+
+Setup requires admin permission. Saving validates bounds, safe spawn support,
+headroom and objective spacing. Native snapshots retain block data, chest
+contents and sign text, but exclude entities. Draft edits do not change the
+last saved snapshot until another successful save. Match destruction never edits
+the imported source or saved template. Region imports are limited to 512 MiB,
+64 MiB per file and 20,000 entries; snapshots allow up to one million blocks and
+512 blocks per axis. Only the overworld is imported. Command blocks and portal
+blocks are rejected in playable snapshots.
+
+Admins can use `/finals test` for solo practice, `/finals start @a` to launch a
+match, or `/finals start @a rooftop` to force a saved map. `/finals stop` ends it.
+Timing and score settings are in `games/finals.yml`, editable with
+`/finals config`; changes apply next match. All game text uses the shared
+English/Russian i18n catalogs, selected by each player's client language.
+
+The Windows `start-server.bat` starts an already installed local ASP server in
+`.tools/server` with Java 25 from `.tools/jdk25`. For a runtime stored in another
+checkout, set `MINIGAMES_HOME` to that checkout first. The launcher checks for an
+occupied port and supports a clean shutdown with `stop`.
 
 ### Party Games and new party games
 
@@ -959,6 +1050,7 @@ games/bingo-board-entries.yml the crafting-cost node graph behind board generati
 games/warfare.yml             mode, arena/border, distances, lifts, noHunger, teamBeacon, maps, beacons, kit
 games/chase.yml               rounds, hunters, timings, build limits, hunterGadgets
 games/party.yml               PvP/sumo/Arms Race timings, survival countdown, TNT Run, mob counting, ravagers/mines, Miners
+games/finals.yml              match, vault, cashout, steal and respawn timings; cashout value and winning score
 gadgets.yml                   one section per gadget
 data/                         points.yml, teams.yml, inventories.yml, snapshots/, pillars-presets.yml
 ```
@@ -1107,6 +1199,12 @@ that preserve a drill even when the inventory is full.
 loadout, client-only armour hiding/restoration, equipment changes and viewer tracking,
 independent cloaks, on-hit wand cooldown and blocked-hit rejection, alongside all
 210 distinct opening class matchups.
+
+`checkFinals` checks cash-box ownership, deposits, theft, payouts and match results.
+`checkFinalsSession` exercises combat attribution, protection, interrupted steals,
+respawn/reconnect handling, frozen movement and TNT routing through event handlers.
+`checkFinalsArena` checks the generated arena's protected objectives, safe spawns,
+traversable layout and destructible cover. Both run as part of `build`.
 
 ## License
 

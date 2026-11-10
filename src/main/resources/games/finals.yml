@@ -1,0 +1,10 @@
+# Changes apply to the next match. All timings are in seconds.
+countdownSeconds: 5
+durationSeconds: 360
+vaultOpenSeconds: 5
+cashoutSeconds: 40
+stealSeconds: 5
+respawnSeconds: 5
+protectionSeconds: 2
+cashoutValue: 10000
+targetScore: 20000

@@ -7,6 +7,7 @@ party.rounds
 bingo
 warfare
 chase
+finals
 dummy
 gadgets
 party.magic

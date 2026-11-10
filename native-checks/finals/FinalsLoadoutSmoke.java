@@ -1,0 +1,343 @@
+import java.lang.reflect.*;
+import java.util.*;
+import java.util.function.*;
+import org.bukkit.*;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.*;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.*;
+import org.bukkit.event.entity.*;
+import org.bukkit.event.block.Action;
+import org.bukkit.damage.*;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.inventory.*;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.*;
+import org.bukkit.scoreboard.Scoreboard;
+import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.text.Component;
+
+/** Native registries/inventories/attributes with fake player transport; production lifecycle is invoked unchanged. */
+public final class FinalsLoadoutSmoke {
+    private final JavaPlugin smoke, main;
+    private final ClassLoader loader;
+    private final Map<UUID, FakePlayer> players = new LinkedHashMap<>();
+    private final Server originalServer = Bukkit.getServer();
+    private Object session, worlds;
+    private Field serverField;
+    private Server lookupProxy;
+    private int assertions;
+
+    private FinalsLoadoutSmoke(JavaPlugin smoke, JavaPlugin main) {
+        this.smoke=smoke; this.main=main; this.loader=main.getClass().getClassLoader();
+    }
+    public static int run(JavaPlugin smoke, JavaPlugin main) throws Exception {
+        return new FinalsLoadoutSmoke(smoke,main).check();
+    }
+    private Class<?> type(String name)throws Exception {
+        return nativeAccess(() -> Class.forName(name.contains(".")?name:"me.petr1furious.potatominigames.games.finals."+name,true,loader));
+    }
+    /** Paper remapping and native factories require the real CraftServer, even in a lookup fixture. */
+    private <T> T nativeAccess(java.util.concurrent.Callable<T> operation)throws Exception {
+        if(serverField==null)return operation.call();
+        Server previous=Bukkit.getServer();
+        serverField.set(null,originalServer);
+        try{return operation.call();}finally{serverField.set(null,previous);}
+    }
+    private void preloadProductionClasses()throws Exception {
+        java.nio.file.Path jar=java.nio.file.Path.of(main.getClass().getProtectionDomain().getCodeSource().getLocation().toURI());
+        try(java.util.jar.JarFile archive=new java.util.jar.JarFile(jar.toFile())){
+            var entries=archive.entries();
+            while(entries.hasMoreElements()){
+                String name=entries.nextElement().getName();
+                if(name.startsWith("me/petr1furious/potatominigames/")&&name.endsWith(".class"))
+                    Class.forName(name.substring(0,name.length()-6).replace('/','.'),false,loader);
+            }
+        }
+    }
+    private Object withPlayerLookup(Object target,String name,Object... args)throws Exception {
+        Server previous=Bukkit.getServer();serverField.set(null,lookupProxy);
+        try{return call(target,name,args);}finally{serverField.set(null,previous);}
+    }
+    private static boolean accepts(Class<?> parameter,Object argument) {
+        if(argument==null)return !parameter.isPrimitive();
+        if(parameter.isInstance(argument))return true;
+        return parameter==int.class&&argument instanceof Integer || parameter==long.class&&argument instanceof Long
+                ||parameter==boolean.class&&argument instanceof Boolean||parameter==float.class&&argument instanceof Float
+                ||parameter==double.class&&argument instanceof Double;
+    }
+    private static Object invoke(Method method,Object receiver,Object... args)throws Exception {
+        method.setAccessible(true);
+        try{return method.invoke(receiver,args);}catch(InvocationTargetException failure){
+            if(failure.getCause() instanceof Exception e)throw e;
+            if(failure.getCause() instanceof Error e)throw e;
+            throw failure;
+        }
+    }
+    private Object call(Object target,String name,Object... args)throws Exception {
+        Class<?> cls=target instanceof Class<?> c?c:target.getClass();
+        for(Class<?> current=cls;current!=null;current=current.getSuperclass())for(Method method:methods(current)){
+            if(!method.getName().equals(name)||method.getParameterCount()!=args.length)continue;
+            boolean match=true;for(int i=0;i<args.length;i++)if(!accepts(method.getParameterTypes()[i],args[i]))match=false;
+            if(match)return invoke(method,target instanceof Class<?>?null:target,args);
+        }
+        throw new NoSuchMethodException(cls.getName()+"."+name);
+    }
+    private Method[] methods(Class<?> type)throws Exception{return nativeAccess(type::getDeclaredMethods);}
+    private Object make(String name,Object... args)throws Exception {
+        for(Constructor<?> constructor:type(name).getDeclaredConstructors()){
+            if(constructor.getParameterCount()!=args.length)continue;
+            boolean match=true;for(int i=0;i<args.length;i++)if(!accepts(constructor.getParameterTypes()[i],args[i]))match=false;
+            if(match){constructor.setAccessible(true);return constructor.newInstance(args);}
+        }
+        throw new NoSuchMethodException(name);
+    }
+    private static Field field(Object object,String name)throws Exception {Field f=object.getClass().getDeclaredField(name);f.setAccessible(true);return f;}
+    private static Object get(Object object,String name)throws Exception{return field(object,name).get(object);}
+    private static void set(Object object,String name,Object value)throws Exception{field(object,name).set(object,value);}
+    @SuppressWarnings({"unchecked","rawtypes"}) private Object value(String type,String name)throws Exception{return Enum.valueOf((Class)type(type),name);}
+    private void require(boolean value,String message){if(!value)throw new AssertionError(message);assertions++;}
+    private void close(double actual,double expected,String label){require(Math.abs(actual-expected)<.00001,label+": expected "+expected+", actual "+actual);}
+
+    @SuppressWarnings("unchecked") private int check()throws Exception {
+        World initial=Bukkit.getWorlds().getFirst();
+        FakePlayer light=new FakePlayer("NativeLight",initial,28,.27f,.14f);
+        FakePlayer medium=new FakePlayer("NativeMedium",initial,32,.31f,.16f);
+        FakePlayer heavy=new FakePlayer("NativeHeavy",initial,36,.29f,.18f);
+        for(FakePlayer player:List.of(light,medium,heavy))players.put(player.id,player);
+        serverField=Bukkit.class.getDeclaredField("server");serverField.setAccessible(true);
+        preloadProductionClasses();
+        Server proxy=(Server)Proxy.newProxyInstance(Server.class.getClassLoader(),new Class<?>[]{Server.class},(receiver,method,args)->{
+            if(method.getName().equals("getPlayer")&&args[0] instanceof UUID id&&players.containsKey(id))return players.get(id).player;
+            if(method.getName().equals("getOnlinePlayers"))return players.values().stream().map(p->p.player).toList();
+            serverField.set(null,originalServer);
+            try{return method.invoke(originalServer,args);}
+            catch(InvocationTargetException error){throw error.getCause();}
+            finally{serverField.set(null,receiver);}
+        });
+        lookupProxy=proxy;
+        try {
+            Object registry=make("me.petr1furious.potatominigames.core.player.ParticipantRegistry");
+            for(FakePlayer player:players.values())call(registry,"add",player.player);
+            Field unsafeField=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");unsafeField.setAccessible(true);
+            Object active=((sun.misc.Unsafe)unsafeField.get(null)).allocateInstance(type("me.petr1furious.potatominigames.core.session.ActiveSession"));
+            set(active,"phase",value("me.petr1furious.potatominigames.core.session.GamePhase","RUNNING"));
+            set(active,"test",true);set(active,"options",Map.of());
+            Object configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",main);
+            Object config=make("FinalsConfig",configs);
+            Object stateService=make("me.petr1furious.potatominigames.core.player.PlayerStateService",main);
+            Object sidebar=make("me.petr1furious.potatominigames.core.hud.SidebarService",(Supplier<Collection<Player>>)List::of);
+            Object bossbars=make("me.petr1furious.potatominigames.core.hud.BossBarService",(Supplier<Collection<Player>>)()->players.values().stream().map(p->p.player).toList());
+            Object arena=make("me.petr1furious.potatominigames.core.world.ArenaService");
+            worlds=make("me.petr1furious.potatominigames.core.world.SessionWorlds",make("me.petr1furious.potatominigames.core.world.ThrowawayWorldService",main),null);
+            Object messages=make("me.petr1furious.potatominigames.core.text.Messages",(Supplier<Audience>)Audience::empty,null);
+            Object services=make("me.petr1furious.potatominigames.core.game.SessionServices",main,active,registry,stateService,null,sidebar,bossbars,arena,worlds,null,messages,null);
+            Object loadouts=make("FinalsLoadouts",main,(Consumer<Player>)player->{
+                if(session!=null)try{call(session,"loadoutChanged",player);}catch(Exception error){throw new RuntimeException(error);}
+            });
+            Map<UUID,Object> choices=(Map<UUID,Object>)get(loadouts,"choices");
+            for(var entry:Map.of(light,"LIGHT",medium,"MEDIUM",heavy,"HEAVY").entrySet()){
+                Object role=value("FinalsClass",entry.getValue());
+                Object weapon=((List<?>)call(type("FinalsWeapon"),"byClass",role)).getFirst();
+                choices.put(entry.getKey().id,make("FinalsLoadouts$Choice",role,weapon));
+            }
+            session=make("FinalsSession",services,config,null,loadouts);
+            // Native world setup runs under CraftServer. Fake players are not online transports,
+            // so onStart builds the real roster/arena and the exact production spawn path is
+            // then invoked explicitly for each fixture player.
+            call(session,"onStart");
+            require(((Map<?,?>)get(session,"roster")).size()==players.size(),"Real onStart builds the full participant roster");
+            require(get(session,"world") instanceof World,"Real onStart creates the native match world");
+            for(FakePlayer player:players.values())call(session,"spawn",player.player);
+            Map<UUID,Object> frozen=(Map<UUID,Object>)get(session,"frozen");
+            for(var entry:Map.of(light,15d,medium,25d,heavy,35d).entrySet()){
+                FakePlayer player=entry.getKey();double expected=entry.getValue();
+                close(player.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),expected,"Native spawn class max health");
+                close(player.attribute.getHealth(),expected,"Native spawn class current health");
+                require(player.storage.getItem(0)!=null&&player.storage.getItem(0).getItemMeta().hasDisplayName(),"Native spawn installs a named weapon");
+                for(int slot=1;slot<=4;slot++)require(player.storage.getItem(slot)!=null,"Native spawn equips each class gadget");
+                require(player.storage.getItem(8).getType()==Material.NETHER_STAR,"Native spawn equips loadout menu control");
+                close(player.walkSpeed,0,"Countdown freezes movement");
+            }
+            close((float)call(frozen.get(light.id),"walkSpeed"),.24,"Light class speed before freeze");
+            close((float)call(frozen.get(medium.id),"walkSpeed"),.20,"Medium class speed before freeze");
+            close((float)call(frozen.get(heavy.id),"walkSpeed"),.17,"Heavy class speed before freeze");
+
+            call(loadouts,"open",light.player);
+            require(light.top.getSize()==54&&light.top.getItem(11).getType()==Material.FEATHER,"Native loadout GUI paints class controls");
+            InventoryClickEvent countdownClick=new InventoryClickEvent(light.view,InventoryType.SlotType.CONTAINER,15,ClickType.LEFT,InventoryAction.PICKUP_ALL);
+            call(loadouts,"onClick",countdownClick);
+            require(countdownClick.isCancelled(),"Loadout GUI consumes inventory clicks");
+            close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),35,"Countdown GUI class change applies immediately");
+            close((float)call(frozen.get(light.id),"walkSpeed"),.17,"Countdown class change saves Heavy speed while frozen");
+            withPlayerLookup(session,"releaseAll");
+            close(light.walkSpeed,.17,"Releasing countdown restores new class speed");
+            close(medium.walkSpeed,.20,"Releasing countdown restores Medium speed");
+            close(heavy.walkSpeed,.17,"Releasing countdown restores Heavy speed");
+            Map<UUID,Integer> roster=(Map<UUID,Integer>)get(session,"roster");
+            set(session,"state",make("FinalsState",roster,0L,get(session,"rules")));
+            InventoryClickEvent activeClick=new InventoryClickEvent(light.view,InventoryType.SlotType.CONTAINER,13,ClickType.LEFT,InventoryAction.PICKUP_ALL);
+            ItemStack previousWeapon=light.storage.getItem(0).clone();
+            call(loadouts,"onClick",activeClick);
+            close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),35,"Active GUI change waits for next spawn");
+            close(light.walkSpeed,.17,"Active GUI change preserves current movement speed");
+            require(light.storage.getItem(0).equals(previousWeapon),"Active GUI change preserves equipped weapon until respawn");
+            require(call(call(loadouts,"choice",light.id),"playerClass").toString().equals("MEDIUM"),"Active GUI change records next-spawn preference");
+            call(session,"spawn",light.player);
+            close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),25,"Next spawn applies selected Medium health");
+            close(light.attribute.getHealth(),25,"Next spawn fully heals selected class");
+            close(light.walkSpeed,.20,"Next spawn applies selected Medium speed");
+            equipmentChecks(loadouts,light,heavy);
+            call(session,"onParticipantLeave",light.player);
+            restored(light);
+            withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));
+            restored(medium);restored(heavy);
+            require(((Map<?,?>)get(session,"originalVitals")).isEmpty(),"Session end clears captured original vitals");
+            smoke.getLogger().info("FINALS_LOADOUT_SMOKE_PASS: "+assertions+" native lifecycle, GUI, health, speed and restoration assertions");
+            return assertions;
+        } finally {
+            if(session!=null)try{withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));}catch(Exception error){smoke.getLogger().warning("Loadout smoke cleanup: "+error);}
+            serverField.set(null,originalServer);
+            if(worlds!=null)call(worlds,"destroyVoid","finals");
+            for(FakePlayer player:players.values())player.attribute.remove();
+        }
+    }
+    @SuppressWarnings("unchecked") private void equipmentChecks(Object loadouts,FakePlayer source,FakePlayer victim)throws Exception {
+        Object weapons=get(session,"weapons"),gadgets=get(session,"gadgets");
+        Object[] roles=type("FinalsClass").getEnumConstants();
+        int selections=0;long now=1000;
+        for(int roleIndex=0;roleIndex<roles.length;roleIndex++){
+            Object role=roles[roleIndex];
+            call(loadouts,"open",source.player);click(loadouts,source,11+roleIndex*2);
+            List<?> available=(List<?>)call(type("FinalsWeapon"),"byClass",role);
+            require(available.size()==5,"Each class exposes five real GUI choices");
+            for(int index=0;index<available.size();index++){
+                Object weapon=available.get(index);
+                call(loadouts,"open",source.player);
+                ItemStack menuItem=source.top.getItem(28+index);
+                require(menuItem!=null&&nativeText(menuItem).length()>0,"Every weapon GUI choice has resolved native metadata");
+                click(loadouts,source,28+index);
+                require(call(call(loadouts,"choice",source.id),"weapon")==weapon,"GUI selection saves the intended weapon");
+                source.player.closeInventory();call(session,"spawn",source.player);
+                require(call(weapons,"selected",source.id)==weapon,"Next spawn equips every selected primary weapon");
+                require(nativeText(source.storage.getItem(0)).length()>0,"Every equipped weapon has resolved native name and lore");
+                now+=200;set(session,"tick",now);
+                Object equipped=((Map<UUID,Object>)get(weapons,"equipped")).get(source.id);
+                if((boolean)call(weapon,"isGun")){
+                    Object gun=get(equipped,"gun");int before=(int)call(gun,"ammo");
+                    PlayerInteractEvent fire=new PlayerInteractEvent(source.player,Action.RIGHT_CLICK_AIR,source.storage.getItem(0),null,org.bukkit.block.BlockFace.UP,EquipmentSlot.HAND);
+                    call(session,"onPlayerInteract",fire);
+                    require(fire.isCancelled()&&(int)call(gun,"ammo")==before-1,"Native gun right click fires and consumes one round");
+                    PlayerSwapHandItemsEvent reload=new PlayerSwapHandItemsEvent(source.player,source.storage.getItem(0),new ItemStack(Material.AIR));
+                    call(session,"onSwapHandItems",reload);
+                    require(reload.isCancelled()&&(boolean)call(gun,"reloading"),"Native F event starts reload without swapping inventory");
+                }else{
+                    EntityDamageByEntityEvent melee=new EntityDamageByEntityEvent(source.player,victim.player,
+                            EntityDamageEvent.DamageCause.ENTITY_ATTACK,DamageSource.builder(DamageType.GENERIC).build(),1);
+                    call(session,"onEntityDamageByEntity",melee);
+                    require(melee.isCancelled()&&(long)get(equipped,"nextMelee")>now,"Native melee event dispatches a custom swing and consumes vanilla damage");
+                }
+                selections++;
+            }
+            List<String> english=new ArrayList<>();
+            source.locale=Locale.ENGLISH;call(gadgets,"equip",source.player,role);
+            for(int slot=1;slot<=4;slot++)english.add(nativeText(source.storage.getItem(slot)));
+            source.locale=Locale.forLanguageTag("ru");call(gadgets,"equip",source.player,role);
+            for(int slot=1;slot<=4;slot++){
+                String russian=nativeText(source.storage.getItem(slot));
+                require(!russian.equals(english.get(slot-1)),"Every gadget name/lore changes for a Russian viewer");
+            }
+            call(loadouts,"open",source.player);
+            for(int slot:new int[]{11,13,15,28,29,30,31,32})
+                require(nativeText(source.top.getItem(slot)).length()>0,"Russian GUI class/weapon metadata is rendered natively");
+            source.player.closeInventory();source.locale=Locale.ENGLISH;
+        }
+        require(selections==15,"All fifteen weapon GUI and equip paths were exercised");
+    }
+    private void click(Object loadouts,FakePlayer player,int slot)throws Exception{
+        InventoryClickEvent event=new InventoryClickEvent(player.view,InventoryType.SlotType.CONTAINER,slot,ClickType.LEFT,InventoryAction.PICKUP_ALL);
+        call(loadouts,"onClick",event);require(event.isCancelled(),"Native GUI click is consumed");
+    }
+    private String nativeText(ItemStack item){
+        require(item!=null&&item.hasItemMeta()&&item.getItemMeta().displayName()!=null,"Native item name exists");
+        var meta=item.getItemMeta();List<Component> components=new ArrayList<>();components.add(meta.displayName());
+        if(meta.lore()!=null)components.addAll(meta.lore());
+        String result=components.stream().map(PlainTextComponentSerializer.plainText()::serialize).collect(java.util.stream.Collectors.joining(" | "));
+        require(!result.contains("potatominigames."),"Item metadata contains resolved text rather than custom translation keys");
+        return result;
+    }
+    private void restored(FakePlayer player){
+        close(player.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),player.originalHealth,"Original max health restored");
+        close(player.walkSpeed,player.originalWalk,"Original walk speed restored");
+        close(player.flySpeed,player.originalFly,"Original fly speed restored");
+    }
+    private static Object zero(Class<?> type){
+        if(type==boolean.class)return false;if(type==int.class)return 0;if(type==long.class)return 0L;
+        if(type==float.class)return 0f;if(type==double.class)return 0d;return null;
+    }
+    private final class FakePlayer {
+        final UUID id=UUID.randomUUID(); final String name;
+        final ArmorStand attribute;
+        final double originalHealth;final float originalWalk,originalFly;
+        final Inventory storage=Bukkit.createInventory(null,54);
+        final Inventory fallback=Bukkit.createInventory(null,9);
+        final Map<PotionEffectType,PotionEffect> effects=new HashMap<>();
+        final PlayerInventory inventory;
+        final InventoryView view;
+        final Player player;
+        Inventory top=fallback;Locale locale=Locale.ENGLISH;
+        Location location;GameMode mode=GameMode.SURVIVAL;float walkSpeed,flySpeed;int held;
+        ItemStack offhand=new ItemStack(Material.AIR),chest;
+        Scoreboard scoreboard=Bukkit.getScoreboardManager().getMainScoreboard();
+        FakePlayer(String name,World world,double originalHealth,float originalWalk,float originalFly){
+            this.name=name;this.originalHealth=originalHealth;this.originalWalk=originalWalk;this.originalFly=originalFly;
+            location=world.getSpawnLocation();walkSpeed=originalWalk;flySpeed=originalFly;
+            attribute=world.spawn(location,ArmorStand.class);attribute.setGravity(false);attribute.setInvulnerable(true);
+            attribute.getAttribute(Attribute.MAX_HEALTH).setBaseValue(originalHealth);attribute.setHealth(originalHealth);
+            inventory=(PlayerInventory)Proxy.newProxyInstance(PlayerInventory.class.getClassLoader(),new Class<?>[]{PlayerInventory.class},(o,m,a)->switch(m.getName()){
+                case "setItem"->{storage.setItem((int)a[0],(ItemStack)a[1]);yield null;}
+                case "getItem"->storage.getItem((int)a[0]);
+                case "setItemInOffHand"->{offhand=(ItemStack)a[0];yield null;}
+                case "getItemInOffHand"->offhand;
+                case "getItemInMainHand"->Optional.ofNullable(storage.getItem(held)).orElse(new ItemStack(Material.AIR));
+                case "setHeldItemSlot"->{held=(int)a[0];yield null;}
+                case "getHeldItemSlot"->held;
+                case "clear"->{storage.clear();yield null;}
+                case "setChestplate"->{chest=(ItemStack)a[0];yield null;}
+                case "getChestplate"->chest;
+                case "setArmorContents","setHelmet","setLeggings","setBoots"->null;
+                default->zero(m.getReturnType());
+            });
+            player=(Player)Proxy.newProxyInstance(Player.class.getClassLoader(),new Class<?>[]{Player.class},(o,m,a)->switch(m.getName()){
+                case "equals"->o==a[0];case "hashCode"->System.identityHashCode(o);case "toString","getName"->name;
+                case "getUniqueId"->id;case "locale"->locale;case "displayName"->Component.text(name);
+                case "getWorld"->location.getWorld();case "getLocation","getEyeLocation"->location.clone();
+                case "getInventory"->inventory;case "getGameMode"->mode;
+                case "setGameMode"->{mode=(GameMode)a[0];yield null;}
+                case "getWalkSpeed"->walkSpeed;case "getFlySpeed"->flySpeed;
+                case "setWalkSpeed"->{walkSpeed=(float)a[0];yield null;}case "setFlySpeed"->{flySpeed=(float)a[0];yield null;}
+                case "isOnline"->true;case "isDead","isSneaking"->false;
+                case "getAttribute"->attribute.getAttribute((Attribute)a[0]);case "getHealth"->attribute.getHealth();
+                case "setHealth"->{attribute.setHealth((double)a[0]);yield null;}
+                case "getActivePotionEffects"->List.copyOf(effects.values());
+                case "addPotionEffect"->{PotionEffect effect=(PotionEffect)a[0];effects.put(effect.getType(),effect);yield true;}
+                case "removePotionEffect"->{effects.remove((PotionEffectType)a[0]);yield null;}
+                case "getMaximumAir"->300;
+                case "teleport"->{location=((Location)a[0]).clone();yield true;}
+                case "getScoreboard"->scoreboard;case "setScoreboard"->{scoreboard=(Scoreboard)a[0];yield null;}
+                case "openInventory"->{top=(Inventory)a[0];yield view();}
+                case "getOpenInventory"->view();case "closeInventory"->{top=fallback;yield null;}
+                default->zero(m.getReturnType());
+            });
+            view=(InventoryView)Proxy.newProxyInstance(InventoryView.class.getClassLoader(),new Class<?>[]{InventoryView.class},(o,m,a)->switch(m.getName()){
+                case "getTopInventory"->top;case "getBottomInventory"->inventory;case "getPlayer"->player;
+                case "getType"->InventoryType.CHEST;case "getTitle","getOriginalTitle"->"Native loadout smoke";
+                case "convertSlot"->a[0];case "getSlotType"->InventoryType.SlotType.CONTAINER;
+                case "getInventory"->(int)a[0]<top.getSize()?top:inventory;
+                case "getItem"->top.getItem((int)a[0]);case "countSlots"->top.getSize()+36;
+                default->zero(m.getReturnType());
+            });
+        }
+        private InventoryView view(){return view;}
+    }
+}

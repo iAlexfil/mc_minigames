@@ -229,6 +229,39 @@ val checkI18n by tasks.registering(JavaExec::class) {
 }
 tasks.check { dependsOn(checkI18n) }
 
+val checkFinals by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.finals.FinalsStateCheck")
+}
+
+val checkFinalsArena by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.finals.FinalsArenaCheck")
+}
+tasks.check { dependsOn(checkFinals, checkFinalsArena) }
+
+val checkFinalsSession by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.finals.FinalsSessionCheck")
+}
+tasks.check { dependsOn(checkFinalsSession) }
+
+
+for ((taskName, checkClass) in mapOf(
+    "checkFinalsWeapons" to "FinalsWeaponsCheck",
+    "checkFinalsGadgets" to "FinalsGadgetsCheck",
+    "checkFinalsMaps" to "FinalsMapsCheck")) {
+    val finalsCheck = tasks.register<JavaExec>(taskName) {
+        dependsOn(checks.classesTaskName)
+        classpath = checks.runtimeClasspath
+        mainClass.set("me.petr1furious.potatominigames.games.finals.$checkClass")
+    }
+    tasks.check { dependsOn(finalsCheck) }
+}
+
 val checkMagicBattle by tasks.registering(JavaExec::class) {
     dependsOn(checks.classesTaskName)
     classpath = checks.runtimeClasspath

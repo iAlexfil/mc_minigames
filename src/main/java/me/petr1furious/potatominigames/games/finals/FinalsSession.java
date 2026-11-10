@@ -1,0 +1,1235 @@
+package me.petr1furious.potatominigames.games.finals;
+
+import com.destroystokyo.paper.event.player.PlayerJumpEvent;
+import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
+
+import me.petr1furious.potatominigames.core.command.CommandFailure;
+import me.petr1furious.potatominigames.core.game.EndReason;
+import me.petr1furious.potatominigames.core.game.GameSession;
+import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.core.team.TeamColor;
+import me.petr1furious.potatominigames.core.text.TimeFormat;
+import me.petr1furious.potatominigames.i18n.I18n;
+
+import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+
+import org.bukkit.*;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.block.Block;
+import org.bukkit.entity.*;
+import org.bukkit.event.Event;
+import org.bukkit.event.block.*;
+import org.bukkit.event.entity.*;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.*;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.LeatherArmorMeta;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
+
+import java.util.*;
+
+/** Paper adapter: the cashbox and payouts always belong to the pure match state. */
+final class FinalsSession implements GameSession {
+    private final SessionServices services;
+    private final FinalsConfig config;
+    private final FinalsMaps maps;
+    private final FinalsLoadouts loadouts;
+    private FinalsWeapons weapons;
+    private FinalsGadgets gadgets;
+    private boolean applyingCombatDamage;
+
+    private record OriginalVitals(double maxHealth, float walkSpeed, float flySpeed) {}
+
+    private final Map<UUID, OriginalVitals> originalVitals = new HashMap<>();
+    private final Map<UUID, FinalsClass> classes = new HashMap<>();
+    private final Map<UUID, Location> deathLocations = new HashMap<>();
+    private final Map<UUID, Integer> roster = new LinkedHashMap<>();
+    private final Set<UUID> connected = new LinkedHashSet<>();
+    private final Set<UUID> withdrawn = new HashSet<>();
+    private final Map<UUID, Long> respawnAt = new HashMap<>();
+    private final Map<UUID, Long> protectedUntil = new HashMap<>();
+    private final Map<UUID, Entity> ordnance = new HashMap<>();
+
+    private record Frozen(Location anchor, float walkSpeed, float flySpeed) {}
+
+    private final Map<UUID, Frozen> frozen = new HashMap<>();
+    private FinalsState state;
+    private FinalsState.Rules rules;
+    private FinalsMapArena arena;
+    private World world;
+    private BukkitTask ticker;
+    private BossBar bar;
+    private Item cashbox;
+    private Location cashboxLocation;
+    private UUID recentDropper;
+    private long pickupAfter;
+    private long tick;
+    private long countdownEnd;
+    private long missingTeamSince = -1;
+    private int respawnTicks;
+    private int protectionTicks;
+    private boolean done;
+    private boolean internalTeleport;
+    private List<Component> result = List.of();
+
+    FinalsSession(SessionServices services, FinalsConfig config) {
+        this(services, config, null, null);
+    }
+
+    FinalsSession(
+            SessionServices services,
+            FinalsConfig config,
+            FinalsMaps maps,
+            FinalsLoadouts loadouts) {
+        this.services = services;
+        this.config = config;
+        this.maps = maps;
+        this.loadouts = loadouts;
+    }
+
+    void loadoutChanged(Player player) {
+        if (!running() || !connected.contains(player.getUniqueId())) return;
+        if (state == null) spawn(player);
+        else player.sendMessage(text("loadout.next_spawn"));
+    }
+
+    private FinalsCombatContext combatContext() {
+        return new FinalsCombatContext() {
+            public org.bukkit.plugin.java.JavaPlugin plugin() {
+                return services.plugin();
+            }
+
+            public World world() {
+                return world;
+            }
+
+            public long tick() {
+                return tick;
+            }
+
+            public Collection<Player> players() {
+                return connected.stream().map(Bukkit::getPlayer).filter(Objects::nonNull).toList();
+            }
+
+            public boolean active(Player player) {
+                return fighting(player);
+            }
+
+            public boolean canAct(Player player) {
+                return canObjective(player)
+                        && !state.stealDeadlines().containsKey(player.getUniqueId())
+                        && (loadouts == null || !FinalsLoadouts.viewing(player));
+            }
+
+            public boolean friendly(Player a, Player b) {
+                return arePlayersFriendly(a, b);
+            }
+
+            public boolean inside(Location location) {
+                return arena != null && arena.contains(location);
+            }
+
+            public boolean canPlace(Block block) {
+                if (block == null) return false;
+                Location center = block.getLocation().add(.5, .5, .5);
+                if (!inside(center)) return false;
+                for (Location objective :
+                        List.of(arena.vault(), arena.station(0), arena.station(1))) {
+                    if (center.distanceSquared(objective.clone().add(0, .5, 0)) <= 9) return false;
+                }
+                for (UUID id : roster.keySet()) {
+                    Location spawn = arena.spawn(roster.get(id), spawnIndex(id));
+                    double dx = center.getX() - spawn.getX(), dz = center.getZ() - spawn.getZ();
+                    // Keep a two-block approach radius and the complete standing/jumping
+                    // headroom clear even while this roster member is dead or disconnected.
+                    if (dx * dx + dz * dz <= 4
+                            && center.getY() >= spawn.getY() - 1
+                            && center.getY() <= spawn.getY() + 3) return false;
+                }
+                return true;
+            }
+
+            public boolean destructible(Block block) {
+                return arena != null
+                        && (arena.isCover(block)
+                                || (gadgets != null && gadgets.isTemporaryCover(block)));
+            }
+
+            public void breakBlock(Block block) {
+                if (!destructible(block)) return;
+                if (gadgets == null || !gadgets.breakTemporary(block))
+                    block.setType(Material.AIR, false);
+            }
+
+            public void track(Entity entity) {
+                ordnance.put(entity.getUniqueId(), entity);
+            }
+
+            public void damage(Player target, Player source, double amount) {
+                if (amount <= 0
+                        || !fighting(target)
+                        || !fighting(source)
+                        || protectedSpawn(target)
+                        || protectedSpawn(source)
+                        || (!target.equals(source) && arePlayersFriendly(source, target))) return;
+                boolean previous = applyingCombatDamage;
+                applyingCombatDamage = true;
+                try {
+                    target.setNoDamageTicks(0);
+                    target.damage(amount, source);
+                } finally {
+                    applyingCombatDamage = previous;
+                }
+            }
+
+            public void reveal(Player player) {
+                if (gadgets != null) gadgets.reveal(player);
+            }
+
+            public boolean awaitingRespawn(Player player) {
+                return running()
+                        && connected.contains(player.getUniqueId())
+                        && respawnAt.containsKey(player.getUniqueId());
+            }
+
+            public Location deathLocation(UUID id) {
+                Location location = deathLocations.get(id);
+                return location == null ? null : location.clone();
+            }
+
+            public boolean revive(Player teammate, Player reviver) {
+                Location location = deathLocation(teammate.getUniqueId());
+                if (!canAct(reviver)
+                        || !awaitingRespawn(teammate)
+                        || !friendly(teammate, reviver)
+                        || location == null
+                        || !near(reviver, location, 4)) return false;
+                spawn(teammate);
+                if (inside(location)
+                        && location.getBlock().isPassable()
+                        && location.clone().add(0, 1, 0).getBlock().isPassable())
+                    teleport(teammate, location);
+                teammate.sendMessage(text("revived", reviver.displayName()));
+                return true;
+            }
+
+            public boolean carrier(Player player) {
+                return state != null && player.getUniqueId().equals(state.carrier());
+            }
+
+            public FinalsClass playerClass(Player player) {
+                return classes.getOrDefault(player.getUniqueId(), FinalsClass.MEDIUM);
+            }
+        };
+    }
+
+    private void rememberVitals(Player player) {
+        originalVitals.computeIfAbsent(
+                player.getUniqueId(),
+                id ->
+                        new OriginalVitals(
+                                player.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),
+                                player.getWalkSpeed(),
+                                player.getFlySpeed()));
+    }
+
+    private void restoreVitals(Player player) {
+        release(player);
+        OriginalVitals previous = originalVitals.remove(player.getUniqueId());
+        if (previous == null) return;
+        var health = player.getAttribute(Attribute.MAX_HEALTH);
+        health.setBaseValue(previous.maxHealth());
+        if (!player.isDead() && player.getHealth() > health.getValue())
+            player.setHealth(health.getValue());
+        player.setWalkSpeed(previous.walkSpeed());
+        player.setFlySpeed(previous.flySpeed());
+        classes.remove(player.getUniqueId());
+    }
+
+    private void restoreAllVitals() {
+        for (UUID id : List.copyOf(originalVitals.keySet())) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) restoreVitals(player);
+        }
+        originalVitals.clear();
+        classes.clear();
+    }
+
+    private static Component text(String key, Object... args) {
+        return I18n.tr("finals." + key, args);
+    }
+
+    private static TeamColor color(int team) {
+        return team == 0 ? TeamColor.RED : TeamColor.BLUE;
+    }
+
+    private static Component teamName(int team) {
+        return color(team).displayNameComponent();
+    }
+
+    @Override
+    public void onStart() throws CommandFailure {
+        try {
+            start();
+        } catch (CommandFailure | RuntimeException error) {
+            releaseAll();
+            if (weapons != null) weapons.clear();
+            if (gadgets != null) gadgets.clear();
+            restoreAllVitals();
+            throw error;
+        }
+    }
+
+    private void start() throws CommandFailure {
+        var participants = new ArrayList<>(services.participants().all());
+        if (participants.isEmpty() || participants.size() > 12)
+            throw new CommandFailure(text("players_required"));
+        // Preserve valid preferences where possible, but never start with an empty opposing team.
+        int[] sizes = new int[2];
+        int capacity = (participants.size() + 1) / 2;
+        for (var participant : participants) {
+            int preferred = participant.team() == TeamColor.BLUE ? 1 : 0;
+            int team = sizes[preferred] < capacity ? preferred : 1 - preferred;
+            sizes[team]++;
+            roster.put(participant.id(), team);
+            connected.add(participant.id());
+            participant.setTeam(color(team));
+        }
+        countdownEnd = Math.clamp(config.countdownSeconds.get(), 3, 15) * 20L;
+        respawnTicks = Math.clamp(config.respawnSeconds.get(), 3, 15) * 20;
+        protectionTicks = Math.clamp(config.protectionSeconds.get(), 1, 5) * 20;
+        int value = Math.clamp(config.cashoutValue.get(), 100, 1000000);
+        rules =
+                new FinalsState.Rules(
+                        Math.clamp(config.vaultOpenSeconds.get(), 1, 30) * 20L,
+                        Math.clamp(config.cashoutSeconds.get(), 10, 120) * 20L,
+                        Math.clamp(config.stealSeconds.get(), 2, 15) * 20L,
+                        Math.clamp(config.durationSeconds.get(), 60, 1800) * 20L,
+                        value,
+                        Math.clamp(config.targetScore.get(), value, 10000000));
+        arena =
+                maps == null
+                        ? new FinalsArena(services.worlds().createVoid("finals"))
+                        : maps.open(services, services.option("map"));
+        world = arena.world();
+        services.arena().applyStandardGameRules(world);
+        world.setDifficulty(Difficulty.NORMAL);
+        world.setTime(6000);
+        world.setStorm(false);
+        world.setGameRule(GameRules.PVP, true);
+        world.setGameRule(GameRules.IMMEDIATE_RESPAWN, false);
+        world.setGameRule(GameRules.ADVANCE_TIME, false);
+        world.setGameRule(GameRules.ADVANCE_WEATHER, false);
+        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, true);
+        world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
+        arena.build();
+        FinalsCombatContext combat = combatContext();
+        weapons = new FinalsWeapons(combat);
+        gadgets = new FinalsGadgets(combat);
+        for (int station = 0; station < 2; station++) {
+            TextDisplay label = world.spawn(arena.station(station).add(0, 2, 0), TextDisplay.class);
+            label.text(Component.text(station == 0 ? "A" : "B", NamedTextColor.GOLD));
+            label.setBillboard(Display.Billboard.CENTER);
+            label.setShadowed(true);
+        }
+        services.arena()
+                .applyBorder(world, arena.center(), arena.borderSize(), arena.borderSize(), 0);
+        bar =
+                services.bossBars()
+                        .create(text("name"), BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+        for (Player player : services.participants().onlinePlayers()) spawn(player);
+        services.messages()
+                .broadcast(
+                        text(
+                                "rules",
+                                value,
+                                rules.targetScore(),
+                                rules.cashoutTicks() / 20,
+                                rules.stealTicks() / 20));
+        services.messages().broadcast(text("controls"));
+        if (services.isTest()) services.messages().broadcast(text("practice"));
+        updateHud();
+        // Last startup operation: core's failed-start cleanup does not invoke onEnd.
+        ticker = Bukkit.getScheduler().runTaskTimer(services.plugin(), this::tick, 1, 1);
+    }
+
+    private boolean running() {
+        return !done && services.session().isRunning();
+    }
+
+    private boolean active(Player player) {
+        return running()
+                && connected.contains(player.getUniqueId())
+                && !withdrawn.contains(player.getUniqueId())
+                && !respawnAt.containsKey(player.getUniqueId())
+                && !player.isDead()
+                && player.getGameMode() == GameMode.SURVIVAL
+                && player.getWorld().equals(world);
+    }
+
+    private boolean fighting(Player player) {
+        return state != null && !state.isFinished() && active(player);
+    }
+
+    private boolean protectedSpawn(Player player) {
+        return tick < protectedUntil.getOrDefault(player.getUniqueId(), 0L);
+    }
+
+    private boolean canObjective(Player player) {
+        return fighting(player) && !protectedSpawn(player);
+    }
+
+    private boolean near(Player player, Location location, double distance) {
+        return location != null
+                && player.getWorld().equals(location.getWorld())
+                && player.getLocation().distanceSquared(location) <= distance * distance;
+    }
+
+    private void teleport(Player player, Location target) {
+        internalTeleport = true;
+        try {
+            player.teleport(target);
+        } finally {
+            internalTeleport = false;
+        }
+    }
+
+    private void forceRespawn(Player player) {
+        internalTeleport = true;
+        try {
+            if (player.isDead()) player.spigot().respawn();
+        } finally {
+            internalTeleport = false;
+        }
+    }
+
+    private int spawnIndex(UUID id) {
+        int index = 0;
+        for (UUID other : roster.keySet()) {
+            if (other.equals(id)) return index;
+            if (roster.get(other).equals(roster.get(id))) index++;
+        }
+        return index;
+    }
+
+    private void spawn(Player player) {
+        UUID id = player.getUniqueId();
+        forceRespawn(player);
+        release(player);
+        rememberVitals(player);
+        FinalsLoadouts.Choice choice =
+                loadouts == null ? FinalsLoadouts.Choice.defaults() : loadouts.choice(id);
+        classes.put(id, choice.playerClass());
+        player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(choice.playerClass().health());
+        player.setWalkSpeed(choice.playerClass().walkSpeed());
+        if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
+        services.playerState().resetForRound(player, GameMode.SURVIVAL);
+        player.setHealth(
+                Math.min(
+                        choice.playerClass().health(),
+                        player.getAttribute(Attribute.MAX_HEALTH).getValue()));
+        player.setAbsorptionAmount(0);
+        player.setNoDamageTicks(0);
+        player.setGlowing(false);
+        player.setSaturation(20);
+        respawnAt.remove(id);
+        deathLocations.remove(id);
+        protectedUntil.put(id, Math.max(tick, countdownEnd) + protectionTicks);
+        var inventory = player.getInventory();
+        weapons.equip(player, choice.weapon());
+        gadgets.equip(player, choice.playerClass());
+        ItemStack pickaxe = gear(Material.IRON_PICKAXE);
+        pickaxe.editMeta(meta -> meta.displayName(text("item.pickaxe")));
+        inventory.setItem(7, I18n.item(pickaxe, player));
+        if (loadouts != null) inventory.setItem(8, loadouts.button(player));
+        for (Material material :
+                List.of(
+                        Material.LEATHER_HELMET,
+                        Material.LEATHER_CHESTPLATE,
+                        Material.LEATHER_LEGGINGS,
+                        Material.LEATHER_BOOTS)) {
+            ItemStack armor = gear(material);
+            LeatherArmorMeta meta = (LeatherArmorMeta) armor.getItemMeta();
+            meta.setColor(roster.get(id) == 0 ? Color.RED : Color.BLUE);
+            armor.setItemMeta(meta);
+            switch (material) {
+                case LEATHER_HELMET -> inventory.setHelmet(armor);
+                case LEATHER_CHESTPLATE -> inventory.setChestplate(armor);
+                case LEATHER_LEGGINGS -> inventory.setLeggings(armor);
+                case LEATHER_BOOTS -> inventory.setBoots(armor);
+                default -> {}
+            }
+        }
+        inventory.setHeldItemSlot(0);
+        teleport(player, arena.spawn(roster.get(id), spawnIndex(id)));
+        if (state == null) freeze(player);
+        services.sidebar().setNameColor(player, color(roster.get(id)));
+        player.showBossBar(bar);
+    }
+
+    private static ItemStack gear(Material material) {
+        ItemStack item = new ItemStack(material);
+        item.editMeta(meta -> meta.setUnbreakable(true));
+        return item;
+    }
+
+    private ItemStack cashboxItem(Player viewer) {
+        ItemStack item = new ItemStack(Material.GOLD_BLOCK);
+        item.editMeta(meta -> {
+            meta.displayName(text("item.cashbox"));
+            meta.lore(List.of(text("item.cashbox_lore")));
+        });
+        return viewer == null ? item : I18n.item(item, viewer);
+    }
+
+    private void carryVisual(Player player, boolean carrying) {
+        if (carrying && gadgets != null) gadgets.reveal(player);
+        player.setGlowing(carrying || (gadgets != null && gadgets.isSonarRevealed(player)));
+        player.getInventory()
+                .setItemInOffHand(carrying ? cashboxItem(player) : new ItemStack(Material.AIR));
+        if (carrying)
+            player.addPotionEffect(
+                    new PotionEffect(
+                            PotionEffectType.SLOWNESS, Integer.MAX_VALUE, 0, false, false));
+        else player.removePotionEffect(PotionEffectType.SLOWNESS);
+    }
+
+    private void removeCashbox() {
+        if (cashbox != null) cashbox.remove();
+        cashbox = null;
+    }
+
+    private void ensureCashbox() {
+        if (state.phase() != FinalsState.Phase.CASHBOX_AVAILABLE) {
+            removeCashbox();
+            return;
+        }
+        if (cashbox != null && cashbox.isValid()) {
+            cashboxLocation = cashbox.getLocation();
+            if (!arena.contains(cashboxLocation)) {
+                removeCashbox();
+                cashboxLocation = null;
+            }
+        }
+        if (cashboxLocation == null || !arena.contains(cashboxLocation))
+            cashboxLocation = arena.vault().add(0, 1, 0);
+        if (cashbox == null || !cashbox.isValid()) {
+            cashbox = world.dropItem(cashboxLocation, cashboxItem(null));
+            cashbox.setVelocity(new Vector());
+            cashbox.setGravity(true);
+            cashbox.setInvulnerable(true);
+            cashbox.setGlowing(true);
+            cashbox.setCanPlayerPickup(false);
+            cashbox.setCanMobPickup(false);
+            cashbox.setUnlimitedLifetime(true);
+        }
+        for (UUID id : connected) {
+            Player player = Bukkit.getPlayer(id);
+            if (player == null
+                    || !canObjective(player)
+                    || (id.equals(recentDropper) && tick < pickupAfter)) continue;
+            if (near(player, cashboxLocation, 1.8) && state.pickUp(id, tick)) {
+                removeCashbox();
+                carryVisual(player, true);
+                services.messages()
+                        .broadcast(
+                                text("picked_up", player.displayName(), teamName(roster.get(id))));
+                break;
+            }
+        }
+    }
+
+    private void dropCashbox(Player player) {
+        if (state == null || !player.getUniqueId().equals(state.carrier())) return;
+        if (state.drop(player.getUniqueId(), tick)) {
+            cashboxLocation =
+                    arena.contains(player.getLocation())
+                            ? player.getLocation().add(0, .4, 0)
+                            : arena.vault().add(0, 1, 0);
+            recentDropper = player.getUniqueId();
+            pickupAfter = tick + 20;
+            carryVisual(player, false);
+            services.messages().broadcast(text("dropped", player.displayName()));
+        }
+    }
+
+    private void tick() {
+        if (!running()) return;
+        tick++;
+        if (connected.isEmpty()) {
+            services.session().endGame(EndReason.ALL_PLAYERS_LEFT);
+            return;
+        }
+        if (state == null && tick >= countdownEnd) {
+            releaseAll();
+            state = new FinalsState(roster, tick, rules);
+            for (UUID id : roster.keySet()) {
+                if (withdrawn.contains(id)) state.withdraw(id, tick);
+                else if (!connected.contains(id)) state.disconnect(id, tick);
+            }
+            services.messages().broadcast(text("go"));
+            services.messages()
+                    .playSound(
+                            services.participants().onlinePlayers(),
+                            Sound.BLOCK_NOTE_BLOCK_PLING,
+                            1,
+                            1.6f);
+        }
+        if (state == null) {
+            if (tick % 20 == 0) updateHud();
+            return;
+        }
+        int beforeRed = state.score(0), beforeBlue = state.score(1);
+        FinalsState.Phase before = state.phase();
+        state.tick(tick);
+        if (before == FinalsState.Phase.VAULT_OPENING
+                && state.phase() == FinalsState.Phase.CASHBOX_AVAILABLE) {
+            cashboxLocation = arena.vault().add(0, 1, 0);
+            services.messages().broadcast(text("vault_open"));
+        }
+        for (int team = 0; team < 2; team++) {
+            if (state.score(team) > (team == 0 ? beforeRed : beforeBlue)) {
+                cashboxLocation = null;
+                services.messages()
+                        .broadcast(
+                                text(
+                                        "paid",
+                                        teamName(team),
+                                        rules.cashoutValue(),
+                                        state.score(team)));
+            }
+        }
+        if (state.isFinished()) {
+            finish();
+            return;
+        }
+        for (UUID id : List.copyOf(respawnAt.keySet())) {
+            Player player = Bukkit.getPlayer(id);
+            if (player == null || !connected.contains(id)) continue;
+            if (tick >= respawnAt.get(id)) spawn(player);
+            else if (!player.isDead() && player.getGameMode() != GameMode.SPECTATOR)
+                waitForRespawn(player);
+        }
+        for (UUID id : List.copyOf(state.stealDeadlines().keySet())) {
+            Player player = Bukkit.getPlayer(id);
+            if (player == null
+                    || !canObjective(player)
+                    || !player.isSneaking()
+                    || state.station() < 0
+                    || !near(player, arena.station(state.station()), 3)) {
+                if (player == null) state.cancelSteal(id);
+                else interruptSteal(player);
+            } else if (state.completeSteal(id, tick)) {
+                services.messages().broadcast(text("stolen", teamName(roster.get(id))));
+            }
+        }
+        if (weapons != null) weapons.tick();
+        if (gadgets != null) gadgets.tick();
+        ensureCashbox();
+        if (tick % 5 == 0) updateActionBars();
+        if (!services.isTest()) {
+            boolean both =
+                    connected.stream().anyMatch(id -> roster.get(id) == 0)
+                            && connected.stream().anyMatch(id -> roster.get(id) == 1);
+            if (both) missingTeamSince = -1;
+            else if (missingTeamSince < 0) {
+                missingTeamSince = tick;
+                services.messages().broadcast(text("reconnect_grace"));
+            } else if (tick - missingTeamSince >= 300) {
+                services.session().endGame(EndReason.ALL_PLAYERS_LEFT);
+                return;
+            }
+        }
+        if (tick % 20 == 0) {
+            ordnance.values()
+                    .removeIf(entity -> {
+                        if (!entity.isValid()) return true;
+                        if (entity instanceof Projectile && entity.getTicksLived() > 200) {
+                            entity.remove();
+                            return true;
+                        }
+                        return false;
+                    });
+            updateHud();
+        }
+    }
+
+    private void waitForRespawn(Player player) {
+        if (player.isDead()) return;
+        services.playerState().resetForRound(player, GameMode.SPECTATOR);
+        services.playerState().makeSpectator(player, respawnTicks / 20 + 1);
+        teleport(player, arena.center().add(0, 10, 0));
+        freeze(player);
+    }
+
+    private void freeze(Player player) {
+        frozen.computeIfAbsent(
+                player.getUniqueId(),
+                id ->
+                        new Frozen(
+                                player.getLocation().clone(),
+                                player.getWalkSpeed(),
+                                player.getFlySpeed()));
+        player.setWalkSpeed(0);
+        player.setFlySpeed(0);
+        player.setVelocity(new Vector());
+    }
+
+    private void release(Player player) {
+        Frozen previous = frozen.remove(player.getUniqueId());
+        if (previous != null) {
+            player.setWalkSpeed(previous.walkSpeed());
+            player.setFlySpeed(previous.flySpeed());
+        }
+    }
+
+    private void releaseAll() {
+        for (UUID id : List.copyOf(frozen.keySet())) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) release(player);
+        }
+        frozen.clear();
+    }
+
+    private void finish() {
+        result =
+                List.of(
+                        state.isDraw()
+                                ? text("draw")
+                                : text("winner", teamName(state.winningTeams().iterator().next())),
+                        text("score", teamName(0), state.score(0)),
+                        text("score", teamName(1), state.score(1)));
+        services.session().endGame(EndReason.FINISHED);
+    }
+
+    @Override
+    public void onEnd(EndReason reason) {
+        if (done) return;
+        done = true;
+        if (ticker != null) ticker.cancel();
+        releaseAll();
+        if (weapons != null) weapons.clear();
+        if (gadgets != null) gadgets.clear();
+        restoreAllVitals();
+        if (loadouts != null)
+            for (UUID id : connected) {
+                Player viewer = Bukkit.getPlayer(id);
+                if (viewer != null && FinalsLoadouts.viewing(viewer)) viewer.closeInventory();
+            }
+        removeCashbox();
+        for (Entity entity : ordnance.values()) entity.remove();
+        ordnance.clear();
+        if (reason == EndReason.FINISHED && state != null && state.isFinished())
+            for (UUID id : state.winners()) services.award("finals", id, 3);
+        for (UUID id : connected) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) carryVisual(player, false);
+        }
+        respawnAt.clear();
+        deathLocations.clear();
+        protectedUntil.clear();
+    }
+
+    @Override
+    public List<Component> summary() {
+        return result;
+    }
+
+    @Override
+    public Component globalResult() {
+        return result.isEmpty() ? null : text("global_result", result.getFirst());
+    }
+
+    private void updateHud() {
+        if (done || bar == null) return;
+        long remaining =
+                Math.max(
+                        0,
+                        ((state == null ? countdownEnd : state.matchDeadline()) - tick + 19) / 20);
+        bar.name(
+                state == null
+                        ? text("countdown", remaining)
+                        : text("timer", TimeFormat.clock(remaining)));
+        bar.progress(
+                Math.clamp(
+                        (float) remaining
+                                * 20
+                                / (state == null ? countdownEnd : rules.matchTicks()),
+                        0,
+                        1));
+        if (state != null && state.phase() == FinalsState.Phase.CASHOUT) {
+            bar.name(
+                    text(
+                            "cashout_bar",
+                            state.station() == 0 ? "A" : "B",
+                            teamName(state.ownerTeam()),
+                            Math.max(0, (state.phaseDeadline() - tick + 19) / 20)));
+            bar.progress(
+                    Math.clamp(
+                            (float) (state.phaseDeadline() - tick) / rules.cashoutTicks(), 0, 1));
+            bar.color(state.ownerTeam() == 0 ? BossBar.Color.RED : BossBar.Color.BLUE);
+        } else bar.color(BossBar.Color.YELLOW);
+        for (UUID id : connected) {
+            Player player = Bukkit.getPlayer(id);
+            if (player == null) continue;
+            List<Component> lines = new ArrayList<>();
+            lines.add(text("your_team", teamName(roster.get(id))));
+            for (int team = 0; team < 2; team++)
+                lines.add(text("score", teamName(team), state == null ? 0 : state.score(team)));
+            lines.add(text("target", rules.targetScore()));
+            lines.add(text("match_time", TimeFormat.clock(remaining)));
+            lines.add(
+                    text(
+                            "loadout.current",
+                            classes.getOrDefault(id, FinalsClass.MEDIUM).display()));
+            if (state != null) {
+                lines.add(text("phase." + state.phase().name().toLowerCase(Locale.ROOT)));
+                if (state.phaseDeadline() >= 0)
+                    lines.add(
+                            text(
+                                    "objective_timer",
+                                    Math.max(0, (state.phaseDeadline() - tick + 19) / 20)));
+                if (state.station() >= 0)
+                    lines.add(
+                            text(
+                                    "station_owner",
+                                    state.station() == 0 ? "A" : "B",
+                                    teamName(state.ownerTeam())));
+                Location target =
+                        state.phase() == FinalsState.Phase.CARRIED
+                                ? arena.station(0)
+                                : state.phase() == FinalsState.Phase.CASHOUT
+                                        ? arena.station(state.station())
+                                        : state.phase() == FinalsState.Phase.CASHBOX_AVAILABLE
+                                                ? cashboxLocation
+                                                : arena.vault();
+                if (target != null && player.getWorld().equals(world)) {
+                    if (id.equals(state.carrier())
+                            && player.getLocation().distanceSquared(arena.station(1))
+                                    < player.getLocation().distanceSquared(target))
+                        target = arena.station(1);
+                    lines.add(text("distance", (int) player.getLocation().distance(target)));
+                }
+            }
+            if (respawnAt.containsKey(id))
+                lines.add(text("respawn", Math.max(0, (respawnAt.get(id) - tick + 19) / 20)));
+            else if (protectedSpawn(player)) lines.add(text("protected"));
+            services.sidebar().update(player, text("name"), lines);
+            player.showBossBar(bar);
+        }
+    }
+
+    private void interruptSteal(Player player) {
+        if (state != null && state.cancelSteal(player.getUniqueId()))
+            player.sendMessage(text("steal_cancelled"));
+    }
+
+    private void updateActionBars() {
+        if (state == null) return;
+        for (UUID id : connected) {
+            Player player = Bukkit.getPlayer(id);
+            if (player == null) continue;
+            Component status;
+            Long deadline = state.stealDeadlines().get(id);
+            if (respawnAt.containsKey(id))
+                status = text("respawn", Math.max(0, (respawnAt.get(id) - tick + 19) / 20));
+            else if (deadline != null) {
+                int progress =
+                        (int)
+                                Math.clamp(
+                                        (rules.stealTicks() - Math.max(0, deadline - tick))
+                                                * 10
+                                                / rules.stealTicks(),
+                                        0,
+                                        10);
+                status =
+                        text(
+                                "steal_progress",
+                                "▰".repeat(progress) + "▱".repeat(10 - progress),
+                                Math.max(0, (deadline - tick + 19) / 20));
+            } else if (protectedSpawn(player)) status = text("protected");
+            else if (id.equals(state.carrier())) status = text("carrying");
+            else if (weapons != null && player.getInventory().getHeldItemSlot() == 0)
+                status = weapons.hud(player);
+            else if (gadgets != null
+                    && player.getInventory().getHeldItemSlot() >= 1
+                    && player.getInventory().getHeldItemSlot() <= 4) status = gadgets.hud(player);
+            else status = text("loadout.quick_controls");
+            player.sendActionBar(status);
+        }
+    }
+
+    @Override
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        if (loadouts != null
+                && running()
+                && connected.contains(player.getUniqueId())
+                && event.getHand() == EquipmentSlot.HAND
+                && player.getInventory().getHeldItemSlot() == 8
+                && (event.getAction() == Action.RIGHT_CLICK_AIR
+                        || event.getAction() == Action.RIGHT_CLICK_BLOCK)) {
+            event.setCancelled(true);
+            if (weapons != null) weapons.stopFiring(player.getUniqueId());
+            loadouts.open(player);
+            return;
+        }
+        if (!fighting(player)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.getHand() != EquipmentSlot.HAND) {
+            event.setCancelled(true);
+            return;
+        }
+        var block = event.getClickedBlock();
+        if (block != null) event.setUseInteractedBlock(Event.Result.DENY);
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK
+                && event.getAction() != Action.RIGHT_CLICK_AIR) {
+            if (weapons != null) weapons.interact(event);
+            return;
+        }
+        UUID id = player.getUniqueId();
+        if (block != null && (arena.isVault(block) || arena.stationAt(block) >= 0)) {
+            event.setCancelled(true);
+            if (!canObjective(player) || !near(player, block.getLocation().add(.5, .5, .5), 4))
+                return;
+            if (arena.isVault(block) && state.activateVault(id, tick))
+                services.messages().broadcast(text("vault_opening"));
+            int station = arena.stationAt(block);
+            if (station >= 0 && state.deposit(id, station, tick)) {
+                carryVisual(player, false);
+                services.messages()
+                        .broadcast(
+                                text(
+                                        "deposited",
+                                        teamName(roster.get(id)),
+                                        station == 0 ? "A" : "B"));
+            } else if (station == state.station()
+                    && station >= 0
+                    && player.isSneaking()
+                    && near(player, arena.station(station), 3)
+                    && state.beginSteal(id, tick)) {
+                if (weapons != null) weapons.stopFiring(id);
+                if (gadgets != null) gadgets.reveal(player);
+                player.sendMessage(text("steal_started"));
+            } else if (station >= 0
+                    && station == state.station()
+                    && state.ownerTeam() != roster.get(id)) {
+                player.sendMessage(text("steal_hint"));
+            }
+            updateHud();
+            return;
+        }
+        if (gadgets != null && gadgets.interact(event)) return;
+        if (weapons != null) weapons.interact(event);
+    }
+
+    private Player attacker(Entity entity) {
+        if (entity instanceof Player player) return player;
+        if (entity instanceof Projectile projectile
+                && projectile.getShooter() instanceof Player player) return player;
+        if (entity instanceof TNTPrimed tnt && tnt.getSource() instanceof Player player)
+            return player;
+        return null;
+    }
+
+    @Override
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        Player source = attacker(event.getDamager());
+        if (!(event.getEntity() instanceof Player victim)) {
+            if (source != null) event.setCancelled(true);
+            return;
+        }
+        if (!fighting(victim)
+                || protectedSpawn(victim)
+                || source == null
+                || !fighting(source)
+                || protectedSpawn(source)
+                || (arePlayersFriendly(source, victim)
+                        && !(applyingCombatDamage && source.equals(victim)))) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!applyingCombatDamage && event.getDamager() instanceof Player && weapons != null) {
+            weapons.melee(event);
+            return;
+        }
+        if (event.isCancelled()) return;
+        if (gadgets != null && gadgets.blocksDamage(victim, source)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (weapons != null)
+            event.setDamage(event.getDamage() * weapons.incomingMultiplier(victim, source));
+        if (event.getFinalDamage() > 0) {
+            interruptSteal(victim);
+            if (gadgets != null) gadgets.reveal(victim);
+        }
+    }
+
+    @Override
+    public void onEntityDamage(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!fighting(player) || protectedSpawn(player)) {
+            event.setCancelled(true);
+            return;
+        }
+        // Entity damage is validated by the higher-priority hook before interrupting a steal.
+        if (!(event instanceof EntityDamageByEntityEvent)
+                && !event.isCancelled()
+                && event.getFinalDamage() > 0) interruptSteal(player);
+    }
+
+    @Override
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        Player player = event.getPlayer();
+        UUID id = player.getUniqueId();
+        if (!running() || !connected.contains(id) || respawnAt.containsKey(id)) return;
+        event.deathMessage(null);
+        event.getDrops().clear();
+        event.setDroppedExp(0);
+        event.setKeepInventory(true);
+        event.setKeepLevel(true);
+        dropCashbox(player);
+        if (state != null) state.death(id, tick);
+        deathLocations.put(id, player.getLocation().clone());
+        if (weapons != null) weapons.forget(id);
+        if (gadgets != null) gadgets.forget(id);
+        clearOrdnance(id);
+        respawnAt.put(id, tick + respawnTicks);
+        player.sendMessage(text("respawn", respawnTicks / 20));
+    }
+
+    @Override
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        if (running() && connected.contains(event.getPlayer().getUniqueId()))
+            event.setRespawnLocation(arena.center().add(0, 10, 0));
+    }
+
+    @Override
+    public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
+        if (running() && respawnAt.containsKey(event.getPlayer().getUniqueId()))
+            waitForRespawn(event.getPlayer());
+    }
+
+    private void clearOrdnance(UUID owner) {
+        ordnance.values()
+                .removeIf(entity -> {
+                    Player source = attacker(entity);
+                    if (source != null && source.getUniqueId().equals(owner)) {
+                        entity.remove();
+                        return true;
+                    }
+                    return !entity.isValid();
+                });
+    }
+
+    @Override
+    public void onEntityShootBow(EntityShootBowEvent event) {
+        if (event.getEntity() instanceof Player player
+                && (!fighting(player) || protectedSpawn(player))) event.setCancelled(true);
+    }
+
+    @Override
+    public void onProjectileLaunch(ProjectileLaunchEvent event) {
+        if (event.getEntity().getShooter() instanceof Player player) {
+            if (!fighting(player) || protectedSpawn(player)) event.setCancelled(true);
+            else ordnance.put(event.getEntity().getUniqueId(), event.getEntity());
+        }
+    }
+
+    @Override
+    public void onBlockBreak(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+        boolean pickaxe = player.getInventory().getHeldItemSlot() == 7;
+        boolean temporary = gadgets != null && gadgets.isTemporaryCover(event.getBlock());
+        if (!canObjective(player) || !pickaxe || (!arena.isCover(event.getBlock()) && !temporary))
+            event.setCancelled(true);
+        else if (temporary) {
+            event.setCancelled(true);
+            gadgets.breakTemporary(event.getBlock());
+        }
+        event.setDropItems(false);
+        event.setExpToDrop(0);
+    }
+
+    @Override
+    public void onBlockPlace(BlockPlaceEvent event) {
+        event.setCancelled(true);
+    }
+
+    @Override
+    public void onEntityExplode(EntityExplodeEvent event) {
+        if (!running() || state == null || !ordnance.containsKey(event.getEntity().getUniqueId()))
+            event.blockList().clear();
+        else event.blockList().removeIf(block -> !arena.isCover(block));
+        event.setYield(0);
+    }
+
+    @Override
+    public void onBlockExplode(BlockExplodeEvent event) {
+        event.blockList().clear();
+    }
+
+    @Override
+    public void onDropItem(PlayerDropItemEvent event) {
+        event.setCancelled(true);
+        if (fighting(event.getPlayer())) dropCashbox(event.getPlayer());
+    }
+
+    @Override
+    public void onPickupItem(EntityPickupItemEvent event) {
+        event.setCancelled(true);
+    }
+
+    @Override
+    public void onSwapHandItems(PlayerSwapHandItemsEvent event) {
+        event.setCancelled(true);
+        if (weapons != null && fighting(event.getPlayer())) weapons.reload(event.getPlayer());
+    }
+
+    @Override
+    public void onItemHeld(PlayerItemHeldEvent event) {
+        if (weapons != null) weapons.stopFiring(event.getPlayer().getUniqueId());
+    }
+
+    @Override
+    public void onInventoryClick(InventoryClickEvent event) {
+        event.setCancelled(true);
+    }
+
+    @Override
+    public void onInventoryDrag(InventoryDragEvent event) {
+        event.setCancelled(true);
+    }
+
+    @Override
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        if (!FinalsLoadouts.isMenu(event.getInventory())) event.setCancelled(true);
+        else if (weapons != null) weapons.stopFiring(event.getPlayer().getUniqueId());
+    }
+
+    @Override
+    public void onCraftItem(CraftItemEvent event) {
+        event.setCancelled(true);
+    }
+
+    @Override
+    public void onFoodLevelChange(FoodLevelChangeEvent event) {
+        event.setCancelled(true);
+    }
+
+    @Override
+    public void onPlayerMove(PlayerMoveEvent event) {
+        if (internalTeleport || !running() || !connected.contains(event.getPlayer().getUniqueId()))
+            return;
+        Frozen hold = frozen.get(event.getPlayer().getUniqueId());
+        if (hold != null) {
+            Location to = hold.anchor().clone();
+            to.setYaw(event.getTo().getYaw());
+            to.setPitch(event.getTo().getPitch());
+            event.setTo(to);
+            event.getPlayer().setVelocity(new Vector());
+        } else if (active(event.getPlayer()) && !arena.contains(event.getTo())) {
+            // Protected floor prevents accidental void deaths; escaping the bounds costs a life.
+            dropCashbox(event.getPlayer());
+            event.getPlayer().setHealth(0);
+        }
+    }
+
+    @Override
+    public void onPlayerJump(PlayerJumpEvent event) {
+        if (running() && frozen.containsKey(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+            event.getPlayer().setVelocity(new Vector());
+        }
+    }
+
+    @Override
+    public void onPlayerTeleport(PlayerTeleportEvent event) {
+        if (!internalTeleport && running() && connected.contains(event.getPlayer().getUniqueId()))
+            event.setCancelled(true);
+    }
+
+    @Override
+    public boolean arePlayersFriendly(Player first, Player second) {
+        Integer a = roster.get(first.getUniqueId()), b = roster.get(second.getUniqueId());
+        return a != null && a.equals(b);
+    }
+
+    @Override
+    public boolean isInGame(Player player) {
+        return !done && connected.contains(player.getUniqueId());
+    }
+
+    @Override
+    public boolean mayFollowPlayers(Player participant) {
+        return false;
+    }
+
+    @Override
+    public Location spectatorLocation(Player viewer) {
+        return arena == null ? null : arena.center().add(0, 12, 0);
+    }
+
+    @Override
+    public void onTeamChange(Player player, TeamColor ignored) {
+        Integer team = roster.get(player.getUniqueId());
+        if (team != null) {
+            services.participants()
+                    .find(player.getUniqueId())
+                    .ifPresent(p -> p.setTeam(color(team)));
+            player.sendMessage(text("teams_locked"));
+        }
+    }
+
+    private void disconnect(Player player, boolean permanent) {
+        UUID id = player.getUniqueId();
+        if (!roster.containsKey(id) || done) return;
+        dropCashbox(player);
+        connected.remove(id);
+        if (permanent) withdrawn.add(id);
+        if (state != null) {
+            if (permanent) state.withdraw(id, tick);
+            else state.disconnect(id, tick);
+        }
+        if (weapons != null) weapons.forget(id);
+        if (gadgets != null) gadgets.forget(id);
+        clearOrdnance(id);
+        restoreVitals(player);
+        deathLocations.remove(id);
+        respawnAt.remove(id);
+        protectedUntil.remove(id);
+        carryVisual(player, false);
+    }
+
+    @Override
+    public void onParticipantQuit(Player player) {
+        disconnect(player, false);
+    }
+
+    @Override
+    public void onParticipantLeave(Player player) {
+        disconnect(player, true);
+    }
+
+    @Override
+    public void onParticipantRejoin(Player player) {
+        UUID id = player.getUniqueId();
+        if (done || !roster.containsKey(id) || withdrawn.contains(id)) return;
+        connected.add(id);
+        if (state == null) spawn(player);
+        else {
+            state.reconnect(id, tick);
+            respawnAt.put(id, tick + respawnTicks);
+            waitForRespawn(player);
+        }
+    }
+}

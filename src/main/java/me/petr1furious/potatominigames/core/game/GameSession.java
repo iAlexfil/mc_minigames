@@ -1,43 +1,45 @@
 package me.petr1furious.potatominigames.core.game;
 
-import java.util.Collection;
-import java.util.List;
+import com.destroystokyo.paper.event.player.PlayerJumpEvent;
+import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
+
+import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
+
+import me.petr1furious.potatominigames.core.team.TeamColor;
 
 import org.bukkit.entity.Player;
-import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntityMountEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.EntityMountEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
-import org.bukkit.event.player.PlayerItemConsumeEvent;
-import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.FurnaceExtractEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
-import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
-import com.destroystokyo.paper.event.player.PlayerJumpEvent;
 
-import me.petr1furious.potatominigames.core.team.TeamColor;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * One play-through of a minigame. Only events involving its players or worlds are
@@ -76,6 +78,11 @@ public interface GameSession {
 
     /** Announce results; core restores players and HUDs afterwards. */
     default void onEnd(EndReason reason) {
+    }
+
+    /** Prefer the configured lobby over the pre-game location for the whole audience. */
+    default boolean returnToLobbyAfterGame() {
+        return false;
     }
 
     /** Null: core picks a random active player. */

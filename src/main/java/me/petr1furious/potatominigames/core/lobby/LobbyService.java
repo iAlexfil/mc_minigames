@@ -1,10 +1,16 @@
 package me.petr1furious.potatominigames.core.lobby;
 
+import me.petr1furious.potatominigames.core.command.GameCommands;
+import me.petr1furious.potatominigames.core.config.Property;
+import me.petr1furious.potatominigames.core.config.PropertyBag;
+import me.petr1furious.potatominigames.core.config.PropertyCodec;
+import me.petr1furious.potatominigames.core.player.PlayerSnapshot;
+import me.petr1furious.potatominigames.core.player.PlayerStateService;
+import me.petr1furious.potatominigames.core.session.SessionManager;
 import me.petr1furious.potatominigames.i18n.I18n;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.function.Consumer;
+
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
@@ -30,17 +36,10 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
-
-import me.petr1furious.potatominigames.core.command.GameCommands;
-import me.petr1furious.potatominigames.core.config.Property;
-import me.petr1furious.potatominigames.core.config.PropertyBag;
-import me.petr1furious.potatominigames.core.config.PropertyCodec;
-import me.petr1furious.potatominigames.core.player.PlayerSnapshot;
-import me.petr1furious.potatominigames.core.player.PlayerStateService;
-import me.petr1furious.potatominigames.core.session.SessionManager;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Lobby world and player state around queues and games.
@@ -122,7 +121,9 @@ public final class LobbyService implements Listener {
         if (spawn == null) {
             return false;
         }
-        player.teleport(spawn);
+        if (!player.teleport(spawn)) {
+            return false;
+        }
         // No world change, so the listener will not fire.
         applyLobbyState(player);
         return true;
@@ -191,15 +192,34 @@ public final class LobbyService implements Listener {
     }
 
     public void returnPlayer(Player player) {
-        Target target = targets.remove(player.getUniqueId());
-        if (target == Target.LOBBY && !isExempt(player) && sendToLobby(player)) {
+        UUID id = player.getUniqueId();
+        Target target = targets.get(id);
+        if (target == Target.LOBBY && world() != null) {
+            // A cancelled teleport must not consume the snapshot or restore its old map.
+            if (!sendToLobby(player)) {
+                return;
+            }
+            if (isExempt(player)) {
+                // Admins keep their pre-game state, but their destination is still the lobby.
+                playerState.restoreInPlace(player);
+                applyLobbyState(player);
+            }
+            targets.remove(id);
             return;
         }
+        targets.remove(id);
         if (playerState.restore(player)) {
             return;
         }
         // No snapshot left: fall back to the lobby.
         sendToLobby(player);
+    }
+
+    /** Overrides a game's original return map without losing the saved player state. */
+    public void preferLobbyReturn(UUID playerId) {
+        if (world() != null) {
+            targets.put(playerId, Target.LOBBY);
+        }
     }
 
     public boolean returnsToLobby(Player player) {

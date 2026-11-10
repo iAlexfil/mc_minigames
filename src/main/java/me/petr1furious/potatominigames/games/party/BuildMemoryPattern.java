@@ -208,8 +208,10 @@ record BuildMemoryPattern(Component title, Map<Cell, MemoryBlock> blocks) {
             }
             default -> throw new IllegalArgumentException("Unknown model: " + model);
         }
-        // Later stages gain four pieces at a time: a varied paved base, corner posts and lamps.
-        int target = 18 + 4 * (level - 1);
+        // The opening uses only the recognizable model, without random filler around it.
+        if (level <= 3) return new BuildMemoryPattern(title, b.blocks).rotate(random.nextInt(4));
+        // From stage four, add four pieces per stage: paving, corner posts and lamps.
+        int target = 18 + 4 * (level - 3);
         List<Cell> paving = new ArrayList<>();
         for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) paving.add(new Cell(x, 0, z));
         Collections.shuffle(paving, random);

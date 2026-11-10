@@ -89,7 +89,7 @@ public final class PartyConfig {
     public final Property<Integer> anvilWaves =
             bag.define("anvils.waves", PropertyCodec.INT, 10).validate(n -> n >= 2 && n <= 20);
     public final Property<Integer> anvilPvpWave =
-            bag.define("anvils.pvpWave", PropertyCodec.INT, 4).validate(n -> n >= 1 && n <= 20);
+            bag.define("anvils.pvpWave", PropertyCodec.INT, 3).validate(n -> n >= 1 && n <= 20);
     public final Property<Integer> buildMemoryStages =
             bag.define("buildMemory.stages", PropertyCodec.INT, 8).validate(n -> n >= 1 && n <= 8);
     public final Property<Integer> toolRaceSeconds =
@@ -118,10 +118,12 @@ public final class PartyConfig {
             bag.define("partyGames.minersFinaleSeconds", PropertyCodec.INT, 30)
                     .validate(n -> n >= 15 && n <= 120);
 
-    public final Property<Integer> pvpFfaOvertimeSeconds = bag.define("pvpFfa.overtimeSeconds", PropertyCodec.INT, 180)
-            .validate(n -> n >= 20 && n <= 600);
-    public final Property<Integer> sumoFfaOvertimeSeconds = bag.define("sumoFfa.overtimeSeconds", PropertyCodec.INT, 45)
-            .validate(n -> n >= 20 && n <= 300);
+    public final Property<Integer> pvpFfaOvertimeSeconds =
+            bag.define("pvpFfa.overtimeSeconds", PropertyCodec.INT, 180)
+                    .validate(n -> n >= 20 && n <= 600);
+    public final Property<Integer> sumoFfaOvertimeSeconds =
+            bag.define("sumoFfa.overtimeSeconds", PropertyCodec.INT, 45)
+                    .validate(n -> n >= 20 && n <= 300);
 
     public final Property<Integer> magicSeconds = bag.define("magicBattle.roundSeconds", PropertyCodec.INT, 180)
             .validate(n -> n >= 60 && n <= 600);

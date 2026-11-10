@@ -352,6 +352,17 @@ public final class PartyInteractionCheck {
         // boundary.
         session.onEnd(EndReason.ABORTED);
         check(
+                session.returnToLobbyAfterGame(),
+                "Party completion returns the audience to the configured lobby");
+        var returnTeleport =
+                new PlayerTeleportEvent(
+                        PLAYER,
+                        new Location(null, 0, 80, 0),
+                        new Location(null, 10, 80, 10),
+                        PlayerTeleportEvent.TeleportCause.PLUGIN);
+        session.onPlayerTeleport(returnTeleport);
+        check(!returnTeleport.isCancelled(), "Ended Party Games cannot block the lobby teleport");
+        check(
                 session.delegate() == null
                         && field(session.getClass(), "child").get(session) == null,
                 "Failed child must be detached so core restoration can proceed");

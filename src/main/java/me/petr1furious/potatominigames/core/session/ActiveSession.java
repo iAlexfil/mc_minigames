@@ -1,29 +1,5 @@
 package me.petr1furious.potatominigames.core.session;
 
-import me.petr1furious.potatominigames.i18n.I18n;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-
-import org.bukkit.Bukkit;
-import org.bukkit.GameMode;
-import org.bukkit.Location;
-import org.bukkit.Sound;
-import org.bukkit.World;
-import org.bukkit.entity.Player;
-import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitTask;
-
-import net.kyori.adventure.audience.Audience;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
-
 import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.game.EndReason;
 import me.petr1furious.potatominigames.core.game.GameSession;
@@ -41,6 +17,30 @@ import me.petr1furious.potatominigames.core.text.Messages;
 import me.petr1furious.potatominigames.core.text.Summary;
 import me.petr1furious.potatominigames.core.world.ArenaService;
 import me.petr1furious.potatominigames.core.world.SessionWorlds;
+import me.petr1furious.potatominigames.i18n.I18n;
+
+import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+
+import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
+import org.bukkit.Location;
+import org.bukkit.Sound;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * One running game: RUNNING → ENDING → IDLE, then discarded. Sessions run side by side,
@@ -464,6 +464,11 @@ public final class ActiveSession {
         }
         involved.addAll(spectators);
         manager.runCleanupHooks(involved);
+
+        if (!backToQueue && session != null && session.returnToLobbyAfterGame()) {
+            // Include offline players: their next login must use the same destination.
+            involved.forEach(lobby::preferLobbyReturn);
+        }
 
         for (Player player : returning) {
             sidebar.clear(player);

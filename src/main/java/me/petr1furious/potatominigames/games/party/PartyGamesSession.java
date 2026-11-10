@@ -55,6 +55,11 @@ final class PartyGamesSession extends PartyRoundForwarder {
     }
 
     @Override
+    public boolean returnToLobbyAfterGame() {
+        return true;
+    }
+
+    @Override
     public void onStart() throws CommandFailure {
         try {
             services.participants().all().forEach(p -> names.put(p.id(), p.name()));

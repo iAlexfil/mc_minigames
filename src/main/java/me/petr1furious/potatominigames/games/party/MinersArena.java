@@ -12,15 +12,16 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.util.BoundingBox;
 
-/** Equal ore quotas in independent 16-cube cells. Build and wall removal are sliced across ticks. */
+/** Equal ore quotas in independent 16-cube cells. Build and wall replacement are sliced across ticks. */
 final class MinersArena {
     static final int SIDE = 16, PITCH = SIDE + 1, BASE = 64, ROOF = BASE + SIDE;
+    static final Material OPEN_PARTITION = Material.DIORITE;
     record Pos(int x, int y, int z) { static Pos of(Block block) { return new Pos(block.getX(), block.getY(), block.getZ()); } }
     private final World world;
     private final int players, columns, rows, maxX, maxZ;
     private final Map<Pos, MinersOre> ores = new HashMap<>();
     private final List<Pos> partitions = new ArrayList<>();
-    private int built, removed;
+    private int built, converted;
     private boolean opened;
 
     MinersArena(World world, int players, Random random) {
@@ -85,11 +86,11 @@ final class MinersArena {
     }
     float progress() { return (float) built / totalBlocks(); }
     boolean openSlice(int budget) {
-        for (int i = 0; i < budget && removed < partitions.size(); i++, removed++) {
-            Pos p = partitions.get(removed);
-            world.getBlockAt(p.x(), p.y(), p.z()).setType(Material.AIR, false);
+        for (int i = 0; i < budget && converted < partitions.size(); i++, converted++) {
+            Pos p = partitions.get(converted);
+            world.getBlockAt(p.x(), p.y(), p.z()).setType(OPEN_PARTITION, false);
         }
-        opened = removed == partitions.size();
+        opened = converted == partitions.size();
         return opened;
     }
     boolean opened() { return opened; }

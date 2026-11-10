@@ -632,7 +632,7 @@ Damage values below are health points (two points equal one heart):
 | School | Spell | Mana / cooldown | Effect |
 | --- | --- | --- | --- |
 | Fire | Firebolt | 16 / 1.8 s | Swept projectile, 6 damage and 3 s burning |
-| Fire | Fireball | 32 / 5 s | Impact explosion, 10→4 damage in radius 3, 4 s burning; destroys built cover |
+| Fire | Fireball | 32 / 5 s | Impact explosion, 10→4 damage in radius 3, 4 s burning; destroys terrain and buildings |
 | Fire | Meteor | 50 / 12 s | Fixed target after 1.2 s warning, 14→4 damage in radius 4.5 |
 | Fire | Flame Cone | 26 / 4 s | Scorches a visible cone up to 8 blocks away: 7 damage and burning for 4 s. |
 | Fire | Cinder Rain | 38 / 9 s | After a 1 s warning, creates a radius-4 zone for 5 s up to 48 blocks away: 3 damage/s and burning. Cover blocks it. |
@@ -657,7 +657,7 @@ Damage values below are health points (two points equal one heart):
 | Earth | Earthquake | 40 / 8 s | 0.7 s warning, 8 damage in radius 5, launches targets |
 | Earth | Stone Dome | 34 / 12 s | Builds a small 5×5 shelter with a roof around you for 5 s. Skips terrain and bodies; opponents can break its blocks. |
 | Earth | Fault Line | 30 / 7 s | A narrow piercing ground-level wave travels up to 20 blocks, dealing 8 damage and launching enemies. Solid cover stops it. |
-| Earth | Erosion | 24 / 7 s | After a 0.7 s warning, removes player-built and temporary blocks in radius 4 within 48 blocks. Deals no damage; original map stays protected. |
+| Earth | Erosion | 24 / 7 s | After a 0.7 s warning, removes terrain and buildings in radius 4 within 48 blocks. Deals no damage. |
 | Earth | Stone Pillar | 22 / 6 s | Raises you 3 blocks on a temporary pillar lasting 8 s. Needs clear space above; cannot push through a ceiling or another player. |
 | Life | Mend | 24 / 7 s | Heal 6 health; full health spends nothing |
 | Life | Aegis | 28 / 8 s | For 3 s reflect projectiles and halve other damage; each projectile reflects at most once |
@@ -684,9 +684,13 @@ interrupts it without refund. Second Wind lasts eight seconds and saves one leth
 hit with six health, excluding the void. Temporary absorption capacity, active
 channels, personal history and other spell state are cleaned up at round end.
 
-Cover blocks offensive areas and projectile travel. The original map stays
-protected; only blocks built by players or spells can be removed. Bursts can break
-those bridges/walls. Temporary construction restores live state on expiry/end;
+Cover blocks offensive areas and projectile travel. During combat, the original
+map and player/spell construction can be mined with a non-wand item or destroyed
+by Fireball, Meteor, Earthquake and Erosion. Native explosions also affect terrain
+inside the arena. White wool uses normal right-click placement in either hand.
+Sneak to place wool against a mana chest instead of using it. The caster hears a short hit confirmation
+when a spell reduces an opponent's health or absorption. Temporary construction
+restores live state on expiry/end;
 spell projectiles, delayed casts and zones have bounded lifetimes and stop when
 their caster leaves or is eliminated. Countdown locks movement and spell use.
 Deaths retain the native death screen for three seconds, then spectate; early
@@ -742,6 +746,8 @@ Perks drop as finite enchanted items and can be traded or saved for later. Singl
 perks stack to 16; drills keep individual three-use counters. Except
 for the drill, use them with right-click in the main hand. Invalid targets or
 attempts to reactivate an active perk do not spend an item.
+Mine normally with the drill using left-click; a charge is spent only when the
+target block finishes breaking, not when mining starts or is interrupted.
 
 | Perk | Item | Effect |
 | --- | --- | --- |
@@ -761,15 +767,19 @@ or use native respawn-anchor block destruction. Combat blast damage keeps native
 armor and shields; preparation still prevents health damage. All timed effects,
 private outline entities and counters are cleared on elimination, leaving and end.
 
-At the end of preparation all shared partitions open and **PvP begins**. Continue
-mining, dig tunnels, build with cobblestone and use the tracking compass to locate
+At the end of preparation shared bedrock partitions become **mineable diorite**
+and **PvP begins**. The solid dividers keep mine boundaries visible until players
+dig through them. Mining them gives the usual capped cobblestone supply, without
+ore loot. Continue mining, dig tunnels, build with cobblestone and use the tracking
+compass to locate
 the nearest surviving opponent. PvP has a **three-minute** phase followed by a
 **one-minute** shrinking border with glowing players. Nametags are hidden before the finale; opponents remain visible when encountered
 in tunnels. Spectral arrows keep their native temporary glowing effect. Detection
 Potions can be drunk after the partitions open to make all other surviving players
 glow for five seconds, visible to everyone. They are finite loot (one bottle),
-and repeated uses refresh rather than stack the duration. Persistent automatic
-glowing starts only in the finale. Increasing damage after
+and repeated uses refresh rather than stack the duration. In the finale, persistent
+entity outlines reveal survivors even while sneaking or after drinking milk. The
+outline is released on elimination, leaving and round cleanup. Increasing damage after
 the final minute prevents indefinite camping/healing. One life: the last survivor
 wins three Party points; simultaneous final deaths draw. Disconnecting withdraws
 a player and reconnecting only spectates. Solo training and aborted matches award
@@ -790,7 +800,10 @@ one in either hand to block. Equipment upgrades and consumables remain random;
 new potions do not change the starting kits of PvP classes.
 
 Preparation blocks damage, pearls and wind charges. The bedrock shell is always
-protected; TNT damages players without destroying terrain or ore rewards.
+protected. During combat, tracked TNT destroys mineable blocks in the native blast
+area, including the opened diorite partitions. Mining uses the normal ore provenance,
+loot and automatic upgrade rules. A blast that kills its owner still breaks terrain,
+but does not grant equipment or healing after death. Foreign explosions remain blocked.
 TNT uses right-click placement or left-click throwing, with a 2.5-second fuse,
 0.3-second placement / two-second throw cooldowns and at most four active charges
 per player. Placed cobblestone cannot generate ore loot; carried cobblestone from

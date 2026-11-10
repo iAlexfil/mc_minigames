@@ -352,8 +352,9 @@ final class MinersSession implements PartyRoundSession {
             }
             if (round.phase() == MinersRound.Phase.FINALE) {
                 visibility.clear();
-                for (Player p : survivors())
-                    p.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, 40, 0, false, false));
+                // Do not capture a temporary arrow/potion outline as a permanent prior flag.
+                for (Player p : survivors()) p.removePotionEffect(PotionEffectType.GLOWING);
+                visibility.reveal(survivors());
                 services.arena()
                         .applyBorder(world, arena.center(), arena.borderSize(), 3, finaleSeconds);
                 announce(I18n.tr("party.rounds.miners.finale"),
@@ -380,13 +381,11 @@ final class MinersSession implements PartyRoundSession {
             result(standings.survivors());
             return;
         }
+        if (round.phase() == MinersRound.Phase.FINALE) visibility.reveal(survivors());
         if (tick % 20 == 0) {
             shots.expire(tick);
             drops.prune();
             for (Player p : survivors()) {
-                if (round.phase() == MinersRound.Phase.FINALE)
-                    p.addPotionEffect(
-                            new PotionEffect(PotionEffectType.GLOWING, 40, 0, false, false));
                 updateCompass(p);
                 double pressure = round.pressure(tick);
                 if (pressure > 0 && fighting(p)) p.damage(pressure);
@@ -496,8 +495,13 @@ final class MinersSession implements PartyRoundSession {
     private boolean canMine(Player p, Block block) {
         if (!playing(p) || !arena.editable(block)
                 || !round.fighting() && !arena.owns(block.getLocation(), cells.getOrDefault(p.getUniqueId(), -1))) return false;
+        return mineable(block);
+    }
+
+    private boolean mineable(Block block) {
         Material type = block.getType();
-        return type == Material.STONE || type == Material.COBBLESTONE || type == Material.COBWEB
+        return type == Material.STONE || type == MinersArena.OPEN_PARTITION
+                || type == Material.COBBLESTONE || type == Material.COBWEB
                 || arena.oreAt(block) != null;
     }
 
@@ -716,6 +720,8 @@ final class MinersSession implements PartyRoundSession {
 
     private void out(Player p) {
         if (!standings.eliminate(p.getUniqueId(), tick)) return;
+        visibility.stopReveal(p);
+        p.removePotionEffect(PotionEffectType.GLOWING);
         freeze.release(p.getUniqueId());
         bombs.eliminate(p.getUniqueId());
         gadgetReadyAt.remove(p.getUniqueId());
@@ -726,6 +732,7 @@ final class MinersSession implements PartyRoundSession {
 
     private void spectate(Player p) {
         if (p.isDead()) return;
+        visibility.stopReveal(p);
         clearGoldHealth(p);
         if (p.getGameMode() == GameMode.SPECTATOR) p.setSpectatorTarget(null);
         p.closeInventory();
@@ -753,7 +760,6 @@ final class MinersSession implements PartyRoundSession {
         visibility.clear();
         for (Player p : survivors()) {
             p.removePotionEffect(PotionEffectType.GLOWING);
-            p.setGlowing(false);
         }
         champions = List.copyOf(winners);
         round.result(tick);
@@ -788,7 +794,7 @@ final class MinersSession implements PartyRoundSession {
         clearGoldHealth(p);
         visibility.release(p.getScoreboard());
         p.removePotionEffect(PotionEffectType.GLOWING);
-        p.setGlowing(false);
+        visibility.stopReveal(p);
         context.withdraw(p.getUniqueId());
         if (standings == null) return;
         standings.eliminate(p.getUniqueId(), tick);
@@ -869,6 +875,10 @@ final class MinersSession implements PartyRoundSession {
         }
         MinersPerk perk = MinersPerk.from(event.getItem());
         if (perk != null) {
+            // The drill spends a charge on BlockBreakEvent, after native mining completes.
+            // Cancelling its initial left click prevents that event from ever firing.
+            if (perk == MinersPerk.DRILL && event.getHand() == EquipmentSlot.HAND
+                    && event.getAction() == org.bukkit.event.block.Action.LEFT_CLICK_BLOCK) return;
             event.setCancelled(true);
             if (event.getHand() == EquipmentSlot.HAND && event.getAction().isRightClick()) usePerk(p, perk, event);
             return;
@@ -1006,7 +1016,27 @@ final class MinersSession implements PartyRoundSession {
 
     @Override
     public void onEntityExplode(EntityExplodeEvent event) {
+        List<Block> affected = List.copyOf(event.blockList());
         event.blockList().clear();
+        event.setYield(0);
+        Player owner = bombs.owner(event.getEntity());
+        if (round == null || !round.fighting() || owner == null
+                || !world.equals(event.getLocation().getWorld())
+                || !connected.contains(owner.getUniqueId())) return;
+        boolean activeOwner = fighting(owner);
+        boolean finalBlast = !standings.alive(owner.getUniqueId())
+                && standings.survived(owner.getUniqueId(), tick) == tick;
+        if (!activeOwner && !finalBlast) return;
+        for (Block block : affected) {
+            if (!arena.editable(block) || !mineable(block)) continue;
+            if (activeOwner) mineBlock(owner, block);
+            else {
+                // Native blast damage can kill the owner before its block callback.
+                // The same blast still breaks terrain, but cannot equip or heal a dead player.
+                arena.takeOre(block);
+                block.setType(Material.AIR, false);
+            }
+        }
     }
 
     @Override

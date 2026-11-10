@@ -454,8 +454,24 @@ final class MagicBattleSession implements PartyRoundSession {
 
     @Override
     public void onPlayerInteract(PlayerInteractEvent event) {
-        event.setCancelled(true);
         Player p = event.getPlayer();
+        if (fighting(p) && event.getClickedBlock() != null) {
+            boolean placing = event.getAction().isRightClick()
+                    && event.getItem() != null
+                    && event.getItem().getType() == Material.WHITE_WOOL
+                    && (event.getClickedBlock().getType() != Material.CHEST || p.isSneaking());
+            boolean mining = event.getAction().isLeftClick()
+                    && event.getHand() == EquipmentSlot.HAND
+                    && MagicItems.school(event.getItem()) == null
+                    && arena.breakable(event.getClickedBlock());
+            if (placing || mining) {
+                // DENY on the clicked block short-circuits Paper's native item placement,
+                // even when useItemInHand is ALLOW. Let block events enforce build limits.
+                event.setCancelled(false);
+                return;
+            }
+        }
+        event.setCancelled(true);
         if (event.getHand() != EquipmentSlot.HAND || !alive(p)) return;
         if (MagicItems.guide(event.getItem()) && event.getAction().isRightClick()) {
             MagicItems.openBook(p, mana.get(p.getUniqueId()));
@@ -509,11 +525,6 @@ final class MagicBattleSession implements PartyRoundSession {
             p.getInventory()
                     .setItem(6, new ItemStack(Material.WHITE_WOOL, Math.min(64, count + 16)));
             p.sendActionBar(I18n.tr("party.magic.chest_used"));
-        } else if (fighting(p)
-                && event.getItem() != null
-                && event.getItem().getType() == Material.WHITE_WOOL) {
-            event.setUseItemInHand(org.bukkit.event.Event.Result.ALLOW);
-            event.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
         }
     }
 
@@ -531,7 +542,10 @@ final class MagicBattleSession implements PartyRoundSession {
         } finally {
             spellDamage = false;
         }
-        return target.getHealth() + target.getAbsorptionAmount() < before;
+        boolean damaged = target.getHealth() + target.getAbsorptionAmount() < before;
+        if (damaged && caster != target)
+            caster.playSound(caster.getLocation(), Sound.ENTITY_ARROW_HIT_PLAYER, .6f, 1.2f);
+        return damaged;
     }
 
     @Override
@@ -716,7 +730,6 @@ final class MagicBattleSession implements PartyRoundSession {
                 || event.getBlock().getType() != Material.WHITE_WOOL
                 || !arena.canBuild(event.getBlock())
                 || !event.getBlockReplacedState().getType().isAir()) event.setCancelled(true);
-        else arena.placed(event.getBlock());
     }
 
     @Override
@@ -731,12 +744,14 @@ final class MagicBattleSession implements PartyRoundSession {
 
     @Override
     public void onEntityExplode(EntityExplodeEvent event) {
-        event.blockList().clear();
+        if (phase != Phase.FIGHT) event.blockList().clear();
+        else event.blockList().removeIf(block -> !arena.breakable(block));
     }
 
     @Override
     public void onBlockExplode(BlockExplodeEvent event) {
-        event.blockList().clear();
+        if (phase != Phase.FIGHT) event.blockList().clear();
+        else event.blockList().removeIf(block -> !arena.breakable(block));
     }
 
     @Override

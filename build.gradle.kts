@@ -228,3 +228,10 @@ val checkI18n by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.i18n.I18nCheck")
 }
 tasks.check { dependsOn(checkI18n) }
+
+val checkMagicBattle by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.party.MagicBattleCheck")
+}
+tasks.check { dependsOn(checkMagicBattle) }

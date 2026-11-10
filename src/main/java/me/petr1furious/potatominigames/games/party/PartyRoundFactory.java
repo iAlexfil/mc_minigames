@@ -14,6 +14,7 @@ final class PartyRoundFactory {
             case "tnt_run" -> new TntRunSession(services, config, context);
             case "mob_count" -> new MobCountSession(services, config, context);
             case "rhino" -> new RhinoSession(services, config, context);
+            case "magic_battle" -> new MagicBattleSession(services, config, context);
             case "miners" -> new MinersSession(services, config, context);
             case "color_floor" -> new ColorFloorSession(services, config, context);
             case "anvils" -> new AnvilSession(services, config, context);
@@ -26,7 +27,7 @@ final class PartyRoundFactory {
     static Component title(String mode) {
         return switch (mode) {
             case "hole_in_the_wall", "pvp", "sumo", "arms_race", "tnt_run", "mob_count",
-                    "rhino", "miners", "color_floor", "anvils", "build_memory", "tool_race" ->
+                    "rhino", "miners", "magic_battle", "color_floor", "anvils", "build_memory", "tool_race" ->
                     I18n.tr("party.rounds.mode." + mode);
             default -> Component.text(mode);
         };

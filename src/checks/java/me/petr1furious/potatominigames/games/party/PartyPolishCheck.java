@@ -29,12 +29,12 @@ public final class PartyPolishCheck {
             selections.add(selected);
         }
         check(
-                pool.size() == 12 && pool.contains("hole_in_the_wall") && selections.size() > 20,
+                pool.size() == 13 && pool.contains("hole_in_the_wall") && pool.contains("magic_battle") && selections.size() > 20,
                 "Random six selected from the full pool");
         check(
                 PartyRoundOptions.party().forRound(0).countdownSeconds() == 4,
                 "Initial countdown is four seconds");
-        for (int round = 1; round < 12; round++)
+        for (int round = 1; round < PartyGamesState.MODES.size(); round++)
             check(
                     PartyRoundOptions.party().forRound(round).countdownSeconds() == 4,
                     "Every later arena has its own four-second countdown");

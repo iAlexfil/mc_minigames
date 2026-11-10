@@ -730,7 +730,6 @@ final class MagicBattleSession implements PartyRoundSession {
                 || event.getBlock().getType() != Material.WHITE_WOOL
                 || !arena.canBuild(event.getBlock())
                 || !event.getBlockReplacedState().getType().isAir()) event.setCancelled(true);
-        else arena.placed(event.getBlock());
     }
 
     @Override
@@ -745,12 +744,14 @@ final class MagicBattleSession implements PartyRoundSession {
 
     @Override
     public void onEntityExplode(EntityExplodeEvent event) {
-        event.blockList().clear();
+        if (phase != Phase.FIGHT) event.blockList().clear();
+        else event.blockList().removeIf(block -> !arena.breakable(block));
     }
 
     @Override
     public void onBlockExplode(BlockExplodeEvent event) {
-        event.blockList().clear();
+        if (phase != Phase.FIGHT) event.blockList().clear();
+        else event.blockList().removeIf(block -> !arena.breakable(block));
     }
 
     @Override

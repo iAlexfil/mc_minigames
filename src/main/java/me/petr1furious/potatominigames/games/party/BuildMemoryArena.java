@@ -26,6 +26,14 @@ final class BuildMemoryArena {
     }
 
     void build() {
+        for (int x = 1; x <= 3; x++)
+            for (int z = 1; z <= 3; z++)
+                world.getBlockAt(x, 83, z)
+                        .setType(
+                                x == 2 && z == 2
+                                        ? Material.SEA_LANTERN
+                                        : Material.PRISMARINE_BRICKS,
+                                false);
         for (Location c : centers.values()) {
             for (int x = -4; x <= 8; x++)
                 for (int z = -4; z <= 8; z++)
@@ -46,6 +54,14 @@ final class BuildMemoryArena {
 
     Location spawn(UUID id) {
         return centers.get(id).clone().add(2.5, 0, -2.5);
+    }
+
+    Location reviewCenter(UUID id) {
+        return centers.get(id).clone().add(2.5, 1.5, 2.5);
+    }
+
+    Location cellLocation(UUID id, BuildMemoryPattern.Cell cell) {
+        return centers.get(id).clone().add(cell.x(), cell.y(), cell.z());
     }
 
     BuildMemoryPattern.Cell localCell(UUID owner, Block block) {

@@ -105,11 +105,6 @@ Timing and score settings are in `games/finals.yml`, editable with
 `/finals config`; changes apply next match. All game text uses the shared
 English/Russian i18n catalogs, selected by each player's client language.
 
-The Windows `start-server.bat` starts an already installed local ASP server in
-`.tools/server` with Java 25 from `.tools/jdk25`. For a runtime stored in another
-checkout, set `MINIGAMES_HOME` to that checkout first. The launcher checks for an
-occupied port and supports a clean shutdown with `stop`.
-
 ### Party Games and new party games
 
 Join **Вечеринка → Party Games**, or run `/play party party_games`.

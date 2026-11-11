@@ -19,6 +19,7 @@ final class PartyGamesState {
                     "anvils",
                     "build_memory",
                     "tool_race",
+                    "parkour_race",
                     "hole_in_the_wall");
     private final List<String> schedule;
     private final Set<UUID> roster,

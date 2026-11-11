@@ -17,7 +17,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Bingo** | `/bingo` | `default`, `butfast`, `collectall`, `lockout` | Teams race to collect items on a generated board. Cage drop into a random arena; deaths are short spectator punishments. In `lockout` each item goes to the team that collects it first: a line wins, else the most items when time runs out. |
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
-| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
+| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
 | **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
 
 ### The Finals
@@ -108,7 +108,7 @@ English/Russian i18n catalogs, selected by each player's client language.
 ### Party Games and new party games
 
 Join **Вечеринка → Party Games**, or run `/play party party_games`.
-The default match picks six distinct games at random from the thirteen-game pool, with
+The default match picks six distinct games at random from the fourteen-game pool, with
 2–12 players. PvP and Sumo become simultaneous, one-life free-for-alls inside
 this match; their standalone modes retain the existing round-robin BO3 rules.
 Eliminated players spectate until the next game. Each completed game awards
@@ -133,11 +133,90 @@ These games are also independently available:
 | Наковальни | `/play party anvils` | Dodge staggered rain on a 42×42 platform or shelter under slabs. Waves last six seconds. Rain-free relocation starts at ten seconds and shortens by one second per wave to a six-second minimum: old anvils disappear and shelters move randomly. Start with four shelters; remove one every two waves, minimum one. Roofs shrink from 2×2 to 1×1 from wave six. From wave three, punches push without health damage. Anvil contact eliminates. Ten waves. Rain keeps full density within a horizontal radius of eight blocks around living players and falls four times less densely elsewhere; overlapping zones do not stack. Distant cells rotate evenly over four sweeps instead of guaranteeing every cell is hit each wave. At most 2560 airborne anvils, with rate-limited impact sounds; slabs intercept anvils above shelters. |
 | Повтори постройку | `/play party build_memory` | Private platforms form a circle. Memorize one of fourteen recognizable models (market stall, well, bridge, workshop, fireplace, gazebo and more), selected without repeats within the game and varied through materials, details and rotations, then rebuild it on the contrasting blue 5×5 footprint, using its edges for orientation. The first three stages use only the core 11–18-block models without random extra paving, posts or lamps around them. From stage four, exact kits grow from 22 to 38 blocks, adding four pieces per stage, including stairs, slabs, signs, fences, chains, torches and lamps; memorization drops from 12 to 5 seconds, while construction starts at 30 seconds and increases by five seconds per stage, up to 65. Correct mistakes before the deadline; any missing, misplaced, wrong or extra block at the check eliminates you. Facing and upper/lower placement matter; sign text and automatic connections do not. Opaque screens prevent copying. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. Unbreakable glass walls reveal other racers. The personal scoreboard shows current place, blocks mined and blocks remaining. Finishers fall onto a shared landing and remain in survival mode; the last finisher gets three seconds to land. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
+| Паркур-спидран | `/play party parkour_race` | Six random vanilla tasks, sampled without repeats from a fifteen-task pool, on identical parallel lanes with invisible barrier walls. Every checkpoint replaces the entire old inventory with a focused task kit; earlier supplies and construction cannot carry forward. Slot 9 returns to the last checkpoint and restores that section’s kit while rolling back its blocks, water and pending projectiles; the race timer keeps running. |
 | Дырка в стене | `/play party hole_in_the_wall` | A smaller plus-shaped platform spans 17×17 with initially five-block-wide arms (145 floor blocks), narrowing to three blocks exactly halfway after a three-second warning, and shrinking to 13×13 and 9×9 while keeping the plus. Ten wall silhouettes include arches, stairs, columns, teeth, hurdles, zigzags and overhead beams. Ground passages are offset from the center; every wall requires moving or jumping instead of idling there. New walls arrive every 4→2 seconds, up to four active at once, with perpendicular approaches and two-second warnings. Every shuffled group of four arrivals uses all four directions; opposing arrivals wait only until the earlier wall can clear the platform before the new one reaches it. Passages are prepared for the narrower arms before halfway, with compatible height clearance. Walls push; falling eliminates; PvP is off. Platform ends shrink exactly at one third and two thirds of the round after three-second warnings; walls keep moving and spawning. Configure `holeInTheWall.durationSeconds` (45–300, default 120). Survival awards 3/2/1. |
 
 Tool Race, Anvils, Color Floor and Build Memory use fixed daytime and clear weather.
 
 The new standalone modes award the same podium points to `/party points`.
+**Parkour Sprint** also appears in the mixed Party Games pool. Solo practice is
+`/party test parkour_race`. `parkourRace.durationSeconds` in `games/party.yml`
+sets the time limit (60–600 s, default 240). Existing customized `partyGames.modes`
+lists need `parkour_race` added to include it in mixed matches.
+
+Each lane is twenty-seven blocks wide and has the same seven checkpoint islands.
+A shared six-task order is sampled without replacement from fifteen obstacle types
+once per race; resets do not reroll it. Ordinary islands are seven blocks wide;
+the sideways ladder traverse uses two narrow three-block-wide ledges whose
+centres are twenty blocks apart. Absolute heights are translated together so any
+sampled sequence of climbs and drops fits safely inside the arena.
+Barriers enclose its sides, ends, floor and ceiling, so neighbouring racers remain
+visible but cannot interact. Construction is sliced at 4096 blocks per tick; the
+full countdown starts after the course is ready. The HUD names the active task,
+and the player receives a localized hint on entering each section.
+
+All kits use ordinary, unenchanted Minecraft items and native physics/cooldowns.
+A checkpoint removes the old inventory, cursor, armour and offhand before granting
+only the next task's kit. Elytra are equipped automatically on the flight task.
+The clock remains in slot 9; the other items can be rearranged.
+
+| Task | Gap between islands | Height change | Exclusive kit |
+| --- | ---: | ---: | --- |
+| Bridge | 18 | 0 | 22 wool, shears |
+| Wind ascent | 2 | +28 | 36 wool, 8 wind charges; build up or boost and place against the wall |
+| Water drop | 4 | -44 | One water bucket |
+| Scaffolding tower | 2 | +24 | 30 scaffolding |
+| Ladder wall | 1 | +20 | 24 ladders |
+| Slime rebound | 15 | -20 | 4 slime blocks; place slime on a bare landing pad 36 blocks below the starting island |
+| Pearl throw | 32 | 0 | 3 ender pearls |
+| Swim tunnel | 20 | 0 | One water bucket; entry pool and a flooded, one-block-high passage |
+| Ladder clutch | 3 | -36 | 8 ladders; permanent side wall supports placement during the fall |
+| Cobweb clutch | 3 | -28 | 3 cobwebs and shears |
+| Honey clutch | 3 | -24 | 4 honey blocks and a side wall |
+| Elytra flight | 50 | +64 | Elytra and 6 rockets |
+| Ladder traverse | 20 sideways between checkpoint centres | 0 | 12 wool and 12 ladders; alternate blocks and side-mounted ladders |
+| Block staircase | 14 | +14 | 32 wool and shears; build forward and up |
+| Flower-pot staircase | 14 | +14 | 16 wool and 18 small flower pots; use each pot to place the next wool block diagonally forward and up |
+
+The table lists the full pool; only six tasks appear in a given race.
+
+The flower-pot staircase uses ordinary small flower pots as placement anchors:
+put a pot on the current wool block, then place the next wool block against the
+pot's forward face, one block higher and one block farther forward. Its 16 wool
+blocks are insufficient for an ordinary supported staircase across the rising
+gap; the pot route needs 14 wool and 14 pots, leaving two wool and four pots spare.
+Construction on this task is limited to the central three columns marked by blue
+deck tiles, keeping barrier walls and neighbouring obstacle walls out of reach
+as placement supports. Broken supports on this task yield no items, so the
+limited wool cannot be recycled to bypass the pot mechanic. The clock restores
+the full kit and clears the attempt if placement goes wrong.
+
+Course walls and islands are protected; racers may break and reclaim their own
+attempt's construction on the other tasks. Land on the next island to lock in progress. Both a
+checkpoint and a clock reset remove the attempt's building, fluids, loose items
+and pending pearls, wind charges and fireworks. Thus old supplies and water cannot
+bypass the next task. Neither action resets the overall race timer. A checkpoint also stops residual
+velocity and gliding, so flight cannot carry over into the next kit.
+
+Fall, drowning and flight-collision damage use native rules. Lethal damage is
+cancelled and queues an attempt reset before checkpoint detection; a failed
+water/slime/ladder/web/honey clutch cannot claim the destination checkpoint.
+Nonlethal damage remains meaningful within the attempt; a fresh kit restores
+health and air. Falling out of the section also returns to the checkpoint.
+Every movement packet is checked against the current task bounds, including
+future lateral checkpoints that share the same forward coordinate. Flying past
+an unlanded checkpoint is rejected before the player enters the next section and
+queues a reset. Checkpoints require a grounded, non-gliding landing on the deck;
+gliding may start only on the selected elytra task. PvP, item dropping and crafting are off. Water, projectiles and building stay
+within the active lane and section, with at most 4096 journalled blocks per racer.
+The clock is the only game utility; there are no custom movement powers or perks.
+
+Finishers spectate; once everyone finishes, results follow after three seconds.
+Finish time ranks first, then unfinished racers by checkpoint and current-section
+distance. A reset clears only the distance after the current checkpoint. Equal
+results share places and podium points (3/2/1). Leaving withdraws the racer;
+reconnecting only spectates the current race.
+
 Build Memory also supplies an unbreakable iron pickaxe, iron axe and shears in
 hotbar slots 7–9 during construction. Breaking a placed block returns that block
 directly to the inventory; the foundation remains protected.
@@ -1308,6 +1387,12 @@ TNT spawn clearance and bounded ground-item cleanup. It also checks perk mining
 geometry, seven eligible perks, the 50/40/10 lucky distribution, finite personal
 perk budgets, the 10% totem roll, 80/20 gold hearts and equipment replacement plans
 that preserve a drill even when the inventory is full.
+
+`checkParkourRace` checks six distinct tasks sampled from the full fifteen-task
+pool, identical sealed lanes, build budgets, sequential grounded checkpoints,
+elytra bypass rejection, finite task kits, both orientations of the flower-pot
+staircase, lethal-clutch resets, construction rollback and Party Games/queue
+registration. It runs as part of `build`.
 
 `checkPvpClasses` additionally verifies Shadow's finite invisibility stock, leather
 loadout, client-only armour hiding/restoration, equipment changes and viewer tracking,

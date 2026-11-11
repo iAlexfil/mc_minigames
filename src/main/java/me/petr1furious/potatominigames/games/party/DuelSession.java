@@ -236,8 +236,10 @@ final class DuelSession implements PartyRoundSession {
         world.setGameRule(GameRules.ADVANCE_WEATHER, false);
         world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, !sumo);
         world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
-        arena = sumo ? new SumoArena(world) : new PvpArena(world);
+        arena = sumo ? new SumoArena(world) : new PvpArena(world, random);
         arena.build();
+        if (arena instanceof PvpArena pvp)
+            services.messages().broadcast(text("arena.selected", NamedTextColor.GRAY, pvp.layout().title()));
         if (!sumo) shadowArmor.start(services.plugin());
         bar =
                 services.bossBars()

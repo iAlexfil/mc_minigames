@@ -68,6 +68,9 @@ public final class ArmsRaceCheck {
         check(state.timeWinner(List.of()) == null, "No eligible players has no winner");
     }
     private static void arenaChecks() {
+        for (var layout : PvpArena.Layout.values()) arenaChecks(layout);
+    }
+    private static void arenaChecks(PvpArena.Layout layout) {
         Map<PvpArena.Position, Material> blocks = new HashMap<>();
         World[] world = new World[1];
         world[0] = (World) Proxy.newProxyInstance(World.class.getClassLoader(), new Class<?>[] {World.class}, (proxy, method, args) -> {
@@ -81,7 +84,15 @@ public final class ArmsRaceCheck {
                 default -> throw new AssertionError("Unexpected world operation: " + method.getName());
             };
         });
-        ArmsRaceArena arena = new ArmsRaceArena(world[0]);
+        int[] draws = {0};
+        ArmsRaceArena arena = new ArmsRaceArena(world[0], new Random(0) {
+            @Override public int nextInt(int bound) {
+                check(bound == 2, "Arms Race uses the same equally weighted map pool");
+                draws[0]++;
+                return layout.ordinal();
+            }
+        });
+        check(arena.layout() == layout && draws[0] == 1, "Arms Race selects either map at match start");
         arena.build();
         List<Location> spawns = arena.spawns();
         check(spawns.size() == 16 && spawns.stream().distinct().count() == 16, "Sixteen distinct spawn points");
@@ -102,6 +113,7 @@ public final class ArmsRaceCheck {
         Map<PvpArena.Position, Material> original = new HashMap<>(blocks);
         arena.cleanup();
         check(blocks.equals(original), "Session cleanup preserves map geometry");
+        check(draws[0] == 1 && arena.layout() == layout, "Respawns and cleanup never change the map");
     }
     private static double nearest(Location location, List<Location> enemies) {
         return enemies.stream().mapToDouble(enemy -> {

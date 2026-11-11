@@ -427,8 +427,16 @@ Rangers, engineers and pyromancers start with 64 ordinary arrows; their arrow st
 every second during combat, including overtime. Moving the stack to another slot
 does not prevent replenishment. Other classes do not receive arrows.
 
-The arena is a symmetric **49×49 courtyard** with short cover and clear spawn
-lanes. A one-block rim and eight barrier blocks above it enclose the arena; the roof
+PvP, group PvP and Arms Race share two symmetric **49×49** battle maps.
+Each session independently picks **Stone Courtyard** or **Desert Ruins** with equal
+50% probability and announces the selected name in the viewer's language. The
+choice stays fixed across tournament pairings, BO3 rounds, overtime and respawns;
+each new session or corresponding round in Party Games draws again.
+Stone Courtyard retains its low stone cover and cross-shaped lanes. Desert Ruins
+has a sandstone/red-sandstone floor, broken inner walls with five-block-wide
+entrances, four L-shaped outer ruins and small stepping stones near the centre.
+Cover stays at most two blocks high, and clear outer lanes serve both circular
+FFA spawns and all sixteen Arms Race respawn points. A one-block rim and eight barrier blocks above it enclose the arena; the roof
 is open. The original floor, cover and boundary cannot be broken or exploded.
 Players can place wool up to five blocks above the floor and break either player's
 placed blocks. Those blocks and stray projectiles are removed between rounds.
@@ -582,7 +590,8 @@ The two-second spawn shield prevents damage and ends when the player attacks or
 shoots. Temporarily dead players wait without a spectator follow camera. Reconnecting
 preserves progress and uses the respawn delay; late joiners can only spectate.
 
-The arena is a protected 49×49 courtyard with cover; building, breaking, crafting,
+Arms Race uses the same randomly selected protected 49×49 map as PvP (Stone
+Courtyard or Desert Ruins); building, breaking, crafting,
 item drops and pickups are disabled. Participants are held at their spawn during
 the five-second countdown, with walking, jumping and flight blocked until combat.
 The game lasts

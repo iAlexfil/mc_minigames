@@ -10,6 +10,7 @@ final class PartyGamesState {
                     "pvp",
                     "sumo",
                     "arms_race",
+                    "one_shot",
                     "tnt_run",
                     "mob_count",
                     "rhino",

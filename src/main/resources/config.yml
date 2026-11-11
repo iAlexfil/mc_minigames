@@ -60,6 +60,7 @@ queues:
     pvp_ffa: {enabled: true, minPlayers: 2, maxPlayers: 16}
     sumo_ffa: {enabled: true, minPlayers: 2, maxPlayers: 16}
     arms_race: {enabled: true, minPlayers: 2, maxPlayers: 16}
+    one_shot: {enabled: true, minPlayers: 2, maxPlayers: 16}
     tnt_run: {enabled: true, minPlayers: 2, maxPlayers: 16}
     mob_count: {enabled: true, minPlayers: 2, maxPlayers: 16}
     rhino: {enabled: true, minPlayers: 2, maxPlayers: 16}

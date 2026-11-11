@@ -13,15 +13,27 @@ import java.util.Set;
 import java.util.UUID;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.GameMode;
+import org.bukkit.ExplosionResult;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.TNTPrimed;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.block.Action;
+import org.bukkit.block.BlockFace;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
 
 /** Exercise real generated geometry/mutations, loot draws and match rules without a server. */
 public final class MinersCheck {
-    public static void main(String[] args) {
-        integration(); quotas(); geometry(); loot(); clock(); gold(); drops(); MinersPerksCheck.run();
+    public static void main(String[] args) throws ReflectiveOperationException {
+        integration(); quotas(); geometry(); loot(); clock(); gold(); drops(); visibility(); explosions(); drillInteraction(); MinersPerksCheck.run();
         System.out.println("Party Miners: menu/queue/config, fair private cells and sliced walls, random physical loot pools/ammo, finite gold health, phase protection and bounded ground drops passed");
     }
     private static void integration() {
@@ -88,7 +100,9 @@ public final class MinersCheck {
             int before = world.writes; opened = arena.openSlice(113);
             check(world.writes - before <= 113, "Opening partitions also respects its per-tick budget");
         }
-        check(arena.contains(partition) && world.at(17, 72, 8) == Material.AIR, "PvP opens passages between active neighbouring cells");
+        check(arena.contains(partition) && arena.editable(world.block(17, 72, 8))
+                && world.at(17, 72, 8) == Material.DIORITE,
+                "PvP turns shared bedrock walls into mineable diorite that still marks cell boundaries");
         check(world.at(34, 72, 25) == Material.BEDROCK && !arena.contains(new Location(world.world, 42.5, 72, 25.5)),
                 "Unused grid cells remain inaccessible instead of containing extra ore");
         check(!arena.contains(new Location(world.world, 0, 72, 8)) && !arena.contains(new Location(world.world, 8, 63, 8))
@@ -184,6 +198,145 @@ public final class MinersCheck {
         for (int i = 0; i < 299; i++) check(all.get(i).removed == 1, "Every live loot entity is removed exactly once on stop");
         check(all.get(299).removed == 0, "Already picked-up/despawned items are not removed a second time");
     }
+    private static void visibility() {
+        boolean[] glowing = {false};
+        UUID id = new UUID(3, 1);
+        Player player = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(), new Class<?>[] {Player.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getUniqueId" -> id;
+                    case "isSneaking" -> true;
+                    case "isGlowing" -> glowing[0];
+                    case "setGlowing" -> { glowing[0] = (boolean) args[0]; yield null; }
+                    default -> throw new AssertionError("Unexpected reveal call: " + method.getName());
+                });
+        MinersVisibility visibility = new MinersVisibility();
+        visibility.reveal(List.of(player));
+        check(player.isSneaking() && glowing[0], "Finale outline applies to a sneaking opponent");
+        glowing[0] = false;
+        visibility.reveal(List.of(player));
+        check(glowing[0], "Finale refresh restores the outline independently of potion state");
+        visibility.stopReveal(player);
+        check(!glowing[0], "Elimination releases the forced outline");
+        visibility.reveal(List.of(player)); visibility.clear();
+        check(!glowing[0], "Round cleanup releases forced outlines");
+        glowing[0] = true;
+        visibility.reveal(List.of(player)); visibility.clear();
+        check(glowing[0], "Cleanup preserves an outline that existed before the finale");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void explosions() throws ReflectiveOperationException {
+        FakeWorld world = new FakeWorld();
+        MinersArena arena = new MinersArena(world.world, 2, new Random(42));
+        while (!arena.buildSlice(4096)) { }
+        while (!arena.openSlice(4096)) { }
+        UUID ownerId = new UUID(4, 1), bombId = new UUID(4, 2);
+        boolean[] dead = {false};
+        Player owner = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(), new Class<?>[] {Player.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getUniqueId" -> ownerId;
+                    case "isDead" -> dead[0];
+                    case "getGameMode" -> GameMode.SURVIVAL;
+                    default -> throw new AssertionError("Unexpected blast owner call: " + method.getName());
+                });
+        TNTPrimed tnt = (TNTPrimed) Proxy.newProxyInstance(TNTPrimed.class.getClassLoader(), new Class<?>[] {TNTPrimed.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getUniqueId" -> bombId;
+                    case "getWorld" -> world.world;
+                    case "isValid" -> false; // Native TNT is discarded before its blast callbacks.
+                    default -> throw new AssertionError("Unexpected TNT call: " + method.getName());
+                });
+        MinersSession session = new MinersSession(null, null);
+        MinersRound round = new MinersRound(0, 0, 30, 15);
+        round.ready(0); round.advance(0, true);
+        SurvivalStandings standings = new SurvivalStandings(List.of(ownerId, new UUID(4, 3)));
+        minerField("world").set(session, world.world); minerField("arena").set(session, arena);
+        minerField("round").set(session, round); minerField("standings").set(session, standings);
+        ((Set<UUID>) minerField("connected").get(session)).add(ownerId);
+        Block web = world.block(8, 72, 8), shell = world.block(0, 72, 8);
+        web.setType(Material.COBWEB, false);
+        EntityExplodeEvent foreign = blast(tnt, web, shell);
+        session.onEntityExplode(foreign);
+        check(foreign.blockList().isEmpty() && web.getType() == Material.COBWEB, "Untracked explosions cannot mine the arena");
+        ((PvpBombs) minerField("bombs").get(session)).track(owner, tnt);
+        EntityExplodeEvent preparation = blast(tnt, web, shell);
+        session.onEntityExplode(preparation);
+        check(preparation.blockList().isEmpty() && web.getType() == Material.COBWEB, "Preparation blocks tracked TNT mining too");
+        round.advance(0, true);
+        EntityExplodeEvent combat = blast(tnt, web, shell);
+        session.onEntityExplode(combat);
+        check(web.getType() == Material.AIR && shell.getType() == Material.BEDROCK,
+                "Tracked combat TNT mines editable blocks but protects the shell");
+        check(combat.blockList().isEmpty() && combat.getYield() == 0, "Manual mining suppresses duplicate native block drops");
+        var orePos = world.blocks.entrySet().stream().filter(e -> e.getValue() == Material.COAL_ORE).findFirst().orElseThrow().getKey();
+        Block ore = world.block(orePos.x(), orePos.y(), orePos.z()), partition = world.block(17, 72, 8);
+        check(arena.oreAt(ore) == MinersOre.COAL && partition.getType() == Material.DIORITE, "Blast fixture has real ore and an opened divider");
+        minerField("tick").set(session, 7L); standings.eliminate(ownerId, 7); dead[0] = true;
+        session.onEntityExplode(blast(tnt, ore, partition, shell));
+        check(ore.getType() == Material.AIR && partition.getType() == Material.AIR && shell.getType() == Material.BEDROCK,
+                "A lethal final blast still breaks ore and diorite without opening the outer shell");
+        ore.setType(Material.COAL_ORE, false);
+        check(arena.oreAt(ore) == null, "Destroyed ore provenance cannot reward again after replacement");
+        web.setType(Material.COBWEB, false); minerField("tick").set(session, 8L);
+        session.onEntityExplode(blast(tnt, web));
+        check(web.getType() == Material.COBWEB, "An eliminated owner's stale charge cannot mine on a later tick");
+    }
+
+    private static java.lang.reflect.Field minerField(String name) throws ReflectiveOperationException {
+        var field = MinersSession.class.getDeclaredField(name); field.setAccessible(true); return field;
+    }
+    private static EntityExplodeEvent blast(TNTPrimed tnt, Block... blocks) {
+        return new EntityExplodeEvent(tnt, blocks[0].getLocation(), new ArrayList<>(List.of(blocks)), 1, ExplosionResult.DESTROY);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void drillInteraction() throws ReflectiveOperationException {
+        UUID id = new UUID(5, 1);
+        Player player = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(), new Class<?>[] {Player.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getUniqueId" -> id;
+                    case "isDead" -> false;
+                    case "getGameMode" -> GameMode.SURVIVAL;
+                    default -> throw new AssertionError("Unexpected drill interaction call: " + method.getName());
+                });
+        PersistentDataContainer data = (PersistentDataContainer) Proxy.newProxyInstance(
+                PersistentDataContainer.class.getClassLoader(), new Class<?>[] {PersistentDataContainer.class},
+                (proxy, method, args) -> {
+                    if (!method.getName().equals("get")) throw new AssertionError("Unexpected drill data call: " + method.getName());
+                    return switch (((org.bukkit.NamespacedKey) args[0]).getKey()) {
+                        case "miners_perk" -> "DRILL";
+                        case "miners_perk_charges" -> 3;
+                        default -> null;
+                    };
+                });
+        ItemMeta meta = (ItemMeta) Proxy.newProxyInstance(ItemMeta.class.getClassLoader(), new Class<?>[] {ItemMeta.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("getPersistentDataContainer")) return data;
+                    throw new AssertionError("Unexpected drill metadata call: " + method.getName());
+                });
+        ItemStack drill = new ItemStack() {
+            @Override public Material getType() { return Material.DIAMOND_PICKAXE; }
+            @Override public boolean hasItemMeta() { return true; }
+            @Override public ItemMeta getItemMeta() { return meta; }
+        };
+        MinersSession session = new MinersSession(null, null);
+        MinersRound round = new MinersRound(0, 15, 30, 15); round.ready(0);
+        minerField("round").set(session, round);
+        minerField("standings").set(session, new SurvivalStandings(List.of(id, new UUID(5, 2))));
+        ((Set<UUID>) minerField("connected").get(session)).add(id);
+        Block block = new FakeWorld().block(8, 72, 8);
+        PlayerInteractEvent countdown = new PlayerInteractEvent(player, Action.LEFT_CLICK_BLOCK, drill, block, BlockFace.UP, EquipmentSlot.HAND);
+        session.onPlayerInteract(countdown);
+        check(countdown.isCancelled(), "Drill mining remains locked during countdown");
+        round.advance(0, false);
+        PlayerInteractEvent mining = new PlayerInteractEvent(player, Action.LEFT_CLICK_BLOCK, drill, block, BlockFace.UP, EquipmentSlot.HAND);
+        session.onPlayerInteract(mining);
+        check(!mining.isCancelled() && MinersPerk.charges(drill) == 3, "Drill left-click must reach native mining without spending a charge early");
+        PlayerInteractEvent right = new PlayerInteractEvent(player, Action.RIGHT_CLICK_BLOCK, drill, block, BlockFace.UP, EquipmentSlot.HAND);
+        session.onPlayerInteract(right);
+        check(right.isCancelled(), "Drill right-click cannot activate a second mining path");
+    }
+
     private static final class FakeItem {
         boolean valid = true; int removed; final Item item;
         FakeItem(int id) {

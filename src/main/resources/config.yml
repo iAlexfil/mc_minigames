@@ -60,6 +60,7 @@ queues:
     pvp_ffa: {enabled: true, minPlayers: 2, maxPlayers: 16}
     sumo_ffa: {enabled: true, minPlayers: 2, maxPlayers: 16}
     arms_race: {enabled: true, minPlayers: 2, maxPlayers: 16}
+    one_shot: {enabled: true, minPlayers: 2, maxPlayers: 16}
     tnt_run: {enabled: true, minPlayers: 2, maxPlayers: 16}
     mob_count: {enabled: true, minPlayers: 2, maxPlayers: 16}
     rhino: {enabled: true, minPlayers: 2, maxPlayers: 16}
@@ -69,4 +70,8 @@ queues:
     anvils: {enabled: true, minPlayers: 2, maxPlayers: 12}
     build_memory: {enabled: true, minPlayers: 2, maxPlayers: 12}
     tool_race: {enabled: true, minPlayers: 2, maxPlayers: 12}
+    parkour_race: {enabled: true, minPlayers: 2, maxPlayers: 12}
     party_games: {enabled: true, minPlayers: 2, maxPlayers: 12}
+
+  cs:
+    default: {enabled: true, minPlayers: 2, maxPlayers: 10}

@@ -81,7 +81,6 @@ final class MagicBattleArena {
     private final World world;
     private final Blueprint source;
     private final List<BlockData> palette;
-    private final Set<Pos> placed = new HashSet<>();
     private final List<Pos> chests = new ArrayList<>();
     private int cursor;
 
@@ -146,16 +145,12 @@ final class MagicBattleArena {
         return inside(block.getLocation()) && block.getY() >= 40 && block.getY() <= 100;
     }
 
-    void placed(Block block) {
-        placed.add(Pos.of(block));
-    }
-
     boolean breakable(Block block) {
-        return placed.contains(Pos.of(block));
+        return inside(block.getLocation()) && !block.getType().isAir();
     }
 
     void remove(Block block) {
-        if (placed.remove(Pos.of(block))) block.setType(Material.AIR, false);
+        if (breakable(block)) block.setType(Material.AIR, false);
     }
 
     List<Pos> chests() {

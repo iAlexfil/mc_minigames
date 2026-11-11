@@ -11,3 +11,4 @@ finals
 dummy
 gadgets
 party.magic
+cs

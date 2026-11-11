@@ -32,7 +32,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-/** Bounded, round-owned spell simulation; imported terrain never enters the breakable set. */
+/** Bounded, round-owned spell simulation with destructible terrain inside the arena. */
 final class MagicCombat {
     private static final NamespacedKey ICE_ABSORPTION =
             new NamespacedKey("potatominigames", "magic_ice_absorption");
@@ -503,7 +503,6 @@ final class MagicCombat {
                                     < 1.5) return false;
         BlockData original = block.getBlockData(), data = material.createBlockData();
         block.setBlockData(data, false);
-        arena.placed(block);
         temporary.put(MagicBattleArena.Pos.of(block), new Temporary(block, original, data, until));
         return true;
     }
@@ -668,7 +667,7 @@ final class MagicCombat {
                             zone(cast.owner(), cast.spell(), cast.point(), tick, 100);
                     case UPDRAFT -> zone(cast.owner(), cast.spell(), cast.point(), tick, 80);
                     case ERODE -> {
-                        destroyBuilt(cast.point(), 4);
+                        destroyTerrain(cast.point(), 4);
                         ring(cast.point(), 4, cast.spell().school.color, null);
                     }
                     default -> {
@@ -944,10 +943,10 @@ final class MagicCombat {
                 }
             }
         if (spell == MagicSpell.FIREBALL || spell == MagicSpell.METEOR || spell == MagicSpell.QUAKE)
-            destroyBuilt(point, spell == MagicSpell.METEOR ? 3 : 2);
+            destroyTerrain(point, spell == MagicSpell.METEOR ? 3 : 2);
     }
 
-    private void destroyBuilt(Location point, int reach) {
+    private void destroyTerrain(Location point, int reach) {
         for (int x = -reach; x <= reach; x++)
             for (int y = -reach; y <= reach; y++)
                 for (int z = -reach; z <= reach; z++)

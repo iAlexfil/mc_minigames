@@ -43,8 +43,12 @@ public final class GroupCombatCheck {
         check(timings.getInt("pvpFfa.overtimeSeconds") == 180 && timings.getInt("sumoFfa.overtimeSeconds") == 45, "Overtime has separate group-mode settings");
     }
     private static void spawns(boolean sumo) {
+        if (sumo) spawns(true, PvpArena.Layout.COURTYARD);
+        else for (var layout : PvpArena.Layout.values()) spawns(false, layout);
+    }
+    private static void spawns(boolean sumo, PvpArena.Layout layout) {
         FakeWorld world = new FakeWorld();
-        DuelArena arena = sumo ? new SumoArena(world.world) : new PvpArena(world.world);
+        DuelArena arena = sumo ? new SumoArena(world.world) : new PvpArena(world.world, layout);
         arena.build();
         for (int count = 1; count <= 16; count++) {
             List<Location> positions = new ArrayList<>();

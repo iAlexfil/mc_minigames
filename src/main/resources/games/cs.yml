@@ -1,0 +1,6 @@
+# Classic CS:GO Competitive (MR15), not a Party Games round.
+roundsPerHalf: 15
+freezeSeconds: 15
+roundSeconds: 115
+bombSeconds: 40
+buySeconds: 20

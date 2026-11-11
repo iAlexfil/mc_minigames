@@ -20,6 +20,7 @@ public final class HoleWallCheck {
         directionCoverage();
         randomPatternOrder();
         openings();
+        crossingRoutes();
         precisionPassages();
         collisions();
         footholds();
@@ -40,33 +41,68 @@ public final class HoleWallCheck {
                         + " passed");
     }
 
+    private static Random patternRandom(int orientation) {
+        return new Random(orientation) {
+            private boolean first = true;
+
+            @Override
+            public boolean nextBoolean() {
+                if (first) {
+                    first = false;
+                    return (orientation & 1) != 0;
+                }
+                return super.nextBoolean();
+            }
+        };
+    }
+
     private static void centerRequiresAction() {
         for (int radius : new int[] {1, 2})
-            for (int seed = 0; seed < 20; seed++) {
-                int mustMove = 0, canJump = 0;
-                for (int stage = 1; stage <= 10; stage++) {
-                    var pattern = HoleWallPattern.generate(stage, radius, new Random(seed));
-                    var standing = new BoundingBox(.2, 81, .2, .8, 82.8, .8);
-                    var jumping = standing.clone().shift(0, 1.05, 0);
-                    for (var dir : HoleWallPhysics.Direction.values())
-                        check(
-                                HoleWallPhysics.collides(
-                                        pattern.cells(), dir, -2, 2, standing, standing),
-                                "Every wall requires action instead of standing still at center;"
-                                        + " stage="
-                                        + stage);
-                    if (HoleWallPhysics.collides(
+            for (int seed = 0; seed < 12; seed++) {
+                int centerOpen = 0, multiple = 0, mixed = 0;
+                var deck = new ArrayList<HoleWallPattern>();
+                for (int stage = 1; stage <= 20; stage++) {
+                    var pattern = HoleWallPattern.generate(stage, radius, patternRandom(seed));
+                    deck.add(pattern);
+                    var center = new BoundingBox(.2, 81, .2, .8, 82.8, .8);
+                    if (!HoleWallPhysics.collides(
                             pattern.cells(),
                             HoleWallPhysics.Direction.NORTH,
                             -2,
                             2,
-                            jumping,
-                            jumping)) mustMove++;
-                    else canJump++;
+                            center,
+                            center)) centerOpen++;
+                    if (pattern.gates().size() >= 2) multiple++;
+                    if (pattern.gates().stream()
+                                    .map(g -> List.of(g.bottom(), g.bodyHeight()))
+                                    .distinct()
+                                    .count()
+                            >= 2) mixed++;
+                    if (pattern.gates().stream().anyMatch(g -> g.width() < 1))
+                        check(
+                                pattern.gates().stream().anyMatch(g -> g.width() >= 1),
+                                "Precision route always has a wider alternative");
                 }
                 check(
-                        mustMove >= 6 && canJump >= 1,
-                        "Most walls force lateral movement, with some timed center jumps");
+                        centerOpen >= 3 && centerOpen <= 12,
+                        "Center is sometimes useful, never permanently safe");
+                check(
+                        multiple >= 16 && mixed >= 10,
+                        "Most walls offer routes and many offer distinct movement choices");
+                for (double u = -radius + .3; u <= radius + .7; u += .2) {
+                    var body = new BoundingBox(u - .3, 81, .2, u + .3, 82.8, .8);
+                    check(
+                            deck.stream()
+                                    .anyMatch(p ->
+                                            HoleWallPhysics.collides(
+                                                    p.cells(),
+                                                    HoleWallPhysics.Direction.NORTH,
+                                                    -2,
+                                                    2,
+                                                    body,
+                                                    body)),
+                            "No fixed standing position survives every wall");
+                }
             }
     }
 
@@ -95,6 +131,12 @@ public final class HoleWallCheck {
             List<net.kyori.adventure.text.Component> titles = new ArrayList<>();
             for (int tick = 0; tick < 6000 && titles.size() < 40; tick++)
                 for (var wall : flow.tick(tick).started()) {
+                    if (titles.size() < 5)
+                        check(
+                                wall.pattern.gates().stream()
+                                        .allMatch(g -> g.height() >= 1.8 && g.width() >= 1),
+                                "Opening walls teach walking and jumping before crouch or"
+                                        + " precision");
                     if (titles.size() < 10)
                         check(
                                 wall.pattern.gates().stream().allMatch(g -> g.width() >= 1),
@@ -118,7 +160,7 @@ public final class HoleWallCheck {
         for (int radius : new int[] {1, 2, 6, 8})
             for (int stage = 1; stage <= 20; stage++)
                 for (int seed = 0; seed < 8; seed++) {
-                    var pattern = HoleWallPattern.generate(stage, radius, new Random(seed));
+                    var pattern = HoleWallPattern.generate(stage, radius, patternRandom(seed));
                     patterns.add(pattern.cells());
                     sizes.add(pattern.cells().size());
                     check(!pattern.gates().isEmpty(), "Every wall has a passage");
@@ -164,6 +206,54 @@ public final class HoleWallCheck {
                 "Ten varied obstacle silhouettes, not just rectangular walls with moved holes");
     }
 
+    private static void crossingRoutes() {
+        for (int orientations = 0; orientations < 4; orientations++)
+            for (int radius : new int[] {1, 2})
+                for (int a = 1; a <= 20; a++)
+                    for (int b = 1; b <= 20; b++) {
+                        var first =
+                                HoleWallPattern.generate(
+                                        a, radius, patternRandom(orientations / 2));
+                        var second =
+                                HoleWallPattern.generate(
+                                        b, radius, patternRandom(orientations % 2));
+                        if (!HoleWallPattern.compatible(first, second)) continue;
+                        boolean fits = false;
+                        for (var ga : first.gates())
+                            for (var gb : second.gates()) {
+                                double x = ga.start() + ga.width() / 2,
+                                        z = gb.start() + gb.width() / 2;
+                                double y = 81 + Math.max(ga.bottom(), gb.bottom());
+                                var body =
+                                        new BoundingBox(
+                                                x - .3,
+                                                y,
+                                                z - .3,
+                                                x + .3,
+                                                y + Math.min(ga.bodyHeight(), gb.bodyHeight()),
+                                                z + .3);
+                                if (!HoleWallPhysics.collides(
+                                                first.cells(),
+                                                HoleWallPhysics.Direction.NORTH,
+                                                -2,
+                                                2,
+                                                body,
+                                                body)
+                                        && !HoleWallPhysics.collides(
+                                                second.cells(),
+                                                HoleWallPhysics.Direction.WEST,
+                                                -2,
+                                                2,
+                                                body,
+                                                body)) fits = true;
+                            }
+                        check(
+                                fits,
+                                "Compatible perpendicular walls have a real common passage over the"
+                                        + " plus");
+                    }
+    }
+
     private static void precisionPassages() {
         var roof =
                 List.of(
@@ -186,43 +276,60 @@ public final class HoleWallCheck {
                 "An actual current head overlap still counts when the body grows");
         Set<HoleWallBlock.Shape> shapes = EnumSet.noneOf(HoleWallBlock.Shape.class);
         int low = 0, narrow = 0;
-        for (int radius : new int[] {1, 2})
-            for (int stage = 1; stage <= 20; stage++) {
-                var pattern = HoleWallPattern.generate(stage, radius, new Random(stage));
-                pattern.cells().forEach(cell -> shapes.add(cell.block().shape()));
-                for (var gate : pattern.gates())
-                    for (var dir : HoleWallPhysics.Direction.values()) {
-                        double u = gate.start() + gate.width() / 2, y = 81 + gate.bottom();
-                        var body =
-                                dir.dx == 0
-                                        ? new BoundingBox(
-                                                u - .3, y, .2, u + .3, y + gate.bodyHeight(), .8)
-                                        : new BoundingBox(
-                                                .2, y, u - .3, .8, y + gate.bodyHeight(), u + .3);
-                        if (gate.height() == 1.5) {
-                            low++;
-                            var standing = body.clone().expand(0, 0, 0, 0, .3, 0);
-                            check(
-                                    HoleWallPhysics.collides(
-                                            pattern.cells(), dir, -1, 1, standing, standing),
-                                    "Low tunnel requires crouching, standing does not fit");
-                            check(
-                                    !HoleWallPhysics.collides(
-                                            pattern.cells(), dir, -1, 1, standing, body),
-                                    "Crouching this tick removes stale standing-head collision");
+        for (int orientation = 0; orientation < 2; orientation++)
+            for (int radius : new int[] {1, 2})
+                for (int stage = 1; stage <= 20; stage++) {
+                    var pattern =
+                            HoleWallPattern.generate(stage, radius, patternRandom(orientation));
+                    pattern.cells().forEach(cell -> shapes.add(cell.block().shape()));
+                    for (var gate : pattern.gates())
+                        for (var dir : HoleWallPhysics.Direction.values()) {
+                            double u = gate.start() + gate.width() / 2, y = 81 + gate.bottom();
+                            var body =
+                                    dir.dx == 0
+                                            ? new BoundingBox(
+                                                    u - .3,
+                                                    y,
+                                                    .2,
+                                                    u + .3,
+                                                    y + gate.bodyHeight(),
+                                                    .8)
+                                            : new BoundingBox(
+                                                    .2,
+                                                    y,
+                                                    u - .3,
+                                                    .8,
+                                                    y + gate.bodyHeight(),
+                                                    u + .3);
+                            if (gate.height() == 1.5) {
+                                low++;
+                                var standing = body.clone().expand(0, 0, 0, 0, .3, 0);
+                                check(
+                                        HoleWallPhysics.collides(
+                                                pattern.cells(), dir, -1, 1, standing, standing),
+                                        "Low tunnel requires crouching, standing does not fit");
+                                check(
+                                        !HoleWallPhysics.collides(
+                                                pattern.cells(), dir, -1, 1, standing, body),
+                                        "Crouching this tick removes stale standing-head"
+                                            + " collision");
+                            }
+                            if (gate.width() < 1) {
+                                narrow++;
+                                var offCenter =
+                                        body.clone()
+                                                .shift(
+                                                        dir.dx == 0 ? .18 : 0,
+                                                        0,
+                                                        dir.dx == 0 ? 0 : .18);
+                                check(
+                                        HoleWallPhysics.collides(
+                                                pattern.cells(), dir, -1, 1, offCenter, offCenter),
+                                        "Thin posts require lining up with their actual narrow"
+                                            + " gap");
+                            }
                         }
-                        if (gate.width() < 1) {
-                            narrow++;
-                            var offCenter =
-                                    body.clone()
-                                            .shift(dir.dx == 0 ? .18 : 0, 0, dir.dx == 0 ? 0 : .18);
-                            check(
-                                    HoleWallPhysics.collides(
-                                            pattern.cells(), dir, -1, 1, offCenter, offCenter),
-                                    "Thin posts require lining up with their actual narrow gap");
-                        }
-                    }
-            }
+                }
         check(low > 0 && narrow > 0, "Both crouch and precision passages are generated");
         check(
                 shapes.containsAll(
@@ -231,11 +338,9 @@ public final class HoleWallCheck {
                                 HoleWallBlock.Shape.BARS,
                                 HoleWallBlock.Shape.CHAIN,
                                 HoleWallBlock.Shape.ROD,
-                                HoleWallBlock.Shape.WALL_POST,
-                                HoleWallBlock.Shape.LECTERN,
-                                HoleWallBlock.Shape.CORE,
-                                HoleWallBlock.Shape.POT)),
-                "All eight unusual collision shapes participate in playable patterns");
+                                HoleWallBlock.Shape.UPPER_SLAB,
+                                HoleWallBlock.Shape.LOWER_SLAB)),
+                "Non-full blocks support distinct passage geometry");
     }
 
     private static void wallStream() {
@@ -299,21 +404,23 @@ public final class HoleWallCheck {
                                         "Opposing walls never squeeze the playable platform");
                                 if (dot == 0 && tick >= a.moveAt && tick >= b.moveAt)
                                     crossing = true;
-                                if (aOnFloor && bOnFloor)
+                                if (aOnFloor && bOnFloor) {
+                                    boolean route = false;
                                     for (var ga : a.pattern.gates())
-                                        for (var gb : b.pattern.gates()) {
-                                            double feet = Math.max(ga.bottom(), gb.bottom());
-                                            check(
-                                                    feet
-                                                                    + Math.min(
-                                                                            ga.bodyHeight(),
-                                                                            gb.bodyHeight())
-                                                            <= Math.min(
-                                                                    ga.bottom() + ga.height(),
-                                                                    gb.bottom() + gb.height()),
-                                                    "Crossing gates have compatible player-height"
-                                                            + " clearance");
-                                        }
+                                        for (var gb : b.pattern.gates())
+                                            if (Math.max(ga.bottom(), gb.bottom())
+                                                            + Math.min(
+                                                                    ga.bodyHeight(),
+                                                                    gb.bodyHeight())
+                                                    <= Math.min(
+                                                            ga.bottom() + ga.height(),
+                                                            gb.bottom() + gb.height()))
+                                                route = true;
+                                    check(
+                                            route,
+                                            "Crossing walls retain at least one compatible pair of"
+                                                    + " routes");
+                                }
                             }
                     }
                 }
@@ -357,14 +464,19 @@ public final class HoleWallCheck {
         var arena = new HoleWallArena(fixture.world);
         arena.build();
         check(
-                fixture.blocks.values().stream().filter(m -> m != Material.AIR).count() == 145,
-                "Smaller 17 by 17 plus with five-wide arms");
+                fixture.blocks.values().stream().filter(m -> m != Material.AIR).count() == 161,
+                "17 by 17 plus with five-wide arms and four 2 by 2 corner islands");
         for (int x = -8; x <= 8; x++)
             for (int z = -8; z <= 8; z++)
                 check(
                         (fixture.world.getBlockAt(x, 80, z).getType() != Material.AIR)
-                                == (Math.abs(x) <= 2 || Math.abs(z) <= 2),
-                        "No solid corners outside plus");
+                                == (Math.abs(x) <= 2
+                                        || Math.abs(z) <= 2
+                                        || (Math.abs(x) >= 5
+                                                && Math.abs(x) <= 6
+                                                && Math.abs(z) >= 5
+                                                && Math.abs(z) <= 6)),
+                        "Only the four deliberate islands exist outside the plus");
         arena.warn(6, 2);
         check(
                 fixture.world.getBlockAt(8, 80, 0).getType() == Material.RED_CONCRETE,
@@ -384,6 +496,19 @@ public final class HoleWallCheck {
                 fixture.world.getBlockAt(1, 80, 5).getType() != Material.RED_CONCRETE,
                 "The remaining three-wide strip is safe");
         arena.shrink(6, 1);
+        for (int sx : new int[] {-1, 1})
+            for (int sz : new int[] {-1, 1}) {
+                check(
+                        fixture.world.getBlockAt(sx * 5, 80, sz * 5).getType() != Material.AIR,
+                        "Corner islands survive the first shrink and arm narrowing");
+                check(
+                        fixture.world.getBlockAt(sx * 5, 80, sz * 4).getType() == Material.AIR,
+                        "Islands remain separated from arms by a jumpable gap");
+            }
+        arena.warn(4, 1);
+        check(
+                fixture.world.getBlockAt(5, 80, 5).getType() == Material.RED_CONCRETE,
+                "Corner islands visibly warn before final collapse");
         arena.shrink(4, 1);
         for (int x = -10; x <= 10; x++)
             for (int z = -10; z <= 10; z++)

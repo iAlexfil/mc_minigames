@@ -48,6 +48,7 @@ final class HoleWallArena {
             for (int z = -radius; z <= radius; z++) {
                 if (!onFloor(x, z, radius, armRadius)) continue;
                 Material material = Material.SMOOTH_QUARTZ;
+                if (cornerIsland(x, z)) material = Material.YELLOW_TERRACOTTA;
                 if (z == -radius) material = Material.BLUE_CONCRETE;
                 else if (x == radius) material = Material.YELLOW_CONCRETE;
                 else if (z == radius) material = Material.MAGENTA_CONCRETE;
@@ -59,7 +60,13 @@ final class HoleWallArena {
     static boolean onFloor(int x, int z, int radius, int armRadius) {
         return Math.abs(x) <= radius
                 && Math.abs(z) <= radius
-                && (Math.abs(x) <= armRadius || Math.abs(z) <= armRadius);
+                && (Math.abs(x) <= armRadius || Math.abs(z) <= armRadius || cornerIsland(x, z));
+    }
+
+    private static boolean cornerIsland(int x, int z) {
+        // Fixed islands never move or grow during a round. Even after arms narrow, the
+        // three empty cells between arm and island can be crossed with a running jump.
+        return Math.abs(x) >= 5 && Math.abs(x) <= 6 && Math.abs(z) >= 5 && Math.abs(z) <= 6;
     }
 
     Location spawn(int index, int count) {

@@ -8,11 +8,34 @@ import org.bukkit.Material;
 
 import java.util.*;
 
+/** Authored silhouettes with explicit alternative routes over the shrinking plus. */
 record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     static final int HALF_WIDTH = 13, HEIGHT = 5;
-    // Stable variant IDs; HoleWallFlow shuffles their arrival order for each game.
     static final int[] KINDS = {
         0, 12, 1, 2, 3, 4, 5, 18, 6, 19, 13, 7, 15, 8, 16, 9, 17, 10, 14, 11
+    };
+    private static final Set<Integer> INTRO = Set.of(0, 1, 2, 3, 4, 6, 7, 10, 11, 18);
+    private static final String[] NAMES = {
+        "arch",
+        "double_gate",
+        "barrier",
+        "steps",
+        "columns",
+        "battlements",
+        "zigzag",
+        "aqueduct",
+        "canopy",
+        "keyhole",
+        "terraces",
+        "fence_windows",
+        "duck_tunnel",
+        "fence_slit",
+        "duck_fence",
+        "iron_slit",
+        "chain_curtain",
+        "end_lattice",
+        "chess_columns",
+        "reading_tunnel"
     };
 
     record Cell(int u, int y, HoleWallBlock block) {
@@ -24,10 +47,6 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     record Gate(double start, double width, double bottom, double height) {
         double bodyHeight() {
             return Math.min(1.8, height);
-        }
-
-        boolean contains(int u, int y) {
-            return u >= start && u < start + width && y >= bottom && y < bottom + height;
         }
     }
 
@@ -41,213 +60,149 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
         for (int stage = 1; stage <= KINDS.length; stage++) stages.add(stage);
         Collections.shuffle(stages, random);
         if (introductory) {
-            var opening =
+            var first = stages.stream().filter(s -> INTRO.contains(KINDS[s - 1])).limit(5).toList();
+            stages.removeAll(first);
+            var next =
                     stages.stream()
-                            .filter(stage -> KINDS[stage - 1] < 13 || KINDS[stage - 1] > 17)
-                            .limit(10)
+                            .filter(s -> KINDS[s - 1] < 13 || KINDS[s - 1] > 17)
+                            .limit(5)
                             .toList();
-            stages.removeAll(opening);
-            stages.addAll(0, opening);
+            stages.removeAll(next);
+            stages.addAll(0, next);
+            stages.addAll(0, first);
         }
         return stages;
     }
 
     static HoleWallPattern generate(int stage, int radius, Random random) {
-        List<Gate> gates = new ArrayList<>();
         int kind = KINDS[Math.floorMod(stage - 1, KINDS.length)];
-        if (kind >= 12) return shapedPassage(kind, radius, random);
-        int sideWidth = Math.min(2, radius);
-        Component title;
-        switch (kind) {
-            case 0 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.arch");
-                gates.add(sideGate(3, radius, random));
-            }
-            case 1 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.double_gate");
-                gates.add(new Gate(-radius, sideWidth, 0, 3));
-                gates.add(new Gate(radius - sideWidth + 1, sideWidth, 0, 3));
-            }
-            case 2 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.barrier");
-                gates.add(gate(3, 1, 3, radius, random));
-            }
-            case 3 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.steps");
-                gates.add(new Gate(-radius, sideWidth, 0, 3));
-                gates.add(new Gate(radius - sideWidth + 1, sideWidth, 1, 3));
-            }
-            case 4 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.columns");
-                gates.add(sideGate(1, radius, random));
-            }
-            case 5 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.battlements");
-                gates.add(gate(2, 1, 3, radius, random));
-            }
-            case 6 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.zigzag");
-                gates.add(sideGate(2, radius, random));
-            }
-            case 7 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.aqueduct");
-                gates.add(new Gate(-radius, sideWidth, 0, 3));
-                gates.add(new Gate(radius - sideWidth + 1, sideWidth, 0, 3));
-            }
-            case 8 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.canopy");
-                gates.add(sideGate(2, radius, random));
-            }
-            case 9 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.keyhole");
-                gates.add(sideGate(1, radius, random));
-            }
-            case 10 -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.terraces");
-                gates.add(sideGate(1, radius, random));
-            }
-            default -> {
-                title = I18n.tr("party.rounds.hole_wall.pattern.fence_windows");
-                gates.add(sideGate(1, radius, random));
-            }
-        }
-        List<Cell> cells = new ArrayList<>();
-        int theme = random.nextInt(3);
-        Material full =
-                List.of(Material.STONE_BRICKS, Material.PURPUR_BLOCK, Material.DARK_PRISMARINE)
-                        .get(theme);
-        Material stairs =
-                List.of(
-                                Material.STONE_BRICK_STAIRS,
-                                Material.PURPUR_STAIRS,
-                                Material.DARK_PRISMARINE_STAIRS)
-                        .get(theme);
-        Material slab =
-                List.of(
-                                Material.STONE_BRICK_SLAB,
-                                Material.PURPUR_SLAB,
-                                Material.DARK_PRISMARINE_SLAB)
-                        .get(theme);
-        Material fence =
-                List.of(Material.OAK_FENCE, Material.NETHER_BRICK_FENCE, Material.SPRUCE_FENCE)
-                        .get(theme);
+        boolean mirror = random.nextBoolean();
+        var gates = routes(kind, radius);
+        var full =
+                new HoleWallBlock(
+                        random.nextBoolean() ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
+                        HoleWallBlock.Shape.FULL);
+        var cells = new ArrayList<Cell>();
         for (int u = -HALF_WIDTH; u <= HALF_WIDTH; u++)
             for (int y = 0; y < HEIGHT; y++) {
-                boolean hole = false;
-                for (Gate gate : gates)
-                    if (gate.contains(u, y)) {
-                        hole = true;
-                        break;
+                HoleWallBlock block = silhouette(kind, u, y) ? full : null;
+                // Each silhouette has a readable sill/ceiling around its actual routes, including
+                // half-height headroom. The wide alternatives are playable even on three-wide arms.
+                for (var gate : gates)
+                    if (u >= gate.start() && u + 1 <= gate.start() + gate.width()) {
+                        double bottom = gate.bottom(), top = bottom + gate.height();
+                        if (y >= bottom && y + 1 <= top) block = null;
+                        else if (y < bottom) block = full;
+                        else if (y < top && y + 1 > top)
+                            block =
+                                    new HoleWallBlock(
+                                            Material.SMOOTH_STONE_SLAB,
+                                            HoleWallBlock.Shape.UPPER_SLAB);
+                        else if (y == top) block = full;
                     }
-                // Silhouettes vary as well as passages. Every advertised gate overrides the
-                // outline.
-                boolean solid =
-                        switch (kind) {
-                            case 0 -> y < 4 || Math.abs(u) <= 4;
-                            case 2 -> y == 0 || (Math.abs(u) >= 5 && Math.abs(u) % 4 == 1 && y < 4);
-                            case 3 -> y <= Math.floorMod(u + HALF_WIDTH, 5);
-                            case 4 -> y < 4 && (Math.floorMod(u, 3) != 0 || y == 0);
-                            case 5 -> y <= (Math.floorMod(u, 2) == 0 ? 3 : 1);
-                            case 6 -> y < 4 && !(y >= 2 && Math.floorMod(u + y, 5) <= 1);
-                            case 7 -> y == 3 || Math.floorMod(u, 4) == 0;
-                            case 8 ->
-                                    y == 2
-                                            || y == 3
-                                            || (Math.abs(u) >= 4 && Math.floorMod(u, 4) == 0);
-                            case 9 -> !(y >= 2 && y <= 3 && Math.abs(u) <= 2);
-                            case 10 -> y <= Math.floorMod(u + HALF_WIDTH, 3);
-                            case 11 -> y == 0 || y == 3 || (y < 3 && Math.floorMod(u, 3) == 0);
-                            default -> true;
-                        };
-                // Silhouette cutouts must not create an idle-safe center. Explicit jump windows
-                // may open its upper cell, but a bottom hurdle always remains under those windows.
-                if (!hole && (solid || (u == 0 && y < 2))) {
-                    var block = new HoleWallBlock(full, HoleWallBlock.Shape.FULL);
-                    boolean belowGate = false;
-                    for (Gate gate : gates) if (gate.contains(u, y + 1)) belowGate = true;
-                    // Real fences have 1.5-block collision height: never raise a jump gate's sill.
-                    if ((kind == 4 || kind == 7 || (kind == 11 && y < 3)) && !belowGate && u != 0)
-                        block = new HoleWallBlock(fence, HoleWallBlock.Shape.FENCE);
-                    else if ((kind == 3 || kind == 10) && u != 0)
-                        block = new HoleWallBlock(stairs, HoleWallBlock.Shape.STAIRS);
-                    else if ((kind == 2 && y == 0) || (kind == 5 && y == 1))
-                        block = new HoleWallBlock(slab, HoleWallBlock.Shape.LOWER_SLAB);
-                    else if ((kind == 8 && y == 2) || (kind == 11 && y == 3))
-                        block = new HoleWallBlock(slab, HoleWallBlock.Shape.UPPER_SLAB);
-                    else if ((kind == 0 || kind == 9) && y >= 3)
+                if (kind >= 13 && kind <= 15 && (u == -1 || u == 0)) {
+                    // Two disconnected posts leave 0.75/0.875 blocks; a separate full-width route
+                    // rewards moving farther instead of making precision the only solution.
+                    if (y < (kind == 14 ? 1 : 3))
                         block =
                                 new HoleWallBlock(
-                                        Material.CHISELED_STONE_BRICKS, HoleWallBlock.Shape.FULL);
-                    cells.add(new Cell(u, y, block));
-                }
-            }
-        return new HoleWallPattern(cells, gates, title);
-    }
-
-    private static HoleWallPattern shapedPassage(int kind, int radius, Random random) {
-        boolean low = kind == 12 || kind == 14 || kind == 19;
-        boolean slit = kind >= 13 && kind <= 17;
-        int left = random.nextBoolean() ? -1 : 0;
-        HoleWallBlock post =
-                switch (kind) {
-                    case 15 -> new HoleWallBlock(Material.IRON_BARS, HoleWallBlock.Shape.BARS);
-                    case 16 -> new HoleWallBlock(Material.IRON_CHAIN, HoleWallBlock.Shape.CHAIN);
-                    case 17 -> new HoleWallBlock(Material.END_ROD, HoleWallBlock.Shape.ROD);
-                    default ->
-                            new HoleWallBlock(Material.OAK_FENCE, HoleWallBlock.Shape.FENCE_POST);
-                };
-        double half = kind == 15 ? .0625 : kind == 16 ? .09375 : .125;
-        Gate gate =
-                slit
-                        ? new Gate(left + .5 + half, 1 - 2 * half, 0, low ? 1.5 : 3)
-                        : sideGate(1, radius, random);
-        if (low && !slit) gate = new Gate(gate.start(), gate.width(), 0, 1.5);
-        var cells = new ArrayList<Cell>();
-        var roof = new HoleWallBlock(Material.SMOOTH_STONE_SLAB, HoleWallBlock.Shape.UPPER_SLAB);
-        var frame =
-                new HoleWallBlock(
-                        random.nextBoolean() ? Material.DEEPSLATE_BRICKS : Material.QUARTZ_BRICKS,
-                        HoleWallBlock.Shape.FULL);
-        for (int u = -HALF_WIDTH; u <= HALF_WIDTH; u++)
-            for (int y = 0; y < HEIGHT; y++) {
-                boolean opening =
-                        slit
-                                ? u == left || u == left + 1
-                                : u >= gate.start() && u < gate.start() + gate.width();
-                HoleWallBlock block = frame;
-                if (opening) {
-                    if (slit && y < (low ? 1 : 3)) block = post;
-                    else if (low && y == 1) block = roof;
-                    else if (y < (low ? 1 : 3)) continue;
-                } else if (kind == 18 && y < 3) {
-                    block =
-                            Math.floorMod(u + y, 2) == 0
-                                    ? new HoleWallBlock(
-                                            Material.HEAVY_CORE, HoleWallBlock.Shape.CORE)
-                                    : new HoleWallBlock(
-                                            Material.FLOWER_POT, HoleWallBlock.Shape.POT);
-                } else if (kind == 19 && y < 3) {
-                    block = new HoleWallBlock(Material.LECTERN, HoleWallBlock.Shape.LECTERN);
-                } else if (kind == 12 && y == 0 && Math.floorMod(u, 3) != 0) {
+                                        kind == 15 ? Material.IRON_BARS : Material.OAK_FENCE,
+                                        kind == 15
+                                                ? HoleWallBlock.Shape.BARS
+                                                : HoleWallBlock.Shape.FENCE_POST);
+                    else if (kind == 14 && y == 1)
+                        block =
+                                new HoleWallBlock(
+                                        Material.SMOOTH_STONE_SLAB, HoleWallBlock.Shape.UPPER_SLAB);
+                    else block = full;
+                } else if (block != null && kind == 16 && y < 4) {
+                    // Keep any crouching lintel solid; hanging chains themselves form many thin
+                    // gaps.
+                    boolean lintel = false;
+                    for (var g : gates)
+                        if (g.height() == 1.5
+                                && u >= g.start()
+                                && u + 1 <= g.start() + g.width()
+                                && y == 1) lintel = true;
+                    if (!lintel)
+                        block = new HoleWallBlock(Material.IRON_CHAIN, HoleWallBlock.Shape.CHAIN);
+                } else if (block != null && kind == 17 && y != 0 && y != 3) {
+                    block = new HoleWallBlock(Material.END_ROD, HoleWallBlock.Shape.ROD);
+                } else if (block != null && kind == 11 && Math.abs(u) > radius && y < 3) {
+                    block = new HoleWallBlock(Material.OAK_FENCE, HoleWallBlock.Shape.FENCE_POST);
+                } else if (block != null && (kind == 3 || kind == 10) && Math.abs(u) > radius) {
                     block =
                             new HoleWallBlock(
-                                    Material.COBBLESTONE_WALL, HoleWallBlock.Shape.WALL_POST);
+                                    Material.STONE_BRICK_STAIRS, HoleWallBlock.Shape.STAIRS);
+                } else if (block != null && kind == 2 && y == 0) {
+                    block =
+                            new HoleWallBlock(
+                                    Material.STONE_BRICK_SLAB, HoleWallBlock.Shape.LOWER_SLAB);
                 }
-                cells.add(new Cell(u, y, block));
+                if (block != null) cells.add(new Cell(mirror ? -u : u, y, block));
             }
-        String name =
-                switch (kind) {
-                    case 12 -> "duck_tunnel";
-                    case 13 -> "fence_slit";
-                    case 14 -> "duck_fence";
-                    case 15 -> "iron_slit";
-                    case 16 -> "chain_curtain";
-                    case 17 -> "end_lattice";
-                    case 18 -> "chess_columns";
-                    default -> "reading_tunnel";
-                };
+        if (mirror)
+            gates =
+                    gates.stream()
+                            .map(g ->
+                                    new Gate(
+                                            1 - g.start() - g.width(),
+                                            g.width(),
+                                            g.bottom(),
+                                            g.height()))
+                            .toList();
         return new HoleWallPattern(
-                cells, List.of(gate), I18n.tr("party.rounds.hole_wall.pattern." + name));
+                cells, gates, I18n.tr("party.rounds.hole_wall.pattern." + NAMES[kind]));
+    }
+
+    private static List<Gate> routes(int kind, int radius) {
+        Gate left = new Gate(-radius, radius, 0, 3), right = new Gate(1, radius, 0, 3);
+        Gate center = new Gate(0, 1, 0, 3), jumpCenter = new Gate(0, 1, 1, 3);
+        Gate jumpRight = new Gate(1, radius, 1, 3), duckLeft = new Gate(-radius, radius, 0, 1.5);
+        Gate duckCenter = new Gate(0, 1, 0, 1.5);
+        return switch (kind) {
+            case 0, 4, 11 -> List.of(left, right);
+            case 1, 18 -> List.of(center, jumpRight);
+            case 2, 17 -> List.of(jumpCenter, left);
+            case 3, 6, 10 -> List.of(left, jumpRight);
+            case 5, 9 -> List.of(jumpCenter, duckLeft);
+            case 7 -> List.of(center, new Gate(-radius, radius, 1, 3), jumpRight);
+            case 8, 12 -> List.of(duckCenter, right);
+            case 13 -> List.of(new Gate(-.375, .75, 0, 3), right);
+            case 14 -> List.of(new Gate(-.375, .75, 0, 1.5), jumpRight);
+            case 15 -> List.of(new Gate(-.4375, .875, 0, 3), new Gate(1, radius, 0, 1.5));
+            case 16 -> List.of(left, new Gate(1, radius, 0, 1.5));
+            default -> List.of(duckLeft, jumpRight);
+        };
+    }
+
+    private static boolean silhouette(int kind, int u, int y) {
+        int a = Math.abs(u), tooth = Math.floorMod(u, 4), wave = Math.floorMod(u, 6);
+        return switch (kind) {
+            case 0 -> y == 3 || (tooth == 0 && y < 4); // A row of open arches.
+            case 1 -> y >= 2 || (a % 5 == 2 && y < 2); // Central door flanked by raised windows.
+            case 2 -> y == 0 || (a % 5 == 0 && y <= 2); // Low hurdle with broad escape route.
+            case 3 -> y <= Math.floorMod(u + HALF_WIDTH, 4); // Ascending stair skyline.
+            case 4 -> y == 0 || (tooth == 0 && y < 4); // Comb, open above the teeth.
+            case 5 -> y <= (tooth < 2 ? 2 : 0); // Alternating tall and short battlements.
+            case 6 -> y == wave % 4 || y == (wave + 1) % 4 || y == 0; // Diagonal ribbons.
+            case 7 -> y == 3 || (a % 4 == 0 && y < 3); // Aqueduct: center or raised side windows.
+            case 8 -> y == 1 || y == 2 || (a % 6 == 0 && y == 0); // Low canopy, tall escape door.
+            case 9 -> !(y >= 1 && y <= 3 && (tooth == 1 || (y == 2 && tooth == 2))); // Keyholes.
+            case 10 -> y <= Math.floorMod(u + 2, 3); // Three-height terraces.
+            case 11 -> y == 3 || a % 3 == 0; // Fence arcade, generous floor-level windows.
+            case 12 -> y == 1 || y == 2 || a % 4 == 0; // Low beam with upright bypass.
+            case 13 -> y == 3 || a % 3 == 0; // Fence wicket plus wide side arch.
+            case 14 -> y <= 2 || a % 3 == 0; // Duck or jump, neither route forced.
+            case 15 -> y == 0 || y == 3 || a % 4 < 2; // Iron window or low side tunnel.
+            case 16 -> true; // A curtain of physically thin chains, not a solid rectangular frame.
+            case 17 -> y == 0 || y == 3 || a % 2 == 0; // End-rod lattice.
+            case 18 ->
+                    !(y == 2 && tooth != 0
+                            || y == 1 && tooth == 2
+                            || y == 3 && tooth == 2); // Cross windows.
+            default -> y == 0 || a % 4 == 0 || y == 4 - a % 4; // Repeating M-shaped skyline.
+        };
     }
 
     static boolean compatible(HoleWallPattern a, HoleWallPattern b) {
@@ -255,24 +210,10 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
             for (Gate second : b.gates())
                 if (Math.max(first.bottom(), second.bottom())
                                 + Math.min(first.bodyHeight(), second.bodyHeight())
-                        > Math.min(
+                        <= Math.min(
                                         first.bottom() + first.height(),
                                         second.bottom() + second.height())
-                                + 1e-6) return false;
-        return true;
-    }
-
-    private static Gate sideGate(int width, int radius, Random random) {
-        width = Math.min(width, radius);
-        int offset = random.nextInt(radius - width + 1);
-        return new Gate(random.nextBoolean() ? -radius + offset : 1 + offset, width, 0, 3);
-    }
-
-    private static Gate gate(int width, int bottom, int height, int radius, Random random) {
-        // Keep landing margins where possible, but a three-wide arm also accepts a full-width gate.
-        width = Math.min(width, 2 * radius + 1);
-        int padding = 2 * radius + 1 - width >= 2 ? 1 : 0;
-        int min = -radius + padding, max = radius + 1 - width - padding;
-        return new Gate(min + random.nextInt(max - min + 1), width, bottom, height);
+                                + 1e-6) return true;
+        return false;
     }
 }

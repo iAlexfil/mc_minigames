@@ -51,8 +51,54 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     }
 
     HoleWallPattern {
-        cells = List.copyOf(cells);
+        cells = grounded(cells);
         gates = List.copyOf(gates);
+    }
+
+    static List<Cell> frameLowPassages(List<Cell> cells, List<Gate> gates, HoleWallBlock material) {
+        var result = new LinkedHashMap<Long, Cell>();
+        for (var cell : cells) result.put(cellKey(cell.u(), cell.y()), cell);
+        for (var gate : gates)
+            if (gate.height() == 1.5) {
+                for (int u :
+                        new int[] {
+                            (int) Math.floor(gate.start()) - 1,
+                            (int) Math.ceil(gate.start() + gate.width())
+                        }) {
+                    boolean passage = false;
+                    for (var other : gates)
+                        if (u < other.start() + other.width() && u + 1 > other.start())
+                            passage = true;
+                    if (passage) continue;
+                    for (int y = 0; y < Math.ceil(gate.bottom() + gate.height()); y++)
+                        result.putIfAbsent(cellKey(u, y), new Cell(u, y, material));
+                }
+            }
+        return List.copyOf(result.values());
+    }
+
+    private static List<Cell> grounded(List<Cell> cells) {
+        var positions = new HashSet<Long>();
+        var reached = new HashSet<Long>();
+        var pending = new ArrayDeque<Cell>();
+        for (var cell : cells) {
+            positions.add(cellKey(cell.u(), cell.y()));
+            if (cell.y() == 0) pending.add(cell);
+        }
+        while (!pending.isEmpty()) {
+            var cell = pending.removeFirst();
+            long key = cellKey(cell.u(), cell.y());
+            if (!positions.contains(key) || !reached.add(key)) continue;
+            pending.add(new Cell(cell.u() - 1, cell.y()));
+            pending.add(new Cell(cell.u() + 1, cell.y()));
+            pending.add(new Cell(cell.u(), cell.y() - 1));
+            pending.add(new Cell(cell.u(), cell.y() + 1));
+        }
+        return cells.stream().filter(c -> reached.contains(cellKey(c.u(), c.y()))).toList();
+    }
+
+    private static long cellKey(int u, int y) {
+        return ((long) u << 32) ^ (y & 0xffffffffL);
     }
 
     static List<Integer> shuffledStages(Random random, boolean introductory) {
@@ -98,7 +144,6 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                                     new HoleWallBlock(
                                             Material.SMOOTH_STONE_SLAB,
                                             HoleWallBlock.Shape.UPPER_SLAB);
-                        else if (y == top) block = full;
                     }
                 if (kind >= 13 && kind <= 15 && (u == -1 || u == 0)) {
                     // Two disconnected posts leave 0.75/0.875 blocks; a separate full-width route
@@ -134,13 +179,24 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                     block =
                             new HoleWallBlock(
                                     Material.STONE_BRICK_STAIRS, HoleWallBlock.Shape.STAIRS);
-                } else if (block != null && kind == 2 && y == 0) {
-                    block =
-                            new HoleWallBlock(
-                                    Material.STONE_BRICK_SLAB, HoleWallBlock.Shape.LOWER_SLAB);
                 }
                 if (block != null) cells.add(new Cell(mirror ? -u : u, y, block));
             }
+        cells =
+                new ArrayList<>(
+                        frameLowPassages(
+                                cells,
+                                mirror
+                                        ? gates.stream()
+                                                .map(g ->
+                                                        new Gate(
+                                                                1 - g.start() - g.width(),
+                                                                g.width(),
+                                                                g.bottom(),
+                                                                g.height()))
+                                                .toList()
+                                        : gates,
+                                full));
         if (mirror)
             gates =
                     gates.stream()
@@ -177,19 +233,21 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     }
 
     private static boolean silhouette(int kind, int u, int y) {
-        int a = Math.abs(u), tooth = Math.floorMod(u, 4), wave = Math.floorMod(u, 6);
+        int a = Math.abs(u),
+                tooth = Math.floorMod(Math.abs(u), 4),
+                wave = Math.floorMod(Math.abs(u), 6);
         return switch (kind) {
             case 0 -> y == 3 || (tooth == 0 && y < 4); // A row of open arches.
             case 1 -> y >= 2 || (a % 5 == 2 && y < 2); // Central door flanked by raised windows.
-            case 2 -> y == 0 || (a % 5 == 0 && y <= 2); // Low hurdle with broad escape route.
-            case 3 -> y <= Math.floorMod(u + HALF_WIDTH, 4); // Ascending stair skyline.
+            case 2 -> y == 0; // Low hurdle with broad escape route.
+            case 3 -> y <= a % 4; // Ascending stair skyline.
             case 4 -> y == 0 || (tooth == 0 && y < 4); // Comb, open above the teeth.
             case 5 -> y <= (tooth < 2 ? 2 : 0); // Alternating tall and short battlements.
-            case 6 -> y == wave % 4 || y == (wave + 1) % 4 || y == 0; // Diagonal ribbons.
+            case 6 -> y <= Math.min(wave, 6 - wave); // Diagonal ribbons.
             case 7 -> y == 3 || (a % 4 == 0 && y < 3); // Aqueduct: center or raised side windows.
             case 8 -> y == 1 || y == 2 || (a % 6 == 0 && y == 0); // Low canopy, tall escape door.
             case 9 -> !(y >= 1 && y <= 3 && (tooth == 1 || (y == 2 && tooth == 2))); // Keyholes.
-            case 10 -> y <= Math.floorMod(u + 2, 3); // Three-height terraces.
+            case 10 -> y <= a % 3; // Three-height terraces.
             case 11 -> y == 3 || a % 3 == 0; // Fence arcade, generous floor-level windows.
             case 12 -> y == 1 || y == 2 || a % 4 == 0; // Low beam with upright bypass.
             case 13 -> y == 3 || a % 3 == 0; // Fence wicket plus wide side arch.
@@ -201,7 +259,7 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                     !(y == 2 && tooth != 0
                             || y == 1 && tooth == 2
                             || y == 3 && tooth == 2); // Cross windows.
-            default -> y == 0 || a % 4 == 0 || y == 4 - a % 4; // Repeating M-shaped skyline.
+            default -> y <= 4 - a % 4; // Repeating M-shaped skyline.
         };
     }
 

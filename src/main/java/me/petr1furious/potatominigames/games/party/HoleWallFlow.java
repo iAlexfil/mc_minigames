@@ -34,6 +34,7 @@ final class HoleWallFlow {
 
     private final long duration;
     private final Random random;
+    private final HoleWallLayout layout;
     private final List<Wall> walls = new ArrayList<>();
     private long nextSpawn;
     private int radius = 8, number;
@@ -42,6 +43,11 @@ final class HoleWallFlow {
     private final Deque<Integer> patternStages = new ArrayDeque<>();
 
     HoleWallFlow(long duration, Random random) {
+        this(duration, random, HoleWallLayout.PLUS);
+    }
+
+    HoleWallFlow(long duration, Random random, HoleWallLayout layout) {
+        this.layout = layout;
         this.duration = duration;
         this.random = random;
     }
@@ -70,8 +76,8 @@ final class HoleWallFlow {
         }
         int target = tick >= duration * 2 / 3 ? 4 : tick >= duration / 3 ? 6 : 8;
         int warning = tick >= duration * 2 / 3 - 60 ? 4 : tick >= duration / 3 - 60 ? 6 : 8;
-        int armRadius = tick >= duration / 2 ? 1 : 2,
-                warningArmRadius = tick >= duration / 2 - 60 ? 1 : 2;
+        int armRadius = tick >= duration / 3 ? 1 : 2,
+                warningArmRadius = tick >= duration / 3 - 60 ? 1 : 2;
         radius = target;
         if (tick < duration && tick >= nextSpawn && walls.size() < 4) {
             if (directions.isEmpty()) {
@@ -85,16 +91,17 @@ final class HoleWallFlow {
             }
             var direction = directions.getFirst();
             if (patternStages.isEmpty())
-                patternStages.addAll(HoleWallPattern.shuffledStages(random, number == 0));
+                patternStages.addAll(layout.shuffledStages(random, number == 0));
             // Delayed arrivals must still fit the narrowed arms when they eventually cross.
             long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
-            int gateRadius = latestExit >= duration / 2 ? 1 : 2;
-            var pattern = HoleWallPattern.generate(patternStages.getFirst(), gateRadius, random);
+            int gateRadius = latestExit >= duration / 3 ? 1 : 2;
+            var pattern = layout.pattern(patternStages.getFirst(), gateRadius, random);
             if (canApproach(direction, pattern, tick, speed)) {
                 patternStages.removeFirst();
                 directions.removeFirst();
                 lastDirection = direction;
-                // A wall that might survive past halfway must already fit the narrower arms.
+                // A wall that might survive past the first shrink must already fit the narrower
+                // arms.
                 var wall = new Wall(++number, pattern, direction, tick + 40);
                 walls.add(wall);
                 started.add(wall);
@@ -118,7 +125,7 @@ final class HoleWallFlow {
         double earliestEntry = 39 + Math.floor((16 - radius - 2) / .32);
         for (var wall : walls)
             if (wall.direction.dx * direction.dx + wall.direction.dz * direction.dz == -1
-                    || !HoleWallPattern.compatible(wall.pattern, pattern)) {
+                    || !layout.crossing(wall.pattern, wall.direction, pattern, direction)) {
                 double movement = Math.max(0, earliestEntry - Math.max(0, wall.moveAt - tick));
                 if (wall.depth + Math.max(0, Math.floor(movement * speed) - 1) <= radius + 2)
                     return false;

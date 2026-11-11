@@ -15,6 +15,7 @@ import java.util.*;
 final class HoleWallSession extends PartySurvivalSession {
     private final int seconds;
     private HoleWallArena arena;
+    private HoleWallLayout layout = HoleWallLayout.PLUS;
     private HoleWallFlow flow;
     private HoleWallBlocks blocks;
     private final Map<UUID, BoundingBox> previous = new HashMap<>();
@@ -27,9 +28,10 @@ final class HoleWallSession extends PartySurvivalSession {
     }
 
     void buildArena() {
-        arena = new HoleWallArena(world);
+        layout = HoleWallLayout.choose(random);
+        arena = new HoleWallArena(world, layout);
         arena.build();
-        flow = new HoleWallFlow(seconds * 20L, random);
+        flow = new HoleWallFlow(seconds * 20L, random, layout);
         blocks = new HoleWallBlocks(world);
         world.setTime(6000);
     }
@@ -55,7 +57,7 @@ final class HoleWallSession extends PartySurvivalSession {
     }
 
     Component instructions() {
-        return I18n.tr("party.rounds.hole_wall.instructions");
+        return I18n.tr("party.rounds.hole_wall.instructions", layout.description());
     }
 
     void playTick(long elapsed) {
@@ -65,7 +67,8 @@ final class HoleWallSession extends PartySurvivalSession {
         boolean reshaping =
                 frame.radius() < arena.radius() || frame.armRadius() < arena.armRadius();
         if (newWarning) {
-            boolean narrowing = frame.warningArmRadius() < warnedArmRadius;
+            boolean narrowing =
+                    layout == HoleWallLayout.PLUS && frame.warningArmRadius() < warnedArmRadius;
             warnedRadius = frame.warningRadius();
             warnedArmRadius = frame.warningArmRadius();
             announceTitle(

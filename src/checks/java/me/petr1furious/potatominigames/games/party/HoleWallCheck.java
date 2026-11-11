@@ -20,11 +20,17 @@ public final class HoleWallCheck {
         directionCoverage();
         randomPatternOrder();
         openings();
+        var hurdle = HoleWallPattern.generate(4, 1, patternRandom(0));
+        check(
+                hurdle.cells().stream()
+                        .allMatch(c -> c.y() == 0 && c.block().shape() == HoleWallBlock.Shape.FULL),
+                "The shown hurdle has a full-block sill and no floating decorations");
         crossingRoutes();
         precisionPassages();
         collisions();
         footholds();
         floor();
+        HoleWallLayoutCheck.run();
         displayLifecycle();
         pushingAndRouting();
         wallStream();
@@ -312,7 +318,7 @@ public final class HoleWallCheck {
                                         !HoleWallPhysics.collides(
                                                 pattern.cells(), dir, -1, 1, standing, body),
                                         "Crouching this tick removes stale standing-head"
-                                            + " collision");
+                                                + " collision");
                             }
                             if (gate.width() < 1) {
                                 narrow++;
@@ -326,7 +332,7 @@ public final class HoleWallCheck {
                                         HoleWallPhysics.collides(
                                                 pattern.cells(), dir, -1, 1, offCenter, offCenter),
                                         "Thin posts require lining up with their actual narrow"
-                                            + " gap");
+                                                + " gap");
                             }
                         }
                 }
@@ -338,8 +344,7 @@ public final class HoleWallCheck {
                                 HoleWallBlock.Shape.BARS,
                                 HoleWallBlock.Shape.CHAIN,
                                 HoleWallBlock.Shape.ROD,
-                                HoleWallBlock.Shape.UPPER_SLAB,
-                                HoleWallBlock.Shape.LOWER_SLAB)),
+                                HoleWallBlock.Shape.UPPER_SLAB)),
                 "Non-full blocks support distinct passage geometry");
     }
 
@@ -359,11 +364,11 @@ public final class HoleWallCheck {
                             frame.radius() == expectedRadius,
                             "Ends disappear exactly at each timed third, even with active walls");
                     check(
-                            frame.armRadius() == (tick < seconds * 10L ? 2 : 1),
-                            "Arms narrow from five to three blocks exactly halfway");
+                            frame.armRadius() == (tick < seconds * 20L / 3 ? 2 : 1),
+                            "Arms narrow from five to three blocks at the first shrink");
                     check(
-                            frame.warningArmRadius() == (tick < seconds * 10L - 60 ? 2 : 1),
-                            "Width change is warned three seconds before halfway");
+                            frame.warningArmRadius() == (tick < seconds * 20L / 3 - 60 ? 2 : 1),
+                            "Width change is warned three seconds before the first shrink");
                     if (frame.warningRadius() < oldRadius && warningAt < 0) warningAt = tick;
                     if (frame.radius() < oldRadius) {
                         check(
@@ -507,16 +512,20 @@ public final class HoleWallCheck {
             }
         arena.warn(4, 1);
         check(
-                fixture.world.getBlockAt(5, 80, 5).getType() == Material.RED_CONCRETE,
-                "Corner islands visibly warn before final collapse");
+                fixture.world.getBlockAt(5, 80, 5).getType() != Material.RED_CONCRETE,
+                "Permanent corner islands are never marked for collapse");
         arena.shrink(4, 1);
         for (int x = -10; x <= 10; x++)
             for (int z = -10; z <= 10; z++)
                 check(
                         (fixture.world.getBlockAt(x, 80, z).getType() != Material.AIR)
-                                == (Math.abs(x) <= 4
-                                        && Math.abs(z) <= 4
-                                        && (Math.abs(x) <= 1 || Math.abs(z) <= 1)),
+                                == ((Math.abs(x) <= 4
+                                                && Math.abs(z) <= 4
+                                                && (Math.abs(x) <= 1 || Math.abs(z) <= 1))
+                                        || (Math.abs(x) >= 5
+                                                && Math.abs(x) <= 6
+                                                && Math.abs(z) >= 5
+                                                && Math.abs(z) <= 6)),
                         "Shrinking preserves plus shape with three-wide arms");
         for (int i = 0; i < 12; i++) {
             var p = arena.spawn(i, 12);

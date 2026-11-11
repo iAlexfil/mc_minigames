@@ -17,6 +17,7 @@ public final class CsCheck {
     private static int checks;
 
     public static void main(String[] args) throws Exception {
+        hudTranslations();
         buying();
         ammunition();
         damageAndRewards();
@@ -26,6 +27,26 @@ public final class CsCheck {
         importedMap();
         smokeGeometry();
         System.out.println("CsCheck: " + checks + " checks passed");
+    }
+
+    private static void hudTranslations() {
+        me.petr1furious.potatominigames.i18n.I18n.register();
+        try {
+            for (String state : List.of("yes", "no")) {
+                var label = me.petr1furious.potatominigames.i18n.I18n.tr("cs." + state);
+                var health =
+                        me.petr1furious.potatominigames.i18n.I18n.tr(
+                                "cs.hud.health", 100, 100, label);
+                for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                    String plain = me.petr1furious.potatominigames.i18n.I18n.plain(health, locale);
+                    check(
+                            plain.contains("100") && !plain.contains("potatominigames."),
+                            "start-round health HUD renders with and without helmet");
+                }
+            }
+        } finally {
+            me.petr1furious.potatominigames.i18n.I18n.unregister();
+        }
     }
 
     private static CsMatch live() {

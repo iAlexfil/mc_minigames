@@ -116,7 +116,7 @@ final class HoleWallFlow {
                 lastDirection = direction;
                 // A wall that might survive past the first shrink must already fit the narrower
                 // arms.
-                var wall = new Wall(++number, pattern, direction, tick + (islandWave ? 80 : 40));
+                var wall = new Wall(++number, pattern, direction, tick + (islandWave ? 20 : 40));
                 walls.add(wall);
                 started.add(wall);
                 nextSpawn = tick + Math.round(80 - 40 * Math.clamp((double) tick / duration, 0, 1));

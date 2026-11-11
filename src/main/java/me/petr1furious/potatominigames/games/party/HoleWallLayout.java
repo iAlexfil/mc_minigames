@@ -36,12 +36,17 @@ enum HoleWallLayout {
                 int distanceSquared = x * x + z * z;
                 yield distanceSquared >= 2.25 && distanceSquared <= outerRadius * outerRadius;
             }
-            case SNAKE ->
-                    (z >= -5 && z <= -3 && x <= 5)
-                            || (az <= 1 && ax <= 5)
-                            || (z >= 3 && z <= 5 && x >= -5)
-                            || (x >= 3 && x <= 5 && z >= -5 && z <= 1)
-                            || (x >= -5 && x <= -3 && z >= -1 && z <= 5);
+            case SNAKE -> {
+                // Shrink each band in place, including the two bends. No new floor is added.
+                int outer = radius >= 8 ? 5 : 4;
+                int middleMin = radius >= 8 ? -1 : 0;
+                int middleMax = radius <= 4 ? 0 : 1;
+                yield (z >= -outer && z <= -3 && x <= outer)
+                        || (z >= middleMin && z <= middleMax && ax <= outer)
+                        || (z >= 3 && z <= outer && x >= -outer)
+                        || (x >= 3 && x <= outer && z >= -outer && z <= middleMax)
+                        || (x >= -outer && x <= -3 && z >= middleMin && z <= outer);
+            }
         };
     }
 

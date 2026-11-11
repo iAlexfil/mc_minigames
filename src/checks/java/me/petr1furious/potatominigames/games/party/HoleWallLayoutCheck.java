@@ -9,6 +9,7 @@ import java.util.*;
 
 final class HoleWallLayoutCheck {
     static void run() {
+        snakeWidths();
         donutDimensions();
         islandWavesAndMaterials();
         for (var layout : HoleWallLayout.values()) {
@@ -62,17 +63,18 @@ final class HoleWallLayoutCheck {
                     check(connected(cells), "New layouts remain walk-connected after every shrink");
                 if (layout == HoleWallLayout.DONUT) {
                     check(!cells.contains("0:0"), "Donut keeps its central hole");
-                    int edge = radius / 2 + 2;
+                }
+                for (String key : cells) {
+                    var xy = key.split(":");
+                    Material actual =
+                            fixture.world
+                                    .getBlockAt(
+                                            Integer.parseInt(xy[0]), 80, Integer.parseInt(xy[1]))
+                                    .getType();
                     check(
-                            fixture.world.getBlockAt(0, 80, -edge).getType()
-                                            == Material.BLUE_CONCRETE
-                                    && fixture.world.getBlockAt(edge, 80, 0).getType()
-                                            == Material.YELLOW_CONCRETE
-                                    && fixture.world.getBlockAt(0, 80, edge).getType()
-                                            == Material.MAGENTA_CONCRETE
-                                    && fixture.world.getBlockAt(-edge, 80, 0).getType()
-                                            == Material.LIME_CONCRETE,
-                            "Smaller donut keeps all four direction markers at every size");
+                            actual == Material.SMOOTH_QUARTZ
+                                    || actual == Material.YELLOW_TERRACOTTA,
+                            "Platforms have no permanent colored edge markers");
                 }
                 previous = cells;
             }
@@ -102,8 +104,8 @@ final class HoleWallLayoutCheck {
                                     layout == HoleWallLayout.PLUS && tick >= 1600,
                                     "Island-only walls are exclusive to the final third of plus");
                             check(
-                                    wall.moveAt - tick >= 80,
-                                    "Island jumps get four seconds of preparation");
+                                    wall.moveAt - tick == 20,
+                                    "Island walls start moving after one second");
                             for (int x = -4; x <= 4; x++)
                                 for (int z = -4; z <= 4; z++)
                                     if (layout.onFloor(x, z, 4, 1)) {
@@ -119,7 +121,7 @@ final class HoleWallLayoutCheck {
                                                         body,
                                                         body),
                                                 "No surviving core floor cell bypasses an island"
-                                                    + " wall");
+                                                        + " wall");
                                     }
                             for (var gate : wall.pattern.gates()) {
                                 double u = gate.start() + gate.width() / 2;
@@ -196,6 +198,31 @@ final class HoleWallLayoutCheck {
                                     "Slabs match their wall material");
                         }
                 }
+        }
+    }
+
+    private static void snakeWidths() {
+        var snake = HoleWallLayout.SNAKE;
+        for (int radius : new int[] {8, 6, 4}) {
+            int sideWidth = radius == 8 ? 3 : 2;
+            int middleWidth = radius == 8 ? 3 : radius == 6 ? 2 : 1;
+            int upper = 0, lower = 0, middle = 0, left = 0, right = 0;
+            for (int i = -8; i <= 8; i++) {
+                if (snake.onFloor(0, i, radius, 1)) {
+                    if (i < -2) upper++;
+                    else if (i > 2) lower++;
+                    else middle++;
+                }
+                if (snake.onFloor(i, 2, radius, 1)) left++;
+                if (snake.onFloor(i, -2, radius, 1)) right++;
+            }
+            check(
+                    upper == sideWidth
+                            && lower == sideWidth
+                            && left == sideWidth
+                            && right == sideWidth,
+                    "All snake side tracks and bends narrow to two blocks at the first shrink");
+            check(middle == middleWidth, "Snake center narrows from three to two to one block");
         }
     }
 

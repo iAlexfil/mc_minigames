@@ -1,0 +1,13 @@
+[LesRaisins | CSGO] Dust II
+Map by xjqsh / xjqshm and LesRaisinsStudio.
+Original Counter-Strike Dust II map copyright Valve.
+
+Author's published conditions, as of 2026-11-11:
+https://www.curseforge.com/minecraft/worlds/lesraisins-csgo-dust-ii
+
+Non-commercial use and sharing of the map's archives, images and projects are
+permitted when copyright information is retained. Commercial use or commercial
+re-creation requires authorization from the author. Do not claim authorship,
+sell the work, upload it to NetEase Minecraft, or republish it without copyright
+information. The independently licensed map is excluded from the repository's
+Apache-2.0 license.

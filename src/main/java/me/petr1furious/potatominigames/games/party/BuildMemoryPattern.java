@@ -9,7 +9,8 @@ import org.bukkit.Material;
 import java.util.*;
 
 record BuildMemoryPattern(Component title, Map<Cell, MemoryBlock> blocks) {
-    static final int MODEL_COUNT = 14;
+    static final int FULL_MODELS = 14;
+    static final int MODEL_COUNT = 20;
 
     record Cell(int x, int y, int z) {}
 
@@ -18,18 +19,30 @@ record BuildMemoryPattern(Component title, Map<Cell, MemoryBlock> blocks) {
     }
 
     static List<Integer> deck(Random random) {
+        List<Integer> small = new ArrayList<>();
+        for (int i = FULL_MODELS; i < MODEL_COUNT; i++) small.add(i);
+        Collections.shuffle(small, random);
         List<Integer> models = new ArrayList<>();
-        for (int i = 0; i < MODEL_COUNT; i++) models.add(i);
+        for (int i = 0; i < FULL_MODELS; i++) models.add(i);
         Collections.shuffle(models, random);
+        models.addAll(0, small.subList(0, 2));
+        models.addAll(small.subList(2, small.size()));
         return List.copyOf(models);
     }
 
     static BuildMemoryPattern generate(int stage, Random random) {
-        return generate(stage, random.nextInt(MODEL_COUNT), random);
+        return generate(
+                stage,
+                stage <= 2
+                        ? FULL_MODELS + random.nextInt(MODEL_COUNT - FULL_MODELS)
+                        : random.nextInt(FULL_MODELS),
+                random);
     }
 
     static BuildMemoryPattern generate(int stage, int model, Random random) {
         int level = Math.clamp(stage, 1, 8);
+        if (level <= 2 && model < FULL_MODELS)
+            model = FULL_MODELS + Math.floorMod(model, MODEL_COUNT - FULL_MODELS);
         String wood = List.of("OAK", "SPRUCE", "BIRCH", "CHERRY").get(random.nextInt(4));
         Material planks = Material.valueOf(wood + "_PLANKS"),
                 fence = Material.valueOf(wood + "_FENCE"),
@@ -206,12 +219,83 @@ record BuildMemoryPattern(Component title, Map<Cell, MemoryBlock> blocks) {
                 b.put(stone, 0, 0, 2);
                 b.put(Material.TORCH, 0, 1, 2);
             }
+            case 14 -> {
+                title = I18n.tr("party.rounds.build_memory.model.small_bench");
+                for (int x = 1; x <= 3; x++) b.put(stairs, x, 0, 2, "facing=south");
+                b.put(fence, 4, 0, 2);
+                b.put(fence, 4, 1, 2);
+                b.put(light, 4, 2, 2);
+            }
+            case 15 -> {
+                title = I18n.tr("party.rounds.build_memory.model.small_arch");
+                for (int x : new int[] {1, 3}) for (int y = 0; y < 2; y++) b.put(stone, x, y, 2);
+                for (int x = 1; x <= 3; x++) b.put(slab, x, 2, 2);
+                b.put(light, 2, 1, 2, "hanging=true");
+            }
+            case 16 -> {
+                title = I18n.tr("party.rounds.build_memory.model.small_table");
+                for (int x : new int[] {1, 3}) b.put(fence, x, 0, 2);
+                for (int x = 1; x <= 3; x++) b.put(planks, x, 1, 2);
+                b.put(light, 2, 2, 2);
+                b.put(stairs, 2, 0, 1, "facing=north");
+            }
+            case 17 -> {
+                title = I18n.tr("party.rounds.build_memory.model.small_sign");
+                for (int y = 0; y < 3; y++) b.put(planks, 2, y, 2);
+                b.put(planks, 1, 2, 2);
+                b.put(sign, 1, 3, 2, "rotation=0");
+                b.put(stone, 3, 0, 2);
+                b.put(Material.TORCH, 3, 1, 2);
+            }
+            case 18 -> {
+                title = I18n.tr("party.rounds.build_memory.model.small_monument");
+                for (int x = 1; x <= 3; x++) b.put(stairs, x, 0, 1, "facing=south");
+                for (int y = 0; y < 2; y++) b.put(stone, 2, y, 2);
+                b.put(accent, 2, 2, 2);
+                b.put(light, 2, 3, 2);
+            }
+            case 19 -> {
+                title = I18n.tr("party.rounds.build_memory.model.small_lamp");
+                b.put(stone, 2, 0, 2);
+                b.put(fence, 2, 1, 2);
+                b.put(planks, 2, 2, 2);
+                b.put(planks, 3, 2, 2);
+                b.put(light, 3, 1, 2, "hanging=true");
+                b.put(stairs, 1, 0, 2, "facing=east");
+            }
             default -> throw new IllegalArgumentException("Unknown model: " + model);
+        }
+        // Vary existing exposed structural pieces, never remove a decoration's support.
+        if (level >= 3) {
+            var supports = new HashSet<Cell>();
+            b.blocks.forEach((cell, block) -> {
+                var support = block.support(cell);
+                if (support != null) supports.add(support);
+            });
+            var candidates = new ArrayList<>(b.blocks.keySet());
+            Collections.shuffle(candidates, random);
+            int changes = 1 + (level - 3) / 2;
+            for (Cell cell : candidates) {
+                Material material = b.blocks.get(cell).material();
+                if (changes == 0) break;
+                if ((material != planks && material != stone)
+                        || supports.contains(cell)
+                        || b.blocks.containsKey(new Cell(cell.x(), cell.y() + 1, cell.z())))
+                    continue;
+                b.put(
+                        random.nextBoolean() ? stairs : slab,
+                        cell.x(),
+                        cell.y(),
+                        cell.z(),
+                        "facing="
+                                + List.of("north", "south", "east", "west").get(random.nextInt(4)));
+                changes--;
+            }
         }
         // The opening uses only the recognizable model, without random filler around it.
         if (level <= 3) return new BuildMemoryPattern(title, b.blocks).rotate(random.nextInt(4));
-        // From stage four, add four pieces per stage: paving, corner posts and lamps.
-        int target = 18 + 4 * (level - 3);
+        // Keep just one third of the former filler budget; the model remains the main challenge.
+        int target = b.blocks.size() + Math.max(0, (18 + 4 * (level - 3) - b.blocks.size()) / 3);
         List<Cell> paving = new ArrayList<>();
         for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) paving.add(new Cell(x, 0, z));
         Collections.shuffle(paving, random);

@@ -23,12 +23,20 @@ final class BuildMemorySession extends PartySurvivalSession {
 
     private final int stages;
     private BuildMemoryArena arena;
+    private BuildMemoryJury jury;
     private Phase phase = Phase.SHOW;
     private int stage = 1;
     private long deadline;
     private Component modelTitle = Component.empty();
     private final Map<UUID, BuildMemoryPattern> patterns = new LinkedHashMap<>();
     private List<Integer> models;
+    private static final int REVIEW_TICKS = 60;
+    private final Map<UUID, BuildMemoryJudging.Progress> progress = new LinkedHashMap<>();
+    private final Set<UUID> dirty = new LinkedHashSet<>();
+    private final Map<UUID, BuildMemoryJudging.Grade> grades = new LinkedHashMap<>();
+    private List<UUID> reviewOrder = List.of();
+    private int reviewIndex;
+    private boolean verdictShown;
 
     BuildMemorySession(SessionServices s, PartyConfig c, PartyRoundContext context) {
         super(s, c, "build_memory", context);
@@ -38,6 +46,7 @@ final class BuildMemorySession extends PartySurvivalSession {
     void buildArena() {
         arena = new BuildMemoryArena(world, names.keySet());
         arena.build();
+        jury = new BuildMemoryJury(world);
     }
 
     Location spawn(int i, int n) {
@@ -53,7 +62,14 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
 
     int durationSeconds() {
-        return 500;
+        int seconds = 10;
+        for (int round = 1; round <= stages; round++)
+            seconds +=
+                    Math.max(5, 13 - round)
+                            + buildSeconds(round)
+                            + Math.max(1, names.size()) * (REVIEW_TICKS / 20)
+                            + 3;
+        return seconds;
     }
 
     static int buildSeconds(int stage) {
@@ -75,14 +91,19 @@ final class BuildMemorySession extends PartySurvivalSession {
 
     private void showPattern() {
         phase = Phase.SHOW;
+        jury.reset();
         arena.screens(false);
         patterns.clear();
+        progress.clear();
+        dirty.clear();
+        grades.clear();
         BuildMemoryPattern shared =
                 BuildMemoryPattern.generate(stage, models.get(stage - 1), random);
         modelTitle = shared.title();
         for (Player p : alivePlayers()) {
             var pattern = shared.rotate(random.nextInt(4));
             patterns.put(p.getUniqueId(), pattern);
+            progress.put(p.getUniqueId(), new BuildMemoryJudging.Progress());
             teleport(p, arena.spawn(p.getUniqueId()));
             clearKit(p);
             arena.show(p.getUniqueId(), pattern);
@@ -96,6 +117,10 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
 
     void playTick(long elapsed) {
+        if (phase == Phase.BUILD) {
+            for (UUID id : dirty) progress.get(id).observe(arena.capture(id), elapsed);
+            dirty.clear();
+        }
         if (elapsed < deadline) {
             if (phase != Phase.REVIEW) PartySounds.countdown(alivePlayers(), deadline - elapsed);
             return;
@@ -124,32 +149,86 @@ final class BuildMemorySession extends PartySurvivalSession {
             case BUILD -> {
                 phase = Phase.REVIEW;
                 standings.holdResults(true);
-                List<Player> failed = new ArrayList<>();
-                for (Player p : alivePlayers())
-                    if (!patterns.get(p.getUniqueId()).matches(arena.capture(p.getUniqueId())))
-                        failed.add(p);
-                for (Player p : failed) eliminate(p);
-                for (Player p : alivePlayers()) clearKit(p);
-                PartySounds.play(alivePlayers(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .7f, 1.2f);
-                patterns.forEach((id, pattern) -> arena.show(id, pattern));
+                Set<UUID> alive = new HashSet<>();
+                for (Player p : alivePlayers()) {
+                    UUID id = p.getUniqueId();
+                    alive.add(id);
+                    var actual = arena.capture(id);
+                    progress.get(id).observe(actual, elapsed);
+                    grades.put(id, BuildMemoryJudging.grade(patterns.get(id), actual));
+                    clearKit(p);
+                }
+                // Platform insertion order follows the circle, independent of build speed.
+                reviewOrder = names.keySet().stream().filter(alive::contains).toList();
+                reviewIndex = 0;
+                verdictShown = false;
                 arena.screens(false);
-                deadline = elapsed + 60;
-                announceTitle(
-                        I18n.tr("party.rounds.build_memory.review"),
-                        failed.isEmpty()
-                                ? I18n.tr("party.rounds.build_memory.correct")
-                                : I18n.tr("party.rounds.build_memory.failed", failed.size()),
-                        2);
+                inspectNext(elapsed);
             }
             case REVIEW -> {
-                standings.holdResults(false);
-                if (stage >= stages) finish(standings.survivors());
-                else {
-                    stage++;
-                    showPattern();
+                if (reviewIndex < reviewOrder.size()) inspectNext(elapsed);
+                else if (!verdictShown) {
+                    jury.stopBeam();
+                    Map<UUID, BuildMemoryJudging.Grade> eligible = new LinkedHashMap<>();
+                    Map<UUID, Long> times = new HashMap<>();
+                    for (Player p : alivePlayers()) {
+                        UUID id = p.getUniqueId();
+                        if (grades.containsKey(id)) {
+                            eligible.put(id, grades.get(id));
+                            times.put(id, progress.get(id).finishedAt());
+                        }
+                    }
+                    UUID loser = BuildMemoryJudging.loser(stage, eligible, times);
+                    if (loser != null) {
+                        say(
+                                I18n.tr(
+                                        eligible.get(loser).errors().isEmpty()
+                                                ? "party.rounds.build_memory.slowest"
+                                                : "party.rounds.build_memory.worst",
+                                        names.get(loser)));
+                        Player player = Bukkit.getPlayer(loser);
+                        if (player != null) eliminate(player);
+                    } else say(I18n.tr("party.rounds.build_memory.all_correct"));
+                    verdictShown = true;
+                    deadline = elapsed + 40;
+                } else {
+                    standings.holdResults(false);
+                    if (stage >= stages || standings.decided(services.isTest(), gameTick()))
+                        finish(standings.survivors());
+                    else {
+                        stage++;
+                        showPattern();
+                    }
                 }
             }
         }
+    }
+
+    private void inspectNext(long elapsed) {
+        if (reviewIndex >= reviewOrder.size()) {
+            deadline = elapsed;
+            return;
+        }
+        UUID id = reviewOrder.get(reviewIndex++);
+        var grade = grades.get(id);
+        jury.inspect(
+                arena.reviewCenter(id),
+                grade.errors().stream().map(cell -> arena.cellLocation(id, cell)).toList());
+        say(
+                I18n.tr(
+                        "party.rounds.build_memory.grade",
+                        names.get(id),
+                        grade.errors().size(),
+                        grade.percent(),
+                        grade.correct(),
+                        grade.total()));
+        deadline = elapsed + REVIEW_TICKS;
+    }
+
+    @Override
+    void cleanup() {
+        if (jury != null) jury.close();
+        dirty.clear();
     }
 
     private void clearKit(Player p) {
@@ -171,6 +250,7 @@ final class BuildMemorySession extends PartySurvivalSession {
                         .inventory()
                         .containsKey(MemoryBlock.capture(e.getBlock().getBlockData()).item()))
             e.setCancelled(true);
+        else dirty.add(e.getPlayer().getUniqueId());
     }
 
     @Override
@@ -187,6 +267,10 @@ final class BuildMemorySession extends PartySurvivalSession {
         }
         for (MemoryBlock block : refund)
             p.getInventory().addItem(new ItemStack(block.item(), block.itemCount()));
+        // Removal has already happened. Preserve even a break-and-repair within one server tick.
+        progress.get(p.getUniqueId()).observe(arena.capture(p.getUniqueId()), elapsed());
+        progress.get(p.getUniqueId()).editedAt(elapsed());
+        dirty.add(p.getUniqueId());
         e.setDropItems(false);
         e.setExpToDrop(0);
     }

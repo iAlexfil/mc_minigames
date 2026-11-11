@@ -71,3 +71,6 @@ queues:
     tool_race: {enabled: true, minPlayers: 2, maxPlayers: 12}
     parkour_race: {enabled: true, minPlayers: 2, maxPlayers: 12}
     party_games: {enabled: true, minPlayers: 2, maxPlayers: 12}
+
+  cs:
+    default: {enabled: true, minPlayers: 2, maxPlayers: 10}

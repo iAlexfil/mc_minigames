@@ -155,6 +155,17 @@ visible but cannot interact. Construction is sliced at 4096 blocks per tick; the
 full countdown starts after the course is ready. The HUD names the active task,
 and the player receives a localized hint on entering each section.
 
+Parkour Sprint highlights only the current runner's next checkpoint with a private,
+non-colliding green outline and a numbered label visible through walls. A view-relative
+arrow, distance and height difference stay on the action bar; the clock's left-click
+repeats the task hint, and right-click still restores the current attempt. Spawn and
+clock return face the next island, including sideways tasks. Clutch walls stop before
+the destination island and stay on the outer side of the lane, leaving the next lateral
+passage open; blue stripes mark their ends. Course generation validates checkpoint
+headroom and lateral passages before construction, retries blocked compositions and
+has a bounded safe fallback with six distinct tasks. Regression checks
+cover all ordered neighbouring task pairs in both mirrored layouts.
+
 All kits use ordinary, unenchanted Minecraft items and native physics/cooldowns.
 A checkpoint removes the old inventory, cursor, armour and offhand before granting
 only the next task's kit. Elytra are equipped automatically on the flight task.

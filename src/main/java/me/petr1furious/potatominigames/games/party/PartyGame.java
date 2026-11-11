@@ -42,6 +42,7 @@ public final class PartyGame implements Minigame {
                 "pvp_ffa",
                 "sumo_ffa",
                 "arms_race",
+                "one_shot",
                 "tnt_run",
                 "mob_count",
                 "rhino",
@@ -76,6 +77,7 @@ public final class PartyGame implements Minigame {
     @Override
     public Material icon(String mode) {
         return switch (mode) {
+            case "one_shot" -> Material.BOW;
             case "parkour_race" -> Material.CLOCK;
             case "magic_battle" -> Material.BLAZE_ROD;
             case "miners", "tool_race" -> Material.DIAMOND_PICKAXE;
@@ -116,6 +118,8 @@ public final class PartyGame implements Minigame {
 
     @Override
     public GameSession createSession(SessionServices services, String mode) {
+        if (mode.equals("one_shot"))
+            return new OneShotSession(services, config, PartyRoundContext.standalone(services));
         if (mode.equals("parkour_race"))
             return new ParkourRaceSession(services, config, PartyRoundContext.standalone(services));
         if (mode.equals("hole_in_the_wall"))

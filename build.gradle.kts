@@ -169,7 +169,7 @@ tasks.check { dependsOn(checkPartyLifecycle) }
 for ((taskName, checkClass) in mapOf(
     "checkColorFloor" to "ColorFloorCheck", "checkAnvils" to "AnvilsCheck",
     "checkBuildMemory" to "BuildMemoryCheck", "checkToolRace" to "ToolRaceCheck",
-    "checkParkourRace" to "ParkourRaceCheck")) {
+    "checkOneShot" to "OneShotCheck", "checkParkourRace" to "ParkourRaceCheck")) {
     val gameCheck = tasks.register<JavaExec>(taskName) {
         dependsOn(checks.classesTaskName)
         classpath = checks.runtimeClasspath

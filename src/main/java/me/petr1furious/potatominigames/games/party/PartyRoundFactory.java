@@ -11,6 +11,7 @@ final class PartyRoundFactory {
             case "parkour_race" -> new ParkourRaceSession(services, config, context);
             case "hole_in_the_wall" -> new HoleWallSession(services, config, context);
             case "pvp", "sumo" -> new DuelSession(services, config, mode.equals("sumo"), context);
+            case "one_shot" -> new OneShotSession(services, config, context);
             case "arms_race" -> new ArmsRaceSession(services, config, context);
             case "tnt_run" -> new TntRunSession(services, config, context);
             case "mob_count" -> new MobCountSession(services, config, context);
@@ -27,7 +28,7 @@ final class PartyRoundFactory {
 
     static Component title(String mode) {
         return switch (mode) {
-            case "hole_in_the_wall", "pvp", "sumo", "arms_race", "tnt_run", "mob_count",
+            case "hole_in_the_wall", "pvp", "sumo", "arms_race", "one_shot", "tnt_run", "mob_count",
                     "rhino", "miners", "magic_battle", "color_floor", "anvils", "build_memory", "tool_race", "parkour_race" ->
                     I18n.tr("party.rounds.mode." + mode);
             default -> Component.text(mode);

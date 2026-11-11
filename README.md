@@ -17,7 +17,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Bingo** | `/bingo` | `default`, `butfast`, `collectall`, `lockout` | Teams race to collect items on a generated board. Cage drop into a random arena; deaths are short spectator punishments. In `lockout` each item goes to the team that collects it first: a line wins, else the most items when time runs out. |
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
-| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
+| **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `one_shot`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
 | **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
 
 ### The Finals
@@ -108,7 +108,7 @@ English/Russian i18n catalogs, selected by each player's client language.
 ### Party Games and new party games
 
 Join **Вечеринка → Party Games**, or run `/play party party_games`.
-The default match picks six distinct games at random from the fourteen-game pool, with
+The default match picks six distinct games at random from the fifteen-game pool, with
 2–12 players. PvP and Sumo become simultaneous, one-life free-for-alls inside
 this match; their standalone modes retain the existing round-robin BO3 rules.
 Eliminated players spectate until the next game. Each completed game awards
@@ -617,6 +617,50 @@ Admin commands: `/party start arms_race @a`, `/party test arms_race`, `/party st
 Timing settings in `games/party.yml`: `armsRace.durationSeconds`,
 `armsRace.countdownSeconds`, `armsRace.respawnSeconds`,
 `armsRace.spawnProtectionSeconds`. Changes apply next session.
+
+### Party One Shot
+
+Join through the Party menu or `/play party one_shot`; admin practice is
+`/party test one_shot`. Also included in the default mixed Party Games pool.
+Existing saved `partyGames.modes` lists need `one_shot` appended to include it.
+
+**2–16 players** fight on **Desert Ruins**, fixed for this mode. Everyone has an
+unbreakable bow, a wooden sword, one ordinary arrow and no armour. Any bow-arrow
+hit is lethal, including a lightly charged shot; swords deal native melee damage.
+A bonus shield absorbs one damaging attack from any direction, whether a sword
+hit or an arrow, and then breaks. Shields do not stack and do not occupy an armour
+or offhand slot.
+
+Each credited kill adds one arrow, including sword kills. Missed arrows cannot be
+picked up. When the last arrow is fired, a ten-second refill timer starts; if
+still empty at its deadline, exactly one arrow returns. Getting an arrow from a
+kill or pickup cancels the pending refill. Extra arrows stack to 64; a full stack
+leaves arrow bonuses available for other players. Taking a new shield while one
+is already active likewise leaves it on the field.
+
+Every six seconds, an arrow or shield pickup is selected with equal probability
+and placed at a clear designated spot. At most three pickups exist at once;
+unclaimed pickups expire after thirty seconds. Only living participants can
+collect them, and ordinary dropped/embedded arrows are never pickups.
+
+Deaths keep the native death screen for three seconds, then respawn at one of
+sixteen clear points chosen farthest from living opponents. Each life starts
+with one arrow, full health and no bonus shield. Two seconds of spawn protection
+end as soon as the player attacks or shoots. Old-life projectiles are removed on
+death/disconnect; reconnects preserve kills/deaths and use the respawn delay.
+The countdown freezes movement. Building, map damage, hunger, item drops,
+inventory transfers and crafting are disabled.
+
+A match lasts **three minutes** by default. Places compare **kills only**;
+equal kill counts share places, regardless of deaths. Winners receive the normal
+Party podium points (3/2/1); mixed matches use the shared Party Games standings.
+If only one participant remains, the match ends after a fifteen-second reconnect
+grace period; solo practice runs to the time limit. Settings in `games/party.yml`:
+`oneShot.durationSeconds` (60–1800, default 180) and `oneShot.bonusSeconds`
+(2–30, default 6). `checkOneShot` covers ammunition timing, extra arrows, shield
+charges, respawn-life isolation, death deduplication, kill-only ties and registration.
+An optional [MockBukkit component harness](mock-checks/one-shot/README.md) also
+checks real inventory APIs, shield feedback, pickups and the per-tick respawn/refill controller.
 
 ### Party TNT Run
 

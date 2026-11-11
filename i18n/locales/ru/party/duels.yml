@@ -83,7 +83,7 @@ arms.progression_rules: "<arg:0> ступеней, финал — золотая
 arms.test_rules: "Тестовая игра: без сохранения очков. /party stop — закончить."
 arms.stage_actionbar: "Ступень <arg:0>/<arg:1> • <arg:2>"
 arms.fight: "Бой! Пройдите всю цепочку оружия первым!"
-arms.you_killed: "Вы убили <arg:0>"
+arms.you_killed: "Убийство!"
 arms.next_stage: "Следующая ступень оружия"
 arms.advanced: "<arg:0> → <arg:1>/<arg:2> • <arg:3>"
 arms.draw: "Гонка завершена: ничья"

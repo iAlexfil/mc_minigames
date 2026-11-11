@@ -109,10 +109,8 @@ final class BuildMemorySession extends PartySurvivalSession {
             arena.show(p.getUniqueId(), pattern);
         }
         deadline = elapsed() + Math.max(5, 13 - stage) * 20L;
-        announceTitle(
-                I18n.tr("party.rounds.build_memory.memorize", modelTitle),
-                I18n.tr("party.rounds.build_memory.orientation", stage),
-                2);
+        announceTitle(I18n.tr("party.rounds.build_memory.memorize"), modelTitle, 2);
+        say(I18n.tr("party.rounds.build_memory.orientation", stage));
         PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, .9f);
     }
 
@@ -140,10 +138,8 @@ final class BuildMemorySession extends PartySurvivalSession {
                             .forEach((m, n) -> p.getInventory().addItem(new ItemStack(m, n)));
                 }
                 deadline = elapsed + buildSeconds(stage) * 20L;
-                announceTitle(
-                        I18n.tr("party.rounds.build_memory.build", modelTitle),
-                        I18n.tr("party.rounds.build_memory.reproduce"),
-                        2);
+                announceTitle(I18n.tr("party.rounds.build_memory.build"), modelTitle, 2);
+                say(I18n.tr("party.rounds.build_memory.reproduce"));
                 PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, .7f, 1.5f);
             }
             case BUILD -> {

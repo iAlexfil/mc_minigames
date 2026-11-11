@@ -5,15 +5,26 @@
  */
 package me.petr1furious.potatominigames.games.pillars;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.random.RandomGenerator;
+import me.petr1furious.potatominigames.core.command.CommandFailure;
+import me.petr1furious.potatominigames.core.game.EndReason;
+import me.petr1furious.potatominigames.core.game.GameSession;
+import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.core.player.Participant;
+import me.petr1furious.potatominigames.core.text.Summary;
+import me.petr1furious.potatominigames.core.text.TimeFormat;
+import me.petr1furious.potatominigames.i18n.I18n;
+
+import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.JoinConfiguration;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.Style;
+import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.title.Title;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Color;
@@ -37,26 +48,15 @@ import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
-import net.kyori.adventure.bossbar.BossBar;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.Style;
-import net.kyori.adventure.text.format.TextColor;
-import net.kyori.adventure.text.JoinConfiguration;
-import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.minimessage.MiniMessage;
-import net.kyori.adventure.title.Title;
-
-import me.petr1furious.potatominigames.core.command.CommandFailure;
-import me.petr1furious.potatominigames.core.game.EndReason;
-import me.petr1furious.potatominigames.core.game.GameSession;
-import me.petr1furious.potatominigames.core.game.SessionServices;
-import me.petr1furious.potatominigames.core.player.Participant;
-import me.petr1furious.potatominigames.core.text.Summary;
-import me.petr1furious.potatominigames.core.text.TimeFormat;
-import me.petr1furious.potatominigames.i18n.I18n;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.random.RandomGenerator;
 
 final class PillarsSession implements GameSession {
     private enum Ending {
@@ -1324,14 +1324,34 @@ final class PillarsSession implements GameSession {
         winners = List.copyOf(winnerList);
         String winnerNames = String.join(" & ", winners.stream().map(p -> p.name).toList());
         int winnerKills = winners.stream().mapToInt(p -> p.kills).sum();
-        Title title = switch (cause) {
-            case FORCE -> Title.title(I18n.tr("pillars.play.title.stopped").color(NamedTextColor.YELLOW), Component.empty());
-            case TIME_OVER -> Title.title(I18n.tr("pillars.play.title.time_over").color(NamedTextColor.GREEN), Component.empty());
-            case LAST_STANDING -> Title.title(I18n.tr("pillars.play.title.winner", winnerNames).color(NamedTextColor.GREEN),
-                    I18n.tr("pillars.play.title.kills", winnerKills).color(NamedTextColor.YELLOW));
-            case DRAW -> Title.title(I18n.tr("pillars.play.title.draw").color(NamedTextColor.GREEN),
-                    Component.text(winnerNames, NamedTextColor.YELLOW));
-        };
+        Title title =
+                switch (cause) {
+                    case FORCE ->
+                            Title.title(
+                                    I18n.tr("pillars.play.title.stopped")
+                                            .color(NamedTextColor.YELLOW),
+                                    Component.empty());
+                    case TIME_OVER ->
+                            Title.title(
+                                    I18n.tr("pillars.play.title.time_over")
+                                            .color(NamedTextColor.GREEN),
+                                    Component.empty());
+                    case LAST_STANDING ->
+                            Title.title(
+                                    I18n.tr("pillars.play.title.winner")
+                                            .color(NamedTextColor.GREEN),
+                                    Component.text(winnerNames, NamedTextColor.YELLOW)
+                                            .append(Component.text(" • "))
+                                            .append(
+                                                    I18n.tr(
+                                                            "pillars.play.title.kills",
+                                                            winnerKills)));
+                    case DRAW ->
+                            Title.title(
+                                    I18n.tr("pillars.play.title.draw").color(NamedTextColor.GREEN),
+                                    I18n.tr("pillars.play.title.draw_players", winners.size())
+                                            .color(NamedTextColor.YELLOW));
+                };
         for (Player player : services.participants().onlinePlayers()) {
             player.showTitle(title);
         }

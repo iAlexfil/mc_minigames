@@ -489,8 +489,8 @@ final class OneShotSession implements PartyRoundSession {
             dirtyAmmo.add(killer);
             p.showTitle(
                     Title.title(
-                            tr("you_killed", name(id)),
-                            tr("kill_refill"),
+                            tr("you_killed"),
+                            name(id).append(Component.text(" • ")).append(tr("kill_refill")),
                             Title.Times.times(
                                     Duration.ZERO, Duration.ofSeconds(1), Duration.ofMillis(200))));
             p.playSound(p.getLocation(), Sound.ENTITY_ARROW_HIT_PLAYER, .8f, 1.2f);

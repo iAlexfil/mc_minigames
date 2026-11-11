@@ -75,6 +75,9 @@ final class BuildMemoryJury {
 
     void stopBeam() {
         guardian.setLaser(false);
+        // Non-collidable living entities still block native block placement. Park the beam
+        // target away from every build footprint as soon as judging is over.
+        anchor.teleport(guardian.getLocation().add(0, 4, 0));
     }
 
     void reset() {

@@ -19,6 +19,7 @@ public final class HoleWallCheck {
         centerRequiresAction();
         directionCoverage();
         openings();
+        precisionPassages();
         collisions();
         footholds();
         floor();
@@ -110,11 +111,23 @@ public final class HoleWallCheck {
                                 "Jump never exceeds one block");
                         jumps |= gate.bottom() == 1;
                         for (var dir : HoleWallPhysics.Direction.values()) {
-                            double u = gate.start() + .5, y = 81 + gate.bottom() + .01;
+                            double u = gate.start() + gate.width() / 2, y = 81 + gate.bottom();
                             BoundingBox body =
                                     dir.dx == 0
-                                            ? new BoundingBox(u - .3, y, .2, u + .3, y + 1.8, .8)
-                                            : new BoundingBox(.2, y, u - .3, .8, y + 1.8, u + .3);
+                                            ? new BoundingBox(
+                                                    u - .3,
+                                                    y,
+                                                    .2,
+                                                    u + .3,
+                                                    y + gate.bodyHeight(),
+                                                    .8)
+                                            : new BoundingBox(
+                                                    .2,
+                                                    y,
+                                                    u - .3,
+                                                    .8,
+                                                    y + gate.bodyHeight(),
+                                                    u + .3);
                             check(
                                     !HoleWallPhysics.collides(
                                             pattern.cells(), dir, -1, 1, body, body),
@@ -125,6 +138,80 @@ public final class HoleWallCheck {
         check(
                 jumps && patterns.size() > 50 && sizes.size() >= 8,
                 "Ten varied obstacle silhouettes, not just rectangular walls with moved holes");
+    }
+
+    private static void precisionPassages() {
+        var roof =
+                List.of(
+                        new HoleWallPattern.Cell(
+                                0,
+                                1,
+                                new HoleWallBlock(
+                                        Material.SMOOTH_STONE_SLAB,
+                                        HoleWallBlock.Shape.UPPER_SLAB)));
+        var crouched = new BoundingBox(.2, 81, .79, .8, 82.5, 1.39);
+        var outsideStanding = new BoundingBox(.2, 81, 1.01, .8, 82.8, 1.61);
+        check(
+                !HoleWallPhysics.collides(
+                        roof, HoleWallPhysics.Direction.NORTH, 0, 0, crouched, outsideStanding),
+                "Standing up after leaving a low tunnel cannot invent an earlier head impact");
+        var insideStanding = new BoundingBox(.2, 81, .79, .8, 82.8, 1.39);
+        check(
+                HoleWallPhysics.collides(
+                        roof, HoleWallPhysics.Direction.NORTH, 0, 0, crouched, insideStanding),
+                "An actual current head overlap still counts when the body grows");
+        Set<HoleWallBlock.Shape> shapes = EnumSet.noneOf(HoleWallBlock.Shape.class);
+        int low = 0, narrow = 0;
+        for (int radius : new int[] {1, 2})
+            for (int stage = 1; stage <= 20; stage++) {
+                var pattern = HoleWallPattern.generate(stage, radius, new Random(stage));
+                pattern.cells().forEach(cell -> shapes.add(cell.block().shape()));
+                for (var gate : pattern.gates())
+                    for (var dir : HoleWallPhysics.Direction.values()) {
+                        double u = gate.start() + gate.width() / 2, y = 81 + gate.bottom();
+                        var body =
+                                dir.dx == 0
+                                        ? new BoundingBox(
+                                                u - .3, y, .2, u + .3, y + gate.bodyHeight(), .8)
+                                        : new BoundingBox(
+                                                .2, y, u - .3, .8, y + gate.bodyHeight(), u + .3);
+                        if (gate.height() == 1.5) {
+                            low++;
+                            var standing = body.clone().expand(0, 0, 0, 0, .3, 0);
+                            check(
+                                    HoleWallPhysics.collides(
+                                            pattern.cells(), dir, -1, 1, standing, standing),
+                                    "Low tunnel requires crouching, standing does not fit");
+                            check(
+                                    !HoleWallPhysics.collides(
+                                            pattern.cells(), dir, -1, 1, standing, body),
+                                    "Crouching this tick removes stale standing-head collision");
+                        }
+                        if (gate.width() < 1) {
+                            narrow++;
+                            var offCenter =
+                                    body.clone()
+                                            .shift(dir.dx == 0 ? .18 : 0, 0, dir.dx == 0 ? 0 : .18);
+                            check(
+                                    HoleWallPhysics.collides(
+                                            pattern.cells(), dir, -1, 1, offCenter, offCenter),
+                                    "Thin posts require lining up with their actual narrow gap");
+                        }
+                    }
+            }
+        check(low > 0 && narrow > 0, "Both crouch and precision passages are generated");
+        check(
+                shapes.containsAll(
+                        List.of(
+                                HoleWallBlock.Shape.FENCE_POST,
+                                HoleWallBlock.Shape.BARS,
+                                HoleWallBlock.Shape.CHAIN,
+                                HoleWallBlock.Shape.ROD,
+                                HoleWallBlock.Shape.WALL_POST,
+                                HoleWallBlock.Shape.LECTERN,
+                                HoleWallBlock.Shape.CORE,
+                                HoleWallBlock.Shape.POT)),
+                "All eight unusual collision shapes participate in playable patterns");
     }
 
     private static void wallStream() {
@@ -188,17 +275,21 @@ public final class HoleWallCheck {
                                         "Opposing walls never squeeze the playable platform");
                                 if (dot == 0 && tick >= a.moveAt && tick >= b.moveAt)
                                     crossing = true;
-                                for (var ga : a.pattern.gates())
-                                    for (var gb : b.pattern.gates()) {
-                                        double feet = Math.max(ga.bottom(), gb.bottom()) + .01;
-                                        check(
-                                                feet + 1.8
-                                                        <= Math.min(
-                                                                ga.bottom() + ga.height(),
-                                                                gb.bottom() + gb.height()),
-                                                "Crossing gates have compatible player-height"
-                                                        + " clearance");
-                                    }
+                                if (aOnFloor && bOnFloor)
+                                    for (var ga : a.pattern.gates())
+                                        for (var gb : b.pattern.gates()) {
+                                            double feet = Math.max(ga.bottom(), gb.bottom());
+                                            check(
+                                                    feet
+                                                                    + Math.min(
+                                                                            ga.bodyHeight(),
+                                                                            gb.bodyHeight())
+                                                            <= Math.min(
+                                                                    ga.bottom() + ga.height(),
+                                                                    gb.bottom() + gb.height()),
+                                                    "Crossing gates have compatible player-height"
+                                                            + " clearance");
+                                        }
                             }
                     }
                 }

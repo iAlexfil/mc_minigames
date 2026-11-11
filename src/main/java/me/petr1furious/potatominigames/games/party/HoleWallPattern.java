@@ -10,6 +10,9 @@ import java.util.*;
 
 record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     static final int HALF_WIDTH = 13, HEIGHT = 5;
+    static final int[] KINDS = {
+        0, 12, 13, 1, 14, 2, 15, 3, 16, 4, 17, 5, 18, 6, 19, 7, 8, 9, 10, 11
+    };
 
     record Cell(int u, int y, HoleWallBlock block) {
         Cell(int u, int y) {
@@ -17,7 +20,11 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
         }
     }
 
-    record Gate(int start, int width, int bottom, int height) {
+    record Gate(double start, double width, double bottom, double height) {
+        double bodyHeight() {
+            return Math.min(1.8, height);
+        }
+
         boolean contains(int u, int y) {
             return u >= start && u < start + width && y >= bottom && y < bottom + height;
         }
@@ -30,7 +37,8 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
 
     static HoleWallPattern generate(int stage, int radius, Random random) {
         List<Gate> gates = new ArrayList<>();
-        int kind = Math.floorMod(stage - 1, 12);
+        int kind = KINDS[Math.floorMod(stage - 1, KINDS.length)];
+        if (kind >= 12) return shapedPassage(kind, radius, random);
         int sideWidth = Math.min(2, radius);
         Component title;
         switch (kind) {
@@ -157,6 +165,84 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                 }
             }
         return new HoleWallPattern(cells, gates, title);
+    }
+
+    private static HoleWallPattern shapedPassage(int kind, int radius, Random random) {
+        boolean low = kind == 12 || kind == 14 || kind == 19;
+        boolean slit = kind >= 13 && kind <= 17;
+        int left = random.nextBoolean() ? -1 : 0;
+        HoleWallBlock post =
+                switch (kind) {
+                    case 15 -> new HoleWallBlock(Material.IRON_BARS, HoleWallBlock.Shape.BARS);
+                    case 16 -> new HoleWallBlock(Material.IRON_CHAIN, HoleWallBlock.Shape.CHAIN);
+                    case 17 -> new HoleWallBlock(Material.END_ROD, HoleWallBlock.Shape.ROD);
+                    default ->
+                            new HoleWallBlock(Material.OAK_FENCE, HoleWallBlock.Shape.FENCE_POST);
+                };
+        double half = kind == 15 ? .0625 : kind == 16 ? .09375 : .125;
+        Gate gate =
+                slit
+                        ? new Gate(left + .5 + half, 1 - 2 * half, 0, low ? 1.5 : 3)
+                        : sideGate(1, radius, random);
+        if (low && !slit) gate = new Gate(gate.start(), gate.width(), 0, 1.5);
+        var cells = new ArrayList<Cell>();
+        var roof = new HoleWallBlock(Material.SMOOTH_STONE_SLAB, HoleWallBlock.Shape.UPPER_SLAB);
+        var frame =
+                new HoleWallBlock(
+                        random.nextBoolean() ? Material.DEEPSLATE_BRICKS : Material.QUARTZ_BRICKS,
+                        HoleWallBlock.Shape.FULL);
+        for (int u = -HALF_WIDTH; u <= HALF_WIDTH; u++)
+            for (int y = 0; y < HEIGHT; y++) {
+                boolean opening =
+                        slit
+                                ? u == left || u == left + 1
+                                : u >= gate.start() && u < gate.start() + gate.width();
+                HoleWallBlock block = frame;
+                if (opening) {
+                    if (slit && y < (low ? 1 : 3)) block = post;
+                    else if (low && y == 1) block = roof;
+                    else if (y < (low ? 1 : 3)) continue;
+                } else if (kind == 18 && y < 3) {
+                    block =
+                            Math.floorMod(u + y, 2) == 0
+                                    ? new HoleWallBlock(
+                                            Material.HEAVY_CORE, HoleWallBlock.Shape.CORE)
+                                    : new HoleWallBlock(
+                                            Material.FLOWER_POT, HoleWallBlock.Shape.POT);
+                } else if (kind == 19 && y < 3) {
+                    block = new HoleWallBlock(Material.LECTERN, HoleWallBlock.Shape.LECTERN);
+                } else if (kind == 12 && y == 0 && Math.floorMod(u, 3) != 0) {
+                    block =
+                            new HoleWallBlock(
+                                    Material.COBBLESTONE_WALL, HoleWallBlock.Shape.WALL_POST);
+                }
+                cells.add(new Cell(u, y, block));
+            }
+        String name =
+                switch (kind) {
+                    case 12 -> "duck_tunnel";
+                    case 13 -> "fence_slit";
+                    case 14 -> "duck_fence";
+                    case 15 -> "iron_slit";
+                    case 16 -> "chain_curtain";
+                    case 17 -> "end_lattice";
+                    case 18 -> "chess_columns";
+                    default -> "reading_tunnel";
+                };
+        return new HoleWallPattern(
+                cells, List.of(gate), I18n.tr("party.rounds.hole_wall.pattern." + name));
+    }
+
+    static boolean compatible(HoleWallPattern a, HoleWallPattern b) {
+        for (Gate first : a.gates())
+            for (Gate second : b.gates())
+                if (Math.max(first.bottom(), second.bottom())
+                                + Math.min(first.bodyHeight(), second.bodyHeight())
+                        > Math.min(
+                                        first.bottom() + first.height(),
+                                        second.bottom() + second.height())
+                                + 1e-6) return false;
+        return true;
     }
 
     private static Gate sideGate(int width, int radius, Random random) {

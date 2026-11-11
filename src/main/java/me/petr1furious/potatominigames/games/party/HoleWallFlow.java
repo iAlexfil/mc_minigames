@@ -83,18 +83,15 @@ final class HoleWallFlow {
                 directions.addAll(shuffled);
             }
             var direction = directions.getFirst();
-            if (canApproach(direction, tick, speed)) {
+            // Delayed arrivals must still fit the narrowed arms when they eventually cross.
+            long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
+            int gateRadius = latestExit >= duration / 2 ? 1 : 2;
+            var pattern = HoleWallPattern.generate(number + 1, gateRadius, random);
+            if (canApproach(direction, pattern, tick, speed)) {
                 directions.removeFirst();
                 lastDirection = direction;
                 // A wall that might survive past halfway must already fit the narrower arms.
-                long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
-                int gateRadius = latestExit >= duration / 2 ? 1 : 2;
-                var wall =
-                        new Wall(
-                                ++number,
-                                HoleWallPattern.generate(number, gateRadius, random),
-                                direction,
-                                tick + 40);
+                var wall = new Wall(++number, pattern, direction, tick + 40);
                 walls.add(wall);
                 started.add(wall);
                 nextSpawn = tick + Math.round(80 - 40 * Math.clamp((double) tick / duration, 0, 1));
@@ -109,13 +106,15 @@ final class HoleWallFlow {
                 warningArmRadius);
     }
 
-    private boolean canApproach(HoleWallPhysics.Direction direction, long tick, double speed) {
+    private boolean canApproach(
+            HoleWallPhysics.Direction direction, HoleWallPattern pattern, long tick, double speed) {
         // Earliest arrival uses maximum speed; old-wall clearance uses its current minimum
         // speed. Two blocks of margin cover wall thickness and player footprint at the rim.
         // The first movement step happens on moveAt itself, so subtract that inclusive tick.
         double earliestEntry = 39 + Math.floor((16 - radius - 2) / .32);
         for (var wall : walls)
-            if (wall.direction.dx * direction.dx + wall.direction.dz * direction.dz == -1) {
+            if (wall.direction.dx * direction.dx + wall.direction.dz * direction.dz == -1
+                    || !HoleWallPattern.compatible(wall.pattern, pattern)) {
                 double movement = Math.max(0, earliestEntry - Math.max(0, wall.moveAt - tick));
                 if (wall.depth + Math.max(0, Math.floor(movement * speed) - 1) <= radius + 2)
                     return false;

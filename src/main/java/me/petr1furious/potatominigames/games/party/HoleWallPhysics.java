@@ -63,6 +63,17 @@ final class HoleWallPhysics {
             double to,
             BoundingBox previous,
             BoundingBox current) {
+        // Sneaking shrinks the body to 1.5 blocks. Do not sweep the previous standing head
+        // through a ceiling after the player has already ducked on this server tick.
+        // Growing after exiting must not enlarge the old body back underneath the roof.
+        previous =
+                new BoundingBox(
+                        previous.getMinX(),
+                        previous.getMinY(),
+                        previous.getMinZ(),
+                        previous.getMinX() + Math.min(previous.getWidthX(), current.getWidthX()),
+                        previous.getMinY() + Math.min(previous.getHeight(), current.getHeight()),
+                        previous.getMinZ() + Math.min(previous.getWidthZ(), current.getWidthZ()));
         double vx = current.getMinX() - previous.getMinX() - direction.dx * (to - from);
         double vy = current.getMinY() - previous.getMinY();
         double vz = current.getMinZ() - previous.getMinZ() - direction.dz * (to - from);
@@ -71,6 +82,9 @@ final class HoleWallPhysics {
                 // Landing or resting on a top face is safe; only side contacts launch the player.
                 if (previous.getMinY() >= solid.getMaxY() - .001
                         && current.getMinY() >= solid.getMaxY() - .08) continue;
+                if (solid.clone()
+                        .shift(direction.dx * (to - from), 0, direction.dz * (to - from))
+                        .overlaps(current)) return true;
                 if (swept(previous, solid, vx, vy, vz)) return true;
                 // Native block collision stops an approaching player exactly at the side face.
                 // Include that contact, but do not launch an idle neighbor or a player on top.

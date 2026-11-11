@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.Location;
@@ -55,12 +56,16 @@ final class TntRunSession extends PartySurvivalSession {
     void playTick(long elapsed) {
         int delay = TntRunArena.delay(collapse, elapsed);
         for (var player : alivePlayers()) arena.step(player.getLocation(), elapsed, delay);
-        arena.tick(elapsed, TntRunArena.radius(elapsed));
+        arena.tick(elapsed);
     }
 
     @Override
     Component status() {
-        return I18n.tr("party.rounds.tnt_run.status", String.format(
-                java.util.Locale.ROOT, "%.2f", TntRunArena.delay(collapse, elapsed()) / 20.0));
+        return I18n.tr(
+                "party.rounds.tnt_run.status",
+                String.format(
+                        java.util.Locale.ROOT,
+                        "%.2f",
+                        TntRunArena.delay(collapse, elapsed()) / 20.0));
     }
 }

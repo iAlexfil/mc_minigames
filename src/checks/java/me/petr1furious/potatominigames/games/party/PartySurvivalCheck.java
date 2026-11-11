@@ -1,5 +1,11 @@
 package me.petr1furious.potatominigames.games.party;
 
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.entity.TextDisplay;
+
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -9,11 +15,6 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.entity.TextDisplay;
 
 /** Real arena mutations and hazard rules, without a running server. */
 public final class PartySurvivalCheck {
@@ -45,38 +46,64 @@ public final class PartySurvivalCheck {
         reveal.holdResults(false);
         check(reveal.decided(false, 100) && reveal.survivors().isEmpty(), "Finish all reveal penalties before resolving the draw");
     }
+
     private static void tnt() {
         FakeWorld world = new FakeWorld();
         TntRunArena arena = new TntRunArena(world.world);
         arena.build();
         int perLayer = 0;
-        for (int x = -16; x <= 16; x++) for (int z = -16; z <= 16; z++) if (TntRunArena.inside(x, z, 16)) perLayer++;
-        check(world.blocks.size() == perLayer * 3, "Exactly three circular layers, with no hidden supports");
+        for (int x = -16; x <= 16; x++)
+            for (int z = -16; z <= 16; z++) if (TntRunArena.inside(x, z, 16)) perLayer++;
+        check(
+                world.blocks.size() == perLayer * 3,
+                "Exactly three circular layers, with no hidden supports");
         Set<String> spawns = new HashSet<>();
         for (int i = 0; i < 16; i++) {
             Location spawn = arena.spawn(i, 16);
-            check(world.at(spawn.getBlockX(), 86, spawn.getBlockZ()) == Material.TNT, "Safe top-layer spawn");
+            check(
+                    world.at(spawn.getBlockX(), 86, spawn.getBlockZ()) == Material.TNT,
+                    "Safe top-layer spawn");
             spawns.add(spawn.getBlockX() + ":" + spawn.getBlockZ());
         }
         check(spawns.size() == 16, "Sixteen distinct starts");
         Location feet = new Location(world.world, .5, 87, .5);
         arena.step(feet, 0, 10);
-        check(world.at(0, 86, 0) == Material.RED_CONCRETE, "Footsteps visibly warn before disappearing");
-        for (int tick = 1; tick < 10; tick++) { arena.step(feet, tick, 10); arena.tick(tick, 16); }
-        check(world.at(0, 86, 0) == Material.RED_CONCRETE, "Standing on a warning cannot extend its deadline");
-        arena.tick(10, 16);
-        check(world.at(0, 86, 0) == Material.AIR && world.at(0, 80, 0) == Material.TNT, "Collapse affects only the touched layer");
+        check(
+                world.at(0, 86, 0) == Material.RED_CONCRETE,
+                "Footsteps visibly warn before disappearing");
+        for (int tick = 1; tick < 10; tick++) {
+            arena.step(feet, tick, 10);
+            arena.tick(tick);
+        }
+        check(
+                world.at(0, 86, 0) == Material.RED_CONCRETE,
+                "Standing on a warning cannot extend its deadline");
+        arena.tick(10);
+        check(
+                world.at(0, 86, 0) == Material.AIR && world.at(0, 80, 0) == Material.TNT,
+                "Collapse affects only the touched layer");
         arena.step(new Location(world.world, 2.5, 89, 2.5), 10, 10);
-        check(world.at(2, 86, 2) == Material.TNT, "Jumping does not erase a floor several blocks below");
+        check(
+                world.at(2, 86, 2) == Material.TNT,
+                "Jumping does not erase a floor several blocks below");
         arena.step(new Location(world.world, 1, 81, 1), 10, 10);
-        check(world.at(0, 80, 0) == Material.RED_CONCRETE && world.at(1, 80, 1) == Material.RED_CONCRETE,
+        check(
+                world.at(0, 80, 0) == Material.RED_CONCRETE
+                        && world.at(1, 80, 1) == Material.RED_CONCRETE,
                 "Footprint covers block boundaries on lower layers too");
-        arena.tick(20, 15);
-        for (int floor : TntRunArena.FLOORS) check(world.at(16, floor, 0) == Material.AIR, "Overtime removes outer rings on every layer");
-        check(world.at(0, 86, 0) == Material.AIR, "Shrinking never rebuilds collapsed tiles");
-        check(TntRunArena.delay(10, 0) == 10 && TntRunArena.delay(10, 100000) == 3, "Collapse gets faster with a playable lower bound");
-        check(TntRunArena.radius(0) == 16 && TntRunArena.radius(1200) == 15, "Shrinking begins at one minute");
+        for (long elapsed : new long[] {1200, 2400, 12000}) {
+            arena.tick(elapsed);
+            for (int floor : TntRunArena.FLOORS)
+                check(
+                        world.at(16, floor, 0) == Material.TNT,
+                        "Untouched platform edges remain throughout the game");
+        }
+        check(world.at(0, 86, 0) == Material.AIR, "Elapsed time never rebuilds collapsed tiles");
+        check(
+                TntRunArena.delay(10, 0) == 10 && TntRunArena.delay(10, 100000) == 3,
+                "Collapse gets faster with a playable lower bound");
     }
+
     private static void counting() {
         Random random = new Random(4);
         int previous = 0;

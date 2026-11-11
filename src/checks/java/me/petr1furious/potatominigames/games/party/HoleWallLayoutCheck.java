@@ -9,6 +9,7 @@ import java.util.*;
 
 final class HoleWallLayoutCheck {
     static void run() {
+        donutDimensions();
         for (var layout : HoleWallLayout.values()) {
             Set<String> previous = null;
             var fixture = new PartyArenaCheck.WorldMap();
@@ -58,8 +59,20 @@ final class HoleWallLayoutCheck {
                                 "Painted floor matches chosen layout");
                 if (layout != HoleWallLayout.PLUS)
                     check(connected(cells), "New layouts remain walk-connected after every shrink");
-                if (layout == HoleWallLayout.DONUT)
+                if (layout == HoleWallLayout.DONUT) {
                     check(!cells.contains("0:0"), "Donut keeps its central hole");
+                    int edge = radius / 2 + 2;
+                    check(
+                            fixture.world.getBlockAt(0, 80, -edge).getType()
+                                            == Material.BLUE_CONCRETE
+                                    && fixture.world.getBlockAt(edge, 80, 0).getType()
+                                            == Material.YELLOW_CONCRETE
+                                    && fixture.world.getBlockAt(0, 80, edge).getType()
+                                            == Material.MAGENTA_CONCRETE
+                                    && fixture.world.getBlockAt(-edge, 80, 0).getType()
+                                            == Material.LIME_CONCRETE,
+                            "Smaller donut keeps all four direction markers at every size");
+                }
                 previous = cells;
             }
             if (layout != HoleWallLayout.PLUS) patterns(layout);
@@ -68,6 +81,30 @@ final class HoleWallLayoutCheck {
         var random = new Random(42);
         for (int i = 0; i < 60; i++) selected.add(HoleWallLayout.choose(random));
         check(selected.size() == 3, "All three layouts can be selected");
+    }
+
+    private static void donutDimensions() {
+        var donut = HoleWallLayout.DONUT;
+        for (int radius : new int[] {8, 6, 4}) {
+            int edge = radius / 2 + 2;
+            check(donut.onFloor(edge, 0, radius, 1), "Donut retains its circular cardinal rim");
+            check(
+                    !donut.onFloor(edge + 1, 0, radius, 1),
+                    "Donut diameters are 13, 11 and 9 blocks");
+            check(
+                    !donut.onFloor(edge, 2, radius, 1),
+                    "Circular rim curves immediately beyond its short cardinal tip");
+            check(donut.onFloor(2, 0, radius, 1), "Donut hole is only three blocks wide");
+            check(!donut.onFloor(1, 1, radius, 1), "Three-block central opening stays empty");
+            for (int x = -8; x <= 8; x++)
+                for (int z = -8; z <= 8; z++) {
+                    boolean floor = donut.onFloor(x, z, radius, 1);
+                    check(
+                            floor == donut.onFloor(-x, z, radius, 1)
+                                    && floor == donut.onFloor(z, x, radius, 1),
+                            "Donut remains symmetric on both axes and diagonals");
+                }
+        }
     }
 
     private static boolean connected(Set<String> cells) {
@@ -154,7 +191,7 @@ final class HoleWallLayoutCheck {
                                     HoleWallPhysics.collides(
                                             pattern.cells(), direction, -1, 1, standing, standing),
                                     "Crouching route remains low after pruning floating"
-                                        + " decoration");
+                                            + " decoration");
                         }
                     }
             }
@@ -200,7 +237,7 @@ final class HoleWallLayoutCheck {
                                         layout.crossing(
                                                 a.pattern, a.direction, b.pattern, b.direction),
                                         "Concurrent perpendicular map walls have a route over"
-                                            + " actual final floor");
+                                                + " actual final floor");
                         }
             }
             check(

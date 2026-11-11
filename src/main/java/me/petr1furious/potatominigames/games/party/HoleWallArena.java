@@ -52,16 +52,17 @@ final class HoleWallArena {
     }
 
     private void paint() {
+        int edge = layout == HoleWallLayout.DONUT ? radius / 2 + 2 : radius;
         for (int x = -8; x <= 8; x++)
             for (int z = -8; z <= 8; z++) {
                 if (!layout.onFloor(x, z, radius, armRadius)) continue;
                 Material material = Material.SMOOTH_QUARTZ;
                 if (layout == HoleWallLayout.PLUS && cornerIsland(x, z))
                     material = Material.YELLOW_TERRACOTTA;
-                if (z == -radius) material = Material.BLUE_CONCRETE;
-                else if (x == radius) material = Material.YELLOW_CONCRETE;
-                else if (z == radius) material = Material.MAGENTA_CONCRETE;
-                else if (x == -radius) material = Material.LIME_CONCRETE;
+                if (z == -edge) material = Material.BLUE_CONCRETE;
+                else if (x == edge) material = Material.YELLOW_CONCRETE;
+                else if (z == edge) material = Material.MAGENTA_CONCRETE;
+                else if (x == -edge) material = Material.LIME_CONCRETE;
                 world.getBlockAt(x, 80, z).setType(material, false);
             }
     }

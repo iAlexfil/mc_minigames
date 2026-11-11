@@ -30,7 +30,12 @@ enum HoleWallLayout {
         if (ax > radius || az > radius) return false;
         return switch (this) {
             case PLUS -> ax <= armRadius || az <= armRadius;
-            case DONUT -> Math.max(ax, az) >= 3 && ax + az <= radius * 2 - 2;
+            case DONUT -> {
+                // Circular 13/11/9-block rims around a fixed three-block opening.
+                double outerRadius = radius / 2.0 + 2.25;
+                int distanceSquared = x * x + z * z;
+                yield distanceSquared >= 2.25 && distanceSquared <= outerRadius * outerRadius;
+            }
             case SNAKE ->
                     (z >= -5 && z <= -3 && x <= 5)
                             || (az <= 1 && ax <= 5)

@@ -2,7 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import java.util.*;
 
-/** Continuous wall stream with independently timed platform changes. */
+/** Frequent piston-step walls with independently timed platform changes. */
 final class HoleWallFlow {
     static final class Wall {
         final int number;
@@ -10,6 +10,7 @@ final class HoleWallFlow {
         final HoleWallPhysics.Direction direction;
         final long moveAt;
         double from = -16, depth = -16;
+        private double travel;
 
         Wall(
                 int number,
@@ -54,7 +55,13 @@ final class HoleWallFlow {
         for (var it = walls.iterator(); it.hasNext(); ) {
             var wall = it.next();
             wall.from = wall.depth;
-            if (tick >= wall.moveAt) wall.depth += speed;
+            if (tick >= wall.moveAt) {
+                wall.travel += speed;
+                if (wall.travel >= 1) {
+                    wall.depth++;
+                    wall.travel--;
+                }
+            }
             if (wall.depth > 16) {
                 finished.add(wall);
                 it.remove();
@@ -80,7 +87,7 @@ final class HoleWallFlow {
                 directions.removeFirst();
                 lastDirection = direction;
                 // A wall that might survive past halfway must already fit the narrower arms.
-                long latestExit = tick + 40 + (long) Math.ceil(32 / speed) + 1;
+                long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
                 int gateRadius = latestExit >= duration / 2 ? 1 : 2;
                 var wall =
                         new Wall(
@@ -110,7 +117,8 @@ final class HoleWallFlow {
         for (var wall : walls)
             if (wall.direction.dx * direction.dx + wall.direction.dz * direction.dz == -1) {
                 double movement = Math.max(0, earliestEntry - Math.max(0, wall.moveAt - tick));
-                if (wall.depth + movement * speed <= radius + 2) return false;
+                if (wall.depth + Math.max(0, Math.floor(movement * speed) - 1) <= radius + 2)
+                    return false;
             }
         return true;
     }

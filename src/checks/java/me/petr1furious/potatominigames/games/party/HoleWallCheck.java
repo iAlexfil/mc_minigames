@@ -7,8 +7,6 @@ import me.petr1furious.potatominigames.core.config.PropertyCodec;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.World;
-import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
@@ -22,6 +20,7 @@ public final class HoleWallCheck {
         directionCoverage();
         openings();
         collisions();
+        footholds();
         floor();
         displayLifecycle();
         pushingAndRouting();
@@ -165,6 +164,11 @@ public final class HoleWallCheck {
                                 count >= 2,
                                 "Second wall appears within four seconds, before first exits");
                     for (var a : active) {
+                        check(
+                                a.depth == Math.rint(a.depth)
+                                        && a.depth - a.from >= 0
+                                        && a.depth - a.from <= 1,
+                                "Walls move in discrete one-block piston steps");
                         for (var gate : a.pattern.gates())
                             check(
                                     gate.start() >= -frame.armRadius()
@@ -283,6 +287,79 @@ public final class HoleWallCheck {
         }
     }
 
+    private static void footholds() {
+        var full = List.of(new HoleWallPattern.Cell(0, 0));
+        var face = new BoundingBox(.2, 81, 1, .8, 82.8, 1.6);
+        check(
+                HoleWallPhysics.collides(
+                        full,
+                        HoleWallPhysics.Direction.NORTH,
+                        0,
+                        0,
+                        face.clone().shift(0, 0, .2),
+                        face),
+                "Arriving at the exact native front face triggers knockback");
+        var rear = new BoundingBox(.2, 81, -.6, .8, 82.8, 0);
+        check(
+                !HoleWallPhysics.collides(full, HoleWallPhysics.Direction.NORTH, 0, 1, rear, rear),
+                "A wall moving away from a touching player cannot hit them");
+        check(
+                !HoleWallPhysics.collides(
+                        full,
+                        HoleWallPhysics.Direction.NORTH,
+                        0,
+                        0,
+                        face,
+                        face.clone().shift(0, 0, .2)),
+                "Walking away from a face cannot trigger knockback");
+        check(
+                HoleWallPhysics.collides(
+                        full,
+                        HoleWallPhysics.Direction.NORTH,
+                        0,
+                        0,
+                        rear.clone().shift(0, 0, -.2),
+                        rear),
+                "Arriving at the exact native rear face triggers knockback");
+        check(
+                !HoleWallPhysics.collides(full, HoleWallPhysics.Direction.NORTH, 0, 0, face, face),
+                "An idle neighbor is not launched without an impact");
+        for (var direction : HoleWallPhysics.Direction.values()) {
+            for (var block :
+                    List.of(
+                            HoleWallBlock.STONE,
+                            new HoleWallBlock(Material.OAK_SLAB, HoleWallBlock.Shape.LOWER_SLAB),
+                            new HoleWallBlock(Material.OAK_SLAB, HoleWallBlock.Shape.UPPER_SLAB),
+                            new HoleWallBlock(Material.OAK_FENCE, HoleWallBlock.Shape.FENCE))) {
+                var cells = List.of(new HoleWallPattern.Cell(0, 0, block));
+                double height =
+                        block.shape() == HoleWallBlock.Shape.LOWER_SLAB
+                                ? .5
+                                : block.shape() == HoleWallBlock.Shape.FENCE ? 1.5 : 1;
+                var standing = new BoundingBox(.2, 81 + height, .2, .8, 82.8 + height, .8);
+                check(
+                        HoleWallPhysics.supports(cells, direction, 0, standing),
+                        "Native-shaped top is a safe foothold");
+                var carried = standing.clone().shift(direction.dx, 0, direction.dz);
+                check(
+                        !HoleWallPhysics.collides(cells, direction, 0, 1, standing, carried),
+                        "Riding a stepped wall never triggers a side hit");
+            }
+        }
+        var slab =
+                List.of(
+                        new HoleWallPattern.Cell(
+                                0,
+                                0,
+                                new HoleWallBlock(
+                                        Material.OAK_SLAB, HoleWallBlock.Shape.LOWER_SLAB)));
+        var clearance = new BoundingBox(.2, 81.55, .2, .8, 83.35, .8);
+        check(
+                !HoleWallPhysics.collides(
+                        slab, HoleWallPhysics.Direction.NORTH, -1, 1, clearance, clearance),
+                "Slabs do not collide like full cubes");
+    }
+
     private static void pushingAndRouting() throws Exception {
         Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
         unsafeField.setAccessible(true);
@@ -304,11 +381,7 @@ public final class HoleWallCheck {
                 "Standalone factory selects the same game");
         Method push =
                 HoleWallSession.class.getDeclaredMethod(
-                        "push",
-                        Player.class,
-                        HoleWallFlow.Wall.class,
-                        BoundingBox.class,
-                        double.class);
+                        "push", Player.class, HoleWallFlow.Wall.class, BoundingBox.class);
         push.setAccessible(true);
         UUID playerId = new UUID(0, 1);
         for (var dir : HoleWallPhysics.Direction.values()) {
@@ -343,10 +416,10 @@ public final class HoleWallCheck {
                                                                 "Unexpected player method: "
                                                                         + m.getName());
                                             });
-            push.invoke(round, player, wall, body(position[0]), .2);
+            push.invoke(round, player, wall, body(position[0]));
             check(
-                    velocity[0].getX() * dir.dx + velocity[0].getZ() * dir.dz > 0,
-                    "Collision pushes along wall travel");
+                    velocity[0].getX() * dir.dx + velocity[0].getZ() * dir.dz >= 1,
+                    "Side collision gives a strong horizontal launch");
             check(
                     velocity[0].getY() == .3 && position[0].getY() == 81,
                     "Pushing preserves jump velocity and height");
@@ -371,7 +444,7 @@ public final class HoleWallCheck {
                             body(behind),
                             body(position[0])),
                     "Sprinting into rear face is a real collision");
-            push.invoke(round, player, wall, body(behind), .2);
+            push.invoke(round, player, wall, body(behind));
             check(
                     position[0].getX() * dir.dx + position[0].getZ() * dir.dz
                             < .2 + (dir.dx + dir.dz) * .5,
@@ -388,7 +461,9 @@ public final class HoleWallCheck {
             List<HoleWallPattern.Cell> solid = new ArrayList<>();
             for (int u = -3; u <= 3; u++)
                 for (int y = 0; y < 2; y++) solid.add(new HoleWallPattern.Cell(u, y));
-            var full = new HoleWallPattern(solid, List.of(), net.kyori.adventure.text.Component.empty());
+            var full =
+                    new HoleWallPattern(
+                            solid, List.of(), net.kyori.adventure.text.Component.empty());
             var first = new HoleWallFlow.Wall(1, full, dir, 0);
             first.from = first.depth = 0;
             var perpendicular =
@@ -413,23 +488,29 @@ public final class HoleWallCheck {
             check(
                     velocity[0].getX() != 0 && velocity[0].getZ() != 0 && velocity[0].getY() == .3,
                     "Perpendicular pushes combine without erasing jump or earlier push");
-        }
-        var fixture = new DisplayWorld(-1);
-        Field displaysField = HoleWallSession.class.getDeclaredField("displays");
-        displaysField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<HoleWallFlow.Wall, HoleWallDisplay> displays =
-                (Map<HoleWallFlow.Wall, HoleWallDisplay>) displaysField.get(round);
-        for (var dir : HoleWallPhysics.Direction.values()) {
-            var pattern = HoleWallPattern.generate(3, 2, new Random(0));
-            var wall = new HoleWallFlow.Wall(1, pattern, dir, 0);
-            displays.put(wall, new HoleWallDisplay(fixture.world, pattern, dir, 0));
+            var riding =
+                    new HoleWallFlow.Wall(
+                            3,
+                            new HoleWallPattern(
+                                    List.of(new HoleWallPattern.Cell(0, 0)),
+                                    List.of(),
+                                    net.kyori.adventure.text.Component.empty()),
+                            dir,
+                            0);
+            riding.from = 0;
+            riding.depth = 1;
+            position[0] = new Location(null, .5, 82, .5);
+            velocity[0] = new Vector();
+            ((HoleWallSession) round).carry(player, List.of(riding));
+            check(
+                    position[0].getX() == .5 + dir.dx
+                            && position[0].getZ() == .5 + dir.dz
+                            && position[0].getY() == 82
+                            && velocity[0].lengthSquared() == 0,
+                    "A standing rider moves exactly one cell without launch");
         }
         ((HoleWallSession) round).cleanup();
         ((HoleWallSession) round).cleanup();
-        check(
-                displays.isEmpty() && fixture.removed.size() == fixture.positions.size(),
-                "Aborting concurrent walls removes every display");
     }
 
     private static BoundingBox body(Location p) {
@@ -443,85 +524,55 @@ public final class HoleWallCheck {
     }
 
     private static void displayLifecycle() {
-        var pattern = HoleWallPattern.generate(3, 6, new Random(4));
-        for (var dir : HoleWallPhysics.Direction.values()) {
-            var fixture = new DisplayWorld(-1);
-            var wall = new HoleWallDisplay(fixture.world, pattern, dir, -16);
-            wall.move(2.5);
-            check(
-                    fixture.positions.size() == pattern.cells().size(),
-                    "Exactly one display per solid cell");
-            for (int i = 0; i < fixture.positions.size(); i++) {
-                var b = HoleWallPhysics.box(pattern.cells().get(i), dir, 2.5);
-                var p = fixture.positions.get(i);
-                check(
-                        p.getX() == b.getMinX()
-                                && p.getY() == b.getMinY()
-                                && p.getZ() == b.getMinZ(),
-                        "Visible wall matches collision geometry");
-            }
-            wall.clear();
-            wall.clear();
-            check(
-                    fixture.removed.size() == fixture.positions.size(),
-                    "Clearing wall removes every display exactly once");
-        }
-        var fixture = new DisplayWorld(4);
-        try {
-            new HoleWallDisplay(fixture.world, pattern, HoleWallPhysics.Direction.NORTH, -16);
-            throw new AssertionError("Expected spawn failure");
-        } catch (IllegalStateException expected) {
-            check(fixture.removed.size() == 4, "Partial spawn failure cleans existing displays");
-        }
-    }
-
-    private static final class DisplayWorld {
-        final List<Location> positions = new ArrayList<>();
-        final Set<Integer> removed = new HashSet<>();
-        int failAfter;
-
-        DisplayWorld(int failAfter) {
-            this.failAfter = failAfter;
-        }
-
-        final World world =
-                (World)
-                        Proxy.newProxyInstance(
-                                World.class.getClassLoader(),
-                                new Class[] {World.class},
-                                (o, m, a) -> {
-                                    if (!m.getName().equals("spawn"))
-                                        throw new AssertionError(
-                                                "Unexpected world method: " + m.getName());
-                                    if (positions.size() == failAfter)
-                                        throw new IllegalStateException("Simulated spawn failure");
-                                    int id = positions.size();
-                                    positions.add(((Location) a[0]).clone());
-                                    // Display appearance needs a server; this fixture tests
-                                    // movement and ownership.
-                                    return Proxy.newProxyInstance(
-                                            BlockDisplay.class.getClassLoader(),
-                                            new Class[] {BlockDisplay.class},
-                                            (display, method, args) ->
-                                                    switch (method.getName()) {
-                                                        case "teleport" -> {
-                                                            positions.set(
-                                                                    id,
-                                                                    ((Location) args[0]).clone());
-                                                            yield true;
-                                                        }
-                                                        case "remove" -> {
-                                                            check(
-                                                                    removed.add(id),
-                                                                    "Display removed once");
-                                                            yield null;
-                                                        }
-                                                        default ->
-                                                                throw new AssertionError(
-                                                                        "Unexpected display method:"
-                                                                                + " "
-                                                                                + method.getName());
-                                                    });
-                                });
+        PartyArenaCheck.installDataFactory();
+        var fixture = new PartyArenaCheck.WorldMap();
+        fixture.block(0, 81, 0).setType(Material.GOLD_BLOCK, false);
+        fixture.block(0, 80, 0).setType(Material.QUARTZ_BLOCK, false);
+        var stone =
+                new HoleWallPattern(
+                        List.of(new HoleWallPattern.Cell(0, 0)),
+                        List.of(),
+                        net.kyori.adventure.text.Component.empty());
+        var slab =
+                new HoleWallPattern(
+                        List.of(
+                                new HoleWallPattern.Cell(
+                                        0,
+                                        0,
+                                        new HoleWallBlock(
+                                                Material.OAK_SLAB,
+                                                HoleWallBlock.Shape.LOWER_SLAB))),
+                        List.of(),
+                        net.kyori.adventure.text.Component.empty());
+        var first = new HoleWallFlow.Wall(1, stone, HoleWallPhysics.Direction.NORTH, 0);
+        var second = new HoleWallFlow.Wall(2, slab, HoleWallPhysics.Direction.WEST, 0);
+        first.from = first.depth = second.from = second.depth = 0;
+        var blocks = new HoleWallBlocks(fixture.world);
+        blocks.render(List.of(first, second));
+        check(
+                fixture.block(0, 81, 0).getType() == Material.OAK_SLAB,
+                "Crossing wall has one real visible block");
+        check(
+                HoleWallBlocks.visibleCells(List.of(first, second), false).get(first).isEmpty(),
+                "Hidden crossing geometry cannot hit the player");
+        blocks.render(List.of(first));
+        check(
+                fixture.block(0, 81, 0).getType() == Material.STONE_BRICKS,
+                "Leaving wall reveals the other wall instead of deleting it");
+        first.depth = 1;
+        blocks.render(List.of(first));
+        check(
+                fixture.block(0, 81, 0).getType() == Material.GOLD_BLOCK
+                        && fixture.block(0, 81, 1).getType() == Material.STONE_BRICKS,
+                "Step restores old cell and installs new foothold");
+        blocks.clear();
+        blocks.clear();
+        check(
+                fixture.block(0, 81, 1).getType() == Material.AIR
+                        && fixture.block(0, 81, 0).getType() == Material.GOLD_BLOCK,
+                "Cleanup restores original blocks and is idempotent");
+        check(
+                fixture.block(0, 80, 0).getType() == Material.QUARTZ_BLOCK,
+                "Moving walls never touch the platform");
     }
 }

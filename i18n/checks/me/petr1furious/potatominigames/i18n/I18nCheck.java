@@ -1,18 +1,18 @@
 package me.petr1furious.potatominigames.i18n;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 
 /** Locale behavior, safe rich arguments and strict shipped-catalog validation, not wording snapshots. */
 public final class I18nCheck {
@@ -62,6 +62,7 @@ public final class I18nCheck {
                     for (Object value : values) check(serialized.contains(value.toString()), "Argument missing from " + key);
                 }
             }
+            SplashTextCheck.run();
             fixtureChecks();
             System.out.println("i18n: English/Russian fallback, rich literal arguments, all catalogs and invalid-data rejection passed");
         } finally {

@@ -82,7 +82,7 @@ adhd.end: "СДВГ закончился: возвращаются обычны�
 title.go: "Вперёд!"
 title.stopped: "Игра остановлена"
 title.time_over: "Время вышло!"
-title.winner: "Победил <arg:0>!"
+title.winner: "Победа!"
 title.kills: "Убийств: <arg:0>"
 title.draw: "Ничья!"
 bossbar.adhd: "СДВГ: <arg:0> с • смена через <arg:1> с"
@@ -122,3 +122,5 @@ result.draw: "<arg:0> завершилась вничью между игрок�
 result.time_over: "<arg:0> завершилась: время вышло"
 shuffle.ender_chest: "В шафле эндер-сундук недоступен: между наборами остаются только блоки."
 item.explosive_firework_rocket: "Взрывная ракета-фейерверк"
+
+title.draw_players: "Победителей: <arg:0>"

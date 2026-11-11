@@ -438,8 +438,17 @@ final class ArmsRaceSession implements PartyRoundSession {
         if (killerId != null)
             killer.showTitle(
                     Title.title(
-                            text("arms.you_killed", NamedTextColor.GOLD, name(victimId)),
-                            advanced ? text("arms.next_stage", NamedTextColor.WHITE) : Component.empty(),
+                            text("arms.you_killed", NamedTextColor.GOLD),
+                            name(victimId)
+                                    .color(NamedTextColor.WHITE)
+                                    .append(
+                                            advanced
+                                                    ? Component.text(" • ")
+                                                            .append(
+                                                                    text(
+                                                                            "arms.next_stage",
+                                                                            NamedTextColor.WHITE))
+                                                    : Component.empty()),
                             Title.Times.times(
                                     Duration.ZERO, Duration.ofSeconds(2), Duration.ofMillis(300))));
         if (!advanced) return;

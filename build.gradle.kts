@@ -254,7 +254,8 @@ tasks.check { dependsOn(checkFinalsSession) }
 for ((taskName, checkClass) in mapOf(
     "checkFinalsWeapons" to "FinalsWeaponsCheck",
     "checkFinalsGadgets" to "FinalsGadgetsCheck",
-    "checkFinalsMaps" to "FinalsMapsCheck")) {
+    "checkFinalsMaps" to "FinalsMapsCheck",
+    "checkFinalsMapPreview" to "FinalsMapPreviewCheck")) {
     val finalsCheck = tasks.register<JavaExec>(taskName) {
         dependsOn(checks.classesTaskName)
         classpath = checks.runtimeClasspath

@@ -65,6 +65,7 @@ final class FinalsSession implements GameSession {
     private World world;
     private BukkitTask ticker;
     private BossBar bar;
+    private final TextDisplay[] cashoutLabels = new TextDisplay[2];
     private Item cashbox;
     private Location cashboxLocation;
     private UUID recentDropper;
@@ -139,8 +140,9 @@ final class FinalsSession implements GameSession {
                 if (block == null) return false;
                 Location center = block.getLocation().add(.5, .5, .5);
                 if (!inside(center)) return false;
-                for (Location objective :
-                        List.of(arena.vault(), arena.station(0), arena.station(1))) {
+                List<Location> objectives = new ArrayList<>(arena.vaultLocations());
+                objectives.addAll(arena.cashoutLocations());
+                for (Location objective : objectives) {
                     if (center.distanceSquared(objective.clone().add(0, .5, 0)) <= 9) return false;
                 }
                 for (UUID id : roster.keySet()) {
@@ -337,6 +339,7 @@ final class FinalsSession implements GameSession {
             label.text(Component.text(station == 0 ? "A" : "B", NamedTextColor.GOLD));
             label.setBillboard(Display.Billboard.CENTER);
             label.setShadowed(true);
+            cashoutLabels[station] = label;
         }
         services.arena()
                 .applyBorder(world, arena.center(), arena.borderSize(), arena.borderSize(), 0);
@@ -574,6 +577,9 @@ final class FinalsSession implements GameSession {
                 else if (!connected.contains(id)) state.disconnect(id, tick);
             }
             services.messages().broadcast(text("go"));
+            announceVault();
+            announceCashout(0);
+            announceCashout(1);
             services.messages()
                     .playSound(
                             services.participants().onlinePlayers(),
@@ -585,26 +591,7 @@ final class FinalsSession implements GameSession {
             if (tick % 20 == 0) updateHud();
             return;
         }
-        int beforeRed = state.score(0), beforeBlue = state.score(1);
-        FinalsState.Phase before = state.phase();
-        state.tick(tick);
-        if (before == FinalsState.Phase.VAULT_OPENING
-                && state.phase() == FinalsState.Phase.CASHBOX_AVAILABLE) {
-            cashboxLocation = arena.vault().add(0, 1, 0);
-            services.messages().broadcast(text("vault_open"));
-        }
-        for (int team = 0; team < 2; team++) {
-            if (state.score(team) > (team == 0 ? beforeRed : beforeBlue)) {
-                cashboxLocation = null;
-                services.messages()
-                        .broadcast(
-                                text(
-                                        "paid",
-                                        teamName(team),
-                                        rules.cashoutValue(),
-                                        state.score(team)));
-            }
-        }
+        advanceObjective();
         if (state.isFinished()) {
             finish();
             return;
@@ -658,6 +645,64 @@ final class FinalsSession implements GameSession {
                     });
             updateHud();
         }
+    }
+
+    private void advanceObjective() {
+        int beforeRed = state.score(0), beforeBlue = state.score(1);
+        int completedStation = state.station();
+        FinalsState.Phase before = state.phase();
+        state.tick(tick);
+        if (before == FinalsState.Phase.VAULT_OPENING
+                && state.phase() == FinalsState.Phase.CASHBOX_AVAILABLE) {
+            cashboxLocation = arena.vault().add(0, 1, 0);
+            services.messages().broadcast(text("vault_open"));
+        }
+        boolean paid = false;
+        for (int team = 0; team < 2; team++) {
+            if (state.score(team) > (team == 0 ? beforeRed : beforeBlue)) {
+                paid = true;
+                cashboxLocation = null;
+                services.messages()
+                        .broadcast(
+                                text(
+                                        "paid",
+                                        teamName(team),
+                                        rules.cashoutValue(),
+                                        state.score(team)));
+            }
+        }
+        if (paid && !state.isFinished()) {
+            arena.nextCashout(completedStation);
+            TextDisplay label = cashoutLabels[completedStation];
+            if (label != null && label.isValid())
+                label.teleport(arena.station(completedStation).add(0, 2, 0));
+            announceCashout(completedStation);
+            arena.nextVault();
+            announceVault();
+        }
+    }
+
+    private void announceCashout(int station) {
+        Location location = arena.station(station);
+        services.messages()
+                .broadcast(
+                        text(
+                                "cashout_spawned",
+                                station == 0 ? "A" : "B",
+                                location.getBlockX(),
+                                location.getBlockY(),
+                                location.getBlockZ()));
+    }
+
+    private void announceVault() {
+        Location location = arena.vault();
+        services.messages()
+                .broadcast(
+                        text(
+                                "vault_spawned",
+                                location.getBlockX(),
+                                location.getBlockY(),
+                                location.getBlockZ()));
     }
 
     private void waitForRespawn(Player player) {

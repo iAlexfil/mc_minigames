@@ -177,6 +177,10 @@ public final class FinalsMaps {
                 : entry.draft.red.getFirst().at(world);
     }
 
+    Draft previewDraft(String name) {
+        return entry(name).draft.copy();
+    }
+
     public void corner(String name, int index, Location location) {
         update(
                 name,
@@ -206,17 +210,27 @@ public final class FinalsMaps {
     }
 
     public void vault(String name, Location location) {
-        update(name, location, draft -> draft.vault = Point.of(location).centered());
+        update(name, location, draft -> draft.setVault(Point.of(location).centered()));
+    }
+
+    public void vaultAdd(String name, Location location) {
+        update(name, location, draft -> draft.addVault(Point.of(location).centered()));
+    }
+
+    public void vaultClear(String name) {
+        update(name, null, draft -> draft.vaults.clear());
     }
 
     public void station(String name, int station, Location location) {
-        update(
-                name,
-                location,
-                draft -> {
-                    if (station == 0) draft.stationA = Point.of(location).centered();
-                    else draft.stationB = Point.of(location).centered();
-                });
+        update(name, location, draft -> draft.setCashout(station, Point.of(location).centered()));
+    }
+
+    public void cashoutAdd(String name, Location location) {
+        update(name, location, draft -> draft.addCashout(Point.of(location).centered()));
+    }
+
+    public void cashoutClear(String name) {
+        update(name, null, draft -> draft.cashouts.clear());
     }
 
     public void save(String name) {
@@ -228,8 +242,7 @@ public final class FinalsMaps {
         if (saved.bounds().minY() < world.getMinHeight()
                 || saved.bounds().maxY() >= world.getMaxHeight()) throw failure("height");
         for (Point point : concat(saved.red(), saved.blue())) validateStanding(world, point);
-        for (Point point : List.of(saved.vault(), saved.stationA(), saved.stationB()))
-            validateStanding(world, point);
+        for (Point point : concat(saved.vaults(), saved.cashouts())) validateStanding(world, point);
         // Commands, structure loaders, and portals would make the match copy capable of affecting
         // other worlds.
         for (int x = saved.bounds().minX(); x <= saved.bounds().maxX(); x++) {
@@ -321,9 +334,14 @@ public final class FinalsMaps {
                 draft.blue.size(),
                 mark(draft.first),
                 mark(draft.second),
-                mark(draft.vault),
-                mark(draft.stationA),
-                mark(draft.stationB));
+                draft.vaults.size(),
+                Component.join(
+                        net.kyori.adventure.text.JoinConfiguration.separator(Component.text("; ")),
+                        draft.vaults.stream().map(this::mark).toList()),
+                draft.cashouts.stream().filter(java.util.Objects::nonNull).count(),
+                Component.join(
+                        net.kyori.adventure.text.JoinConfiguration.separator(Component.text("; ")),
+                        draft.cashouts.stream().map(this::mark).toList()));
     }
 
     private Component mark(Point point) {
@@ -413,9 +431,8 @@ public final class FinalsMaps {
                 snapshot.second = new Point(b.maxX(), b.maxY(), b.maxZ(), 0, 0);
                 snapshot.red = entry.saved.red();
                 snapshot.blue = entry.saved.blue();
-                snapshot.vault = entry.saved.vault();
-                snapshot.stationA = entry.saved.stationA();
-                snapshot.stationB = entry.saved.stationB();
+                snapshot.vaults = entry.saved.vaults();
+                snapshot.cashouts = entry.saved.cashouts();
                 snapshot.write(section);
                 section.set("template", entry.saved.template());
             }
@@ -427,7 +444,11 @@ public final class FinalsMaps {
             entries = new LinkedHashMap<>(next);
             selected = selection;
         } catch (IOException error) {
-            plugin.getLogger().warning("Finals map registry write failed: " + error.getMessage());
+            plugin.getLogger()
+                    .log(
+                            java.util.logging.Level.WARNING,
+                            "Finals map registry write failed: " + registry,
+                            error);
             throw failure("io");
         } finally {
             try {

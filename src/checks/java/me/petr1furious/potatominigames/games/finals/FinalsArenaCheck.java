@@ -9,14 +9,16 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 /** Runs the real arena generator against its world-write boundary, without a server. */
 public final class FinalsArenaCheck {
     public static void main(String[] args) {
         WorldMap map = new WorldMap();
-        FinalsArena arena = new FinalsArena(map.world);
+        FinalsArena arena = new FinalsArena(map.world, new Random(42));
         arena.build();
         Location center = arena.center();
         require(
@@ -48,10 +50,28 @@ public final class FinalsArenaCheck {
                         "Spawn head is clear");
                 Set<Cell> reachable = reachable(map, spawn);
                 require(reachable.contains(new Cell(0, 65, 1)), "Every spawn can reach the vault");
-                require(
-                        reachable.contains(new Cell(0, 65, -14)),
-                        "Every spawn can reach station A");
-                require(reachable.contains(new Cell(0, 65, 14)), "Every spawn can reach station B");
+                for (Location candidate : arena.vaultLocations()) {
+                    require(
+                            reachable.contains(
+                                    new Cell(
+                                            candidate.getBlockX(),
+                                            candidate.getBlockY(),
+                                            candidate.getBlockZ() + 1)),
+                            "Every spawn can reach every possible vault location");
+                }
+                for (Location candidate : arena.cashoutLocations()) {
+                    require(
+                            reachable.contains(
+                                    new Cell(
+                                            candidate.getBlockX(),
+                                            candidate.getBlockY(),
+                                            candidate.getBlockZ() + 1)),
+                            "Every spawn can reach every possible cashout location");
+                    for (Location vaultCandidate : arena.vaultLocations())
+                        require(
+                                candidate.distanceSquared(vaultCandidate) >= 64,
+                                "Generated cashouts remain separated from every vault location");
+                }
                 require(
                         reachable.contains(new Cell(-10, 73, -8)),
                         "The west roof is reachable by stairs");
@@ -60,8 +80,11 @@ public final class FinalsArenaCheck {
                         "The east roof is reachable by stairs");
             }
         }
-        Block vault = map.block(0, 65, 0);
-        require(arena.isVault(vault), "The central vault is recognized");
+        Location activeVault = arena.vault();
+        Block vault =
+                map.block(
+                        activeVault.getBlockX(), activeVault.getBlockY(), activeVault.getBlockZ());
+        require(arena.isVault(vault), "The active vault is recognized");
         require(!arena.isVault(map.block(0, 64, 0)), "Vault recognition includes height");
         require(!arena.isCover(vault), "The vault survives explosions");
         for (int station = 0; station < 2; station++) {
@@ -105,7 +128,156 @@ public final class FinalsArenaCheck {
         require(arena.isCover(coverBlock), "Building walls are cover");
         coverBlock.setType(Material.AIR, false);
         require(!arena.isCover(coverBlock), "Destroyed cover cannot be broken again");
+        randomVaults(map, arena);
+        completedCashoutMoves(map, arena);
         System.out.println("Finals arena checks passed");
+    }
+
+    private static void completedCashoutMoves(WorldMap map, FinalsArena arena) {
+        List<Location> candidates = arena.cashoutLocations();
+        require(candidates.size() > 2, "The generated map has spare cashout locations");
+        Set<Location> visited = new HashSet<>();
+        for (int round = 0; round < 100; round++) {
+            int slot = round % 2;
+            Location completed = arena.station(slot), other = arena.station(1 - slot);
+            arena.build();
+            require(
+                    completed.equals(arena.station(slot)) && other.equals(arena.station(1 - slot)),
+                    "Rebuilding does not move either active cashout");
+            arena.nextCashout(slot);
+            Location replacement = arena.station(slot);
+            visited.add(replacement);
+            require(
+                    !completed.equals(replacement),
+                    "The completed station moves to a fresh location");
+            require(other.equals(arena.station(1 - slot)), "The other station stays in place");
+            require(!replacement.equals(other), "The two active stations cannot overlap");
+            require(
+                    candidates.contains(replacement),
+                    "Replacement cashouts use configured candidates");
+            require(
+                    map.type(completed.getBlockX(), completed.getBlockY(), completed.getBlockZ())
+                            == Material.AIR,
+                    "The previous station marker is removed");
+            int active = 0;
+            for (Location candidate : candidates) {
+                Block block =
+                        map.block(
+                                candidate.getBlockX(),
+                                candidate.getBlockY(),
+                                candidate.getBlockZ());
+                int expectedSlot =
+                        candidate.equals(arena.station(0))
+                                ? 0
+                                : candidate.equals(arena.station(1)) ? 1 : -1;
+                require(
+                        arena.stationAt(block) == expectedSlot,
+                        "Only active cashout spots accept deposits");
+                require(
+                        block.getType() == (expectedSlot < 0 ? Material.AIR : Material.GOLD_BLOCK),
+                        "Exactly the two active locations have gold markers");
+                if (expectedSlot >= 0) active++;
+                require(!arena.isCover(block), "Inactive cashout locations remain protected");
+                require(
+                        map.type(
+                                        candidate.getBlockX(),
+                                        candidate.getBlockY() - 1,
+                                        candidate.getBlockZ())
+                                != Material.AIR,
+                        "Every candidate retains its supporting floor");
+            }
+            require(active == 2, "There are exactly two active cashouts after each replacement");
+            arena.station(slot).add(50, 50, 50);
+            arena.cashoutLocations().getFirst().add(50, 50, 50);
+            require(
+                    replacement.equals(arena.station(slot)),
+                    "Callers cannot mutate active cashout coordinates");
+        }
+        require(visited.size() == candidates.size(), "Every configured cashout can become active");
+        int[] legacy = FinalsCashoutLocations.initial(2, new Random(1));
+        require(
+                legacy[0] == 0 && legacy[1] == 1,
+                "Two-location maps retain their original A/B assignments");
+        require(
+                FinalsCashoutLocations.nextIndex(2, 0, 1, new Random(1)) == 0
+                        && FinalsCashoutLocations.nextIndex(2, 1, 0, new Random(1)) == 1,
+                "Legacy two-location maps retain two cashouts when one finishes");
+        require(
+                FinalsCashoutLocations.nextIndex(3, 0, 1, new Random(1)) == 2
+                        && FinalsCashoutLocations.nextIndex(3, 2, 1, new Random(1)) == 0
+                        && FinalsCashoutLocations.nextIndex(3, 2, 0, new Random(1)) == 1,
+                "Three-location maps always choose the only inactive location");
+        Set<Integer> firstSlots = new HashSet<>(), secondSlots = new HashSet<>();
+        Random random = new Random(112);
+        for (int run = 0; run < 100; run++) {
+            int[] pair = FinalsCashoutLocations.initial(4, random);
+            require(pair[0] != pair[1], "Initial random cashouts never select the same location");
+            firstSlots.add(pair[0]);
+            secondSlots.add(pair[1]);
+        }
+        require(
+                firstSlots.equals(Set.of(0, 1, 2, 3)) && secondSlots.equals(Set.of(0, 1, 2, 3)),
+                "Both station labels can initially use every candidate");
+    }
+
+    private static void randomVaults(WorldMap map, FinalsArena arena) {
+        require(
+                arena.vaultLocations().size() > 1,
+                "The generated map offers alternative vault locations");
+        Set<Cell> visited = new HashSet<>();
+        Location previous = arena.vault();
+        arena.build();
+        require(
+                arena.vault().equals(previous),
+                "Building an already built arena does not relocate a live vault");
+        for (int round = 0; round < 100; round++) {
+            Location active = arena.vault();
+            require(
+                    arena.vaultLocations().contains(active),
+                    "Random vaults stay at configured locations");
+            visited.add(new Cell(active.getBlockX(), active.getBlockY(), active.getBlockZ()));
+            for (Location candidate : arena.vaultLocations()) {
+                Block block =
+                        map.block(
+                                candidate.getBlockX(),
+                                candidate.getBlockY(),
+                                candidate.getBlockZ());
+                boolean selected = candidate.equals(active);
+                require(
+                        arena.isVault(block) == selected,
+                        "Only the active location can open a vault");
+                require(
+                        block.getType() == (selected ? Material.EMERALD_BLOCK : Material.AIR),
+                        "Moving the vault leaves exactly one emerald marker and clears the previous"
+                                + " one");
+                require(!arena.isCover(block), "All possible vault locations survive destruction");
+                require(
+                        map.type(
+                                        candidate.getBlockX(),
+                                        candidate.getBlockY() - 1,
+                                        candidate.getBlockZ())
+                                != Material.AIR,
+                        "Each random vault has a solid floor");
+            }
+            arena.vault().add(100, 100, 100);
+            arena.vaultLocations().getFirst().add(100, 100, 100);
+            require(
+                    arena.vault().equals(active),
+                    "Callers cannot move the active location by mutating returned locations");
+            arena.nextVault();
+            require(
+                    !arena.vault().equals(active),
+                    "Consecutive cashouts do not reuse the same vault location");
+        }
+        require(
+                visited.size() == arena.vaultLocations().size(),
+                "Random selection can use every configured location");
+        require(
+                FinalsVaultLocations.nextIndex(1, -1, new Random(1)) == 0,
+                "A legacy one-location map can select its first vault");
+        require(
+                FinalsVaultLocations.nextIndex(1, 0, new Random(1)) == 0,
+                "A legacy one-location map can start another round");
     }
 
     private static Set<Cell> reachable(WorldMap map, Location spawn) {

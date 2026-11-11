@@ -86,9 +86,35 @@ Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
    `/finals map spawnclear rooftop red|blue` clears that team's draft list.
 4. Stand at the objective positions and run `/finals map vault rooftop`,
    `/finals map cashout rooftop a` and `/finals map cashout rooftop b`.
+   For random vault locations, stand at each extra spot and run
+   `/finals map vaultadd rooftop` (up to 16 spots total).
+   `vault` replaces the whole list with your position; `vaultclear` clears it.
+   Add extra cashout locations with `/finals map cashoutadd rooftop` (up to 16
+   total). `cashout rooftop a|b` edits the first two candidate locations and keeps
+   the extras; `/finals map cashoutclear rooftop` clears the draft cashout list.
 5. `/finals map save rooftop`, then `/finals map use rooftop`.
    Use `/finals map info rooftop` or `/finals map list` to inspect setup.
    Select `generated` to return to the fallback arena.
+
+The vault chooses a random configured location at match start and after each
+completed cashout. With two or more locations it never chooses the previous spot
+again immediately. The current vault stays in place throughout its cashout cycle.
+Existing maps with one vault keep using that position. Exactly two cashouts are
+active during a match. After a cashout pays out, only that station moves to a
+random unused location; the other station stays where it is. Configure at least
+three cashout locations to enable movement. Existing maps with just two keep
+both in place. Saving requires every cashout candidate to be at least eight
+blocks from every other cashout and vault candidate, and every objective to be
+at least three blocks from team spawns. `/finals map info rooftop` lists all
+configured locations.
+
+Editor previews turn on when you use `create` or `goto`. Green markers show
+vault candidates, gold markers show cashout candidates, and red/blue markers
+show team spawns. Labels identify each numbered location; spawn arrows show the
+saved facing direction. Previews follow draft edits without changing blocks or
+saved snapshots, and are visible only to the editor who enabled them. Use
+`/finals map preview rooftop off` to hide them or
+`/finals map preview rooftop on` to show them again while in the editor world.
 
 Setup requires admin permission. Saving validates bounds, safe spawn support,
 headroom and objective spacing. Native snapshots retain block data, chest

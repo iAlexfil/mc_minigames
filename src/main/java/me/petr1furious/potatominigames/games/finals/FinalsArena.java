@@ -6,8 +6,11 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.random.RandomGenerator;
 
 /** A small mirrored city block; only the generated cover can be destroyed. */
 public final class FinalsArena implements FinalsMapArena {
@@ -15,7 +18,18 @@ public final class FinalsArena implements FinalsMapArena {
     public static final int HALF_SIZE = 24;
     private static final int WALL_TOP = FLOOR_Y + 16;
     private final World world;
+    private final RandomGenerator random;
     private final Set<Position> cover = new HashSet<>();
+    private static final int[] VAULT_X = {-10, 0, 10};
+    private static final Position[] CASHOUTS = {
+        new Position(0, FLOOR_Y + 1, -15),
+        new Position(0, FLOOR_Y + 1, 15),
+        new Position(-18, FLOOR_Y + 1, 16),
+        new Position(18, FLOOR_Y + 1, -16)
+    };
+    private int activeVault = -1;
+    private int[] activeCashouts;
+    private boolean built;
 
     private record Position(int x, int y, int z) {
         static Position of(Block block) {
@@ -24,7 +38,12 @@ public final class FinalsArena implements FinalsMapArena {
     }
 
     public FinalsArena(World world) {
+        this(world, ThreadLocalRandom.current());
+    }
+
+    FinalsArena(World world, RandomGenerator random) {
         this.world = Objects.requireNonNull(world, "world");
+        this.random = Objects.requireNonNull(random, "random");
     }
 
     public World world() {
@@ -36,6 +55,7 @@ public final class FinalsArena implements FinalsMapArena {
     }
 
     public void build() {
+        if (built) return;
         cover.clear();
         for (int x = -HALF_SIZE; x <= HALF_SIZE; x++) {
             for (int z = -HALF_SIZE; z <= HALF_SIZE; z++) {
@@ -75,10 +95,17 @@ public final class FinalsArena implements FinalsMapArena {
             }
         }
 
-        objective(0, Material.EMERALD_BLOCK, Material.LIME_CONCRETE);
-        objective(-15, Material.GOLD_BLOCK, Material.YELLOW_CONCRETE);
-        objective(15, Material.GOLD_BLOCK, Material.YELLOW_CONCRETE);
-        // The world spawn is beside the vault, so a fallback teleport never embeds a player.
+        for (int x : VAULT_X) objective(x, 0, Material.AIR, Material.LIME_CONCRETE);
+        for (Position point : CASHOUTS)
+            objective(point.x(), point.z(), Material.AIR, Material.YELLOW_CONCRETE);
+        built = true;
+        nextVault();
+        activeCashouts = FinalsCashoutLocations.initial(CASHOUTS.length, random);
+        for (int index : activeCashouts) {
+            Position point = CASHOUTS[index];
+            set(point.x(), point.y(), point.z(), Material.GOLD_BLOCK);
+        }
+        // Keep fallback teleports clear of every possible vault marker.
         world.setSpawnLocation(0, FLOOR_Y + 1, 2);
     }
 
@@ -121,11 +148,11 @@ public final class FinalsArena implements FinalsMapArena {
         }
     }
 
-    private void objective(int z, Material block, Material color) {
+    private void objective(int x, int z, Material block, Material color) {
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 set(
-                        dx,
+                        x + dx,
                         FLOOR_Y,
                         z + dz,
                         Math.abs(dx) == 2 || Math.abs(dz) == 2
@@ -133,8 +160,8 @@ public final class FinalsArena implements FinalsMapArena {
                                 : Material.POLISHED_BLACKSTONE);
             }
         }
-        set(0, FLOOR_Y + 1, z, block);
-        for (int side : new int[] {-1, 1}) set(side * 2, FLOOR_Y, z, Material.SEA_LANTERN);
+        set(x, FLOOR_Y + 1, z, block);
+        for (int side : new int[] {-1, 1}) set(x + side * 2, FLOOR_Y, z, Material.SEA_LANTERN);
     }
 
     private void set(int x, int y, int z, Material material) {
@@ -147,7 +174,7 @@ public final class FinalsArena implements FinalsMapArena {
     }
 
     public Location center() {
-        // Border placement uses this point too; stand atop the vault without offsetting the map.
+        // Border placement uses this point too; remain above every possible central marker.
         return new Location(world, .5, FLOOR_Y + 2, .5);
     }
 
@@ -164,13 +191,54 @@ public final class FinalsArena implements FinalsMapArena {
     }
 
     public Location vault() {
-        return new Location(world, .5, FLOOR_Y + 1, .5);
+        if (activeVault < 0)
+            throw new IllegalStateException("Build the arena before using its vault");
+        return new Location(world, VAULT_X[activeVault] + .5, FLOOR_Y + 1, .5);
+    }
+
+    public List<Location> vaultLocations() {
+        return java.util.Arrays.stream(VAULT_X)
+                .mapToObj(x -> new Location(world, x + .5, FLOOR_Y + 1, .5))
+                .toList();
+    }
+
+    public void nextVault() {
+        if (!built) throw new IllegalStateException("Build the arena before selecting its vault");
+        int next = FinalsVaultLocations.nextIndex(VAULT_X.length, activeVault, random);
+        if (activeVault >= 0) set(VAULT_X[activeVault], FLOOR_Y + 1, 0, Material.AIR);
+        activeVault = next;
+        set(VAULT_X[activeVault], FLOOR_Y + 1, 0, Material.EMERALD_BLOCK);
     }
 
     public Location station(int station) {
         if (station < 0 || station > 1)
             throw new IllegalArgumentException("Station must be 0 or 1");
-        return new Location(world, .5, FLOOR_Y + 1, (station == 0 ? -15 : 15) + .5);
+        if (activeCashouts == null)
+            throw new IllegalStateException("Build the arena before using its cashouts");
+        Position point = CASHOUTS[activeCashouts[station]];
+        return new Location(world, point.x() + .5, point.y(), point.z() + .5);
+    }
+
+    public List<Location> cashoutLocations() {
+        return java.util.Arrays.stream(CASHOUTS)
+                .map(point -> new Location(world, point.x() + .5, point.y(), point.z() + .5))
+                .toList();
+    }
+
+    public void nextCashout(int station) {
+        if (station < 0 || station > 1)
+            throw new IllegalArgumentException("Station must be 0 or 1");
+        if (activeCashouts == null)
+            throw new IllegalStateException("Build the arena before replacing its cashouts");
+        int current = activeCashouts[station];
+        int next =
+                FinalsCashoutLocations.nextIndex(
+                        CASHOUTS.length, current, activeCashouts[1 - station], random);
+        Position old = CASHOUTS[current];
+        set(old.x(), old.y(), old.z(), Material.AIR);
+        activeCashouts[station] = next;
+        Position point = CASHOUTS[next];
+        set(point.x(), point.y(), point.z(), Material.GOLD_BLOCK);
     }
 
     public boolean contains(Location location) {
@@ -194,17 +262,18 @@ public final class FinalsArena implements FinalsMapArena {
     }
 
     public int stationAt(Block block) {
-        if (block == null
-                || !world.equals(block.getWorld())
-                || block.getX() != 0
-                || block.getY() != FLOOR_Y + 1) return -1;
-        return block.getZ() == -15 ? 0 : block.getZ() == 15 ? 1 : -1;
+        if (block == null || !world.equals(block.getWorld()) || activeCashouts == null) return -1;
+        Position point = Position.of(block);
+        return CASHOUTS[activeCashouts[0]].equals(point)
+                ? 0
+                : CASHOUTS[activeCashouts[1]].equals(point) ? 1 : -1;
     }
 
     public boolean isVault(Block block) {
         return block != null
+                && activeVault >= 0
                 && world.equals(block.getWorld())
-                && block.getX() == 0
+                && block.getX() == VAULT_X[activeVault]
                 && block.getY() == FLOOR_Y + 1
                 && block.getZ() == 0;
     }

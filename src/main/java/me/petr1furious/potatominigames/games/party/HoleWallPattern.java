@@ -10,7 +10,7 @@ import java.util.*;
 
 record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     static final int HALF_WIDTH = 13, HEIGHT = 5;
-    // Introduce precision slits only after ten walls with full-block-wide passages.
+    // Stable variant IDs; HoleWallFlow shuffles their arrival order for each game.
     static final int[] KINDS = {
         0, 12, 1, 2, 3, 4, 5, 18, 6, 19, 13, 7, 15, 8, 16, 9, 17, 10, 14, 11
     };
@@ -34,6 +34,22 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     HoleWallPattern {
         cells = List.copyOf(cells);
         gates = List.copyOf(gates);
+    }
+
+    static List<Integer> shuffledStages(Random random, boolean introductory) {
+        var stages = new ArrayList<Integer>();
+        for (int stage = 1; stage <= KINDS.length; stage++) stages.add(stage);
+        Collections.shuffle(stages, random);
+        if (introductory) {
+            var opening =
+                    stages.stream()
+                            .filter(stage -> KINDS[stage - 1] < 13 || KINDS[stage - 1] > 17)
+                            .limit(10)
+                            .toList();
+            stages.removeAll(opening);
+            stages.addAll(0, opening);
+        }
+        return stages;
     }
 
     static HoleWallPattern generate(int stage, int radius, Random random) {

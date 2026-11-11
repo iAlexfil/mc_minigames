@@ -39,6 +39,7 @@ final class HoleWallFlow {
     private int radius = 8, number;
     private HoleWallPhysics.Direction lastDirection;
     private final Deque<HoleWallPhysics.Direction> directions = new ArrayDeque<>();
+    private final Deque<Integer> patternStages = new ArrayDeque<>();
 
     HoleWallFlow(long duration, Random random) {
         this.duration = duration;
@@ -83,11 +84,14 @@ final class HoleWallFlow {
                 directions.addAll(shuffled);
             }
             var direction = directions.getFirst();
+            if (patternStages.isEmpty())
+                patternStages.addAll(HoleWallPattern.shuffledStages(random, number == 0));
             // Delayed arrivals must still fit the narrowed arms when they eventually cross.
             long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
             int gateRadius = latestExit >= duration / 2 ? 1 : 2;
-            var pattern = HoleWallPattern.generate(number + 1, gateRadius, random);
+            var pattern = HoleWallPattern.generate(patternStages.getFirst(), gateRadius, random);
             if (canApproach(direction, pattern, tick, speed)) {
+                patternStages.removeFirst();
                 directions.removeFirst();
                 lastDirection = direction;
                 // A wall that might survive past halfway must already fit the narrower arms.
@@ -125,5 +129,6 @@ final class HoleWallFlow {
     void clear() {
         walls.clear();
         directions.clear();
+        patternStages.clear();
     }
 }

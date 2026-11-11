@@ -18,6 +18,7 @@ public final class HoleWallCheck {
     public static void main(String[] args) throws Exception {
         centerRequiresAction();
         directionCoverage();
+        randomPatternOrder();
         openings();
         precisionPassages();
         collisions();
@@ -85,6 +86,29 @@ public final class HoleWallCheck {
                         "Every direction stays in rotation, instead of locking into two sides");
             check(late.size() == 4, "All four sides still appear in the final third");
         }
+    }
+
+    private static void randomPatternOrder() {
+        Set<List<net.kyori.adventure.text.Component>> orders = new HashSet<>();
+        for (int seed = 0; seed < 6; seed++) {
+            var flow = new HoleWallFlow(6000, new Random(seed));
+            List<net.kyori.adventure.text.Component> titles = new ArrayList<>();
+            for (int tick = 0; tick < 6000 && titles.size() < 40; tick++)
+                for (var wall : flow.tick(tick).started()) {
+                    if (titles.size() < 10)
+                        check(
+                                wall.pattern.gates().stream().allMatch(g -> g.width() >= 1),
+                                "First ten random walls never require precision slits");
+                    titles.add(wall.pattern.title());
+                }
+            check(titles.size() >= 40, "Two full random decks fit in a long round");
+            for (int start : new int[] {0, 20})
+                check(
+                        new HashSet<>(titles.subList(start, start + 20)).size() == 20,
+                        "Each shuffled deck uses every wall type exactly once");
+            orders.add(List.copyOf(titles.subList(0, 20)));
+        }
+        check(orders.size() == 6, "Different games use different wall orders");
     }
 
     private static void openings() {

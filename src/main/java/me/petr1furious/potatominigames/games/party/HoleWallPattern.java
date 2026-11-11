@@ -10,8 +10,9 @@ import java.util.*;
 
 record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     static final int HALF_WIDTH = 13, HEIGHT = 5;
+    // Introduce precision slits only after ten walls with full-block-wide passages.
     static final int[] KINDS = {
-        0, 12, 13, 1, 14, 2, 15, 3, 16, 4, 17, 5, 18, 6, 19, 7, 8, 9, 10, 11
+        0, 12, 1, 2, 3, 4, 5, 18, 6, 19, 13, 7, 15, 8, 16, 9, 17, 10, 14, 11
     };
 
     record Cell(int u, int y, HoleWallBlock block) {

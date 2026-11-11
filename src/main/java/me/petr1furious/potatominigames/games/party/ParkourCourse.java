@@ -84,7 +84,38 @@ final class ParkourCourse {
     private final Map<Pos, Material> blocks;
 
     ParkourCourse(Random random) {
-        this(sample(random), random.nextBoolean());
+        this(generate(random));
+    }
+
+    private ParkourCourse(ParkourCourse valid) {
+        sequence = valid.sequence;
+        islands = valid.islands;
+        blocks = valid.blocks;
+    }
+
+    private static final class InvalidLayout extends IllegalStateException {
+        InvalidLayout(String message) {
+            super(message);
+        }
+    }
+
+    private static ParkourCourse generate(Random random) {
+        for (int attempt = 0; attempt < 32; attempt++) {
+            try {
+                return new ParkourCourse(sample(random), random.nextBoolean());
+            } catch (InvalidLayout invalid) {
+                /* Reject blocked compositions before building a world. */
+            }
+        }
+        return new ParkourCourse(
+                List.of(
+                        Kind.BRIDGE,
+                        Kind.WIND_WALL,
+                        Kind.WATER_DROP,
+                        Kind.SCAFFOLD,
+                        Kind.LADDER_CLIMB,
+                        Kind.PEARL),
+                false);
     }
 
     private static List<Kind> sample(Random random) {
@@ -165,18 +196,14 @@ final class ParkourCourse {
                         }
                 }
                 case LADDER_DROP, HONEY_DROP ->
-                        clutchWall(
-                                plan,
-                                from,
-                                to,
-                                (int) from.centerX()
-                                        + (mirror == (kind == Kind.LADDER_DROP) ? -3 : 3));
+                        clutchWall(plan, from, to, from.centerX() < WIDTH / 2.0 ? 0 : WIDTH - 1);
                 default -> {}
             }
         }
         for (Pos pos : plan.keySet())
             if (pos.x() < 0 || pos.x() >= WIDTH || pos.y() < BUILD_BOTTOM || pos.y() >= TOP - 8)
-                throw new IllegalStateException("Sampled course exceeds the sealed arena bounds");
+                throw new InvalidLayout("Sampled course exceeds the sealed arena bounds");
+        validateClearance(plan);
         blocks = Collections.unmodifiableMap(plan);
     }
 
@@ -199,9 +226,36 @@ final class ParkourCourse {
     }
 
     private void clutchWall(Map<Pos, Material> plan, Island from, Island to, int side) {
-        for (int z = from.z() + 4; z < to.z() + 7; z++)
+        // Keep the whole destination island free, including the next sideways route.
+        for (int z = from.z() + 4; z < to.z(); z++)
             for (int y = to.y(); y <= from.y() + 4; y++)
-                plan.put(new Pos(side, y, z), Material.SMOOTH_QUARTZ);
+                plan.put(
+                        new Pos(side, y, z),
+                        z == to.z() - 1 ? Material.LIGHT_BLUE_CONCRETE : Material.SMOOTH_QUARTZ);
+    }
+
+    private void validateClearance(Map<Pos, Material> plan) {
+        for (Island island : islands) {
+            int x = (int) island.centerX(), z = island.z() + 3;
+            if (!plan.containsKey(new Pos(x, island.y(), z)))
+                throw new InvalidLayout("Missing checkpoint deck");
+            bodyClear(plan, x, island.y() + 1, z);
+        }
+        for (int stage = 0; stage < stages(); stage++)
+            if (stage(stage) == Kind.LADDER_TRAVERSE) {
+                Island from = island(stage), to = island(stage + 1);
+                for (int x = (int) Math.min(from.centerX(), to.centerX());
+                        x <= Math.max(from.centerX(), to.centerX());
+                        x++) bodyClear(plan, x, from.y() + 1, from.z() + 3);
+            }
+    }
+
+    private static void bodyClear(Map<Pos, Material> plan, int x, int feet, int z) {
+        for (int y = feet; y < feet + 2; y++) {
+            Material material = plan.get(new Pos(x, y, z));
+            if (material != null && material != Material.WATER)
+                throw new InvalidLayout("Protected terrain blocks checkpoint or lateral passage");
+        }
     }
 
     int stages() {

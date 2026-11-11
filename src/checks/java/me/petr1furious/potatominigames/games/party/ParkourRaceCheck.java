@@ -27,6 +27,8 @@ public final class ParkourRaceCheck {
     public static void main(String[] args) throws ReflectiveOperationException {
         model();
         sampling();
+        neighbouringTasks();
+        navigation();
         geometry();
         staircase();
         flightBoundary();
@@ -153,6 +155,122 @@ public final class ParkourRaceCheck {
         check(
                 lateral.distance(5, to.centerX(), to.z() + 3.5) == 20,
                 "Sideways distance counts in live race ranking");
+    }
+
+    private static void neighbouringTasks() {
+        for (var first : ParkourCourse.Kind.values())
+            for (var second : ParkourCourse.Kind.values()) {
+                if (first == second) continue;
+                List<ParkourCourse.Kind> selected =
+                        new java.util.ArrayList<>(List.of(first, second));
+                for (var kind : ParkourCourse.Kind.values())
+                    if (selected.size() < 6 && !selected.contains(kind)) selected.add(kind);
+                for (boolean mirror : List.of(false, true)) {
+                    ParkourCourse course = new ParkourCourse(selected, mirror);
+                    for (int stage = 0; stage < course.stages(); stage++)
+                        if (course.stage(stage) == ParkourCourse.Kind.LADDER_TRAVERSE) {
+                            var from = course.island(stage);
+                            var to = course.island(stage + 1);
+                            for (int x = (int) Math.min(from.centerX(), to.centerX());
+                                    x <= Math.max(from.centerX(), to.centerX());
+                                    x++)
+                                for (int y = from.y() + 1; y <= from.y() + 2; y++)
+                                    check(
+                                            !course.blocks()
+                                                    .containsKey(
+                                                            new ParkourCourse.Pos(
+                                                                    x, y, from.z() + 3)),
+                                            "neighbouring task terrain must not block the lateral"
+                                                    + " route");
+                        }
+                    if ((first == ParkourCourse.Kind.LADDER_DROP
+                                    || first == ParkourCourse.Kind.HONEY_DROP)
+                            && second == ParkourCourse.Kind.LADDER_TRAVERSE) {
+                        var from = course.island(0);
+                        var goal = course.island(1);
+                        int wall =
+                                from.centerX() < ParkourCourse.WIDTH / 2.0
+                                        ? 0
+                                        : ParkourCourse.WIDTH - 1;
+                        check(
+                                course.blocks()
+                                                .get(
+                                                        new ParkourCourse.Pos(
+                                                                wall, goal.y() + 1, goal.z() - 1))
+                                        == Material.LIGHT_BLUE_CONCRETE,
+                                "clutch wall has a visible terminal stripe before the goal");
+                        for (int z = goal.z(); z < goal.z() + 7; z++)
+                            check(
+                                    !course.blocks()
+                                            .containsKey(
+                                                    new ParkourCourse.Pos(wall, goal.y() + 1, z)),
+                                    "descent wall stops before every row of the next checkpoint");
+                    }
+                }
+            }
+    }
+
+    private static void navigation() {
+        check(
+                ParkourGuide.direction(0, 0, 10).equals("↑")
+                        && ParkourGuide.direction(0, -10, 0).equals("→")
+                        && ParkourGuide.direction(0, 10, 0).equals("←")
+                        && ParkourGuide.direction(0, 0, -10).equals("↓"),
+                "navigation arrow follows the player's view rather than a fixed compass");
+        check(
+                ParkourGuide.direction(-90, 10, 0).equals("↑")
+                        && ParkourGuide.direction(360, 0, 10).equals("↑"),
+                "yaw wrapping and sideways courses point ahead when aligned");
+        check(
+                ParkourGuide.direction(45, 0, 0).equals("●"),
+                "vertical-only target is not given a misleading horizontal direction");
+        for (boolean mirror : List.of(false, true)) {
+            ParkourCourse course =
+                    new ParkourCourse(
+                            List.of(
+                                    ParkourCourse.Kind.LADDER_TRAVERSE,
+                                    ParkourCourse.Kind.BRIDGE,
+                                    ParkourCourse.Kind.WIND_WALL,
+                                    ParkourCourse.Kind.WATER_DROP,
+                                    ParkourCourse.Kind.PEARL,
+                                    ParkourCourse.Kind.FLIGHT),
+                            mirror);
+            UUID id = new UUID(8, 1);
+            FakeWorld world = new FakeWorld();
+            ParkourArena arena = new ParkourArena(world.world, List.of(id), course);
+            Location start = arena.checkpoint(id, 0), target = arena.checkpoint(id, 1);
+            check(
+                    start.getDirection()
+                                    .dot(target.toVector().subtract(start.toVector()).normalize())
+                            > .99,
+                    "clock/spawn faces the next lateral checkpoint in both mirrored layouts");
+        }
+        Location rotated = new Location(null, 23.5, 100, 50.5, 90, 0);
+        Location frame = ParkourGuide.frameOrigin(rotated, 3);
+        check(
+                frame.getYaw() == 0 && frame.getX() == 22 && frame.getZ() == 47,
+                "narrow goal overlay remains aligned when the following task goes sideways");
+        me.petr1furious.potatominigames.i18n.I18n.register();
+        try {
+            for (double rise : new double[] {-44, 0, 64}) {
+                var message =
+                        me.petr1furious.potatominigames.i18n.I18n.tr(
+                                "party.rounds.parkour_race.navigation",
+                                "↑",
+                                2,
+                                7,
+                                50,
+                                ParkourGuide.height(rise));
+                for (var locale :
+                        List.of(java.util.Locale.ENGLISH, java.util.Locale.forLanguageTag("ru")))
+                    check(
+                            !me.petr1furious.potatominigames.i18n.I18n.plain(message, locale)
+                                    .contains("potatominigames."),
+                            "navigation and vertical hints render in both languages");
+            }
+        } finally {
+            me.petr1furious.potatominigames.i18n.I18n.unregister();
+        }
     }
 
     private static void geometry() {

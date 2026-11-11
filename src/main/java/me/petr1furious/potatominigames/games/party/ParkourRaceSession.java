@@ -74,6 +74,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
     private final int duration;
     private ParkourCourse course;
     private ParkourArena arena;
+    private ParkourGuide guide;
     private ParkourRace race;
     private boolean ready;
     private long allFinished = -1;
@@ -88,6 +89,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
         course = new ParkourCourse(random);
         race = new ParkourRace(names.keySet(), course.stages());
         arena = new ParkourArena(world, names.keySet(), course);
+        guide = new ParkourGuide(services.plugin(), arena, course);
         world.setGameRule(GameRules.BLOCK_DROPS, true);
     }
 
@@ -188,6 +190,8 @@ final class ParkourRaceSession extends PartySurvivalSession {
             meta.lore(
                     List.of(
                             I18n.tr("party.rounds.parkour_race.clock.lore")
+                                    .color(NamedTextColor.GRAY),
+                            I18n.tr("party.rounds.parkour_race.clock.help_lore")
                                     .color(NamedTextColor.GRAY)));
         });
         p.getInventory().setItem(8, I18n.item(clock, p));
@@ -209,6 +213,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
     private void stageInfo(Player p) {
         int checkpoint = race.checkpoint(p.getUniqueId());
         var stage = course.stage(checkpoint);
+        if (guide != null) guide.update(p, checkpoint);
         p.sendMessage(
                 I18n.tr(
                         "party.rounds.parkour_race.task",
@@ -240,8 +245,8 @@ final class ParkourRaceSession extends PartySurvivalSession {
         p.sendActionBar(
                 I18n.tr(
                         "party.rounds.parkour_race.returned",
-                        race.checkpoint(id),
-                        course.stages()));
+                        race.checkpoint(id) + 1,
+                        course.stages() + 1));
     }
 
     @Override
@@ -249,6 +254,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
         for (Player p : alivePlayers()) {
             UUID id = p.getUniqueId();
             if (race.finished(id)) continue;
+            if (guide != null && gameTick() % 10 == 0) guide.update(p, race.checkpoint(id));
             if (failed.remove(id)) {
                 boolean bypass = skipped.remove(id);
                 reset(p);
@@ -274,6 +280,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
                 p.setVelocity(new Vector());
                 p.playSound(at, Sound.BLOCK_NOTE_BLOCK_PLING, .7f, 1.5f);
                 if (race.finished(id)) {
+                    if (guide != null) guide.remove(id);
                     p.sendMessage(
                             text(I18n.tr("party.rounds.parkour_race.finish", seconds(elapsed))));
                     spectate(p);
@@ -283,8 +290,8 @@ final class ParkourRaceSession extends PartySurvivalSession {
                     p.sendActionBar(
                             I18n.tr(
                                     "party.rounds.parkour_race.checkpoint",
-                                    checkpoint + 1,
-                                    course.stages()));
+                                    checkpoint + 2,
+                                    course.stages() + 1));
                 }
             }
         }
@@ -346,9 +353,11 @@ final class ParkourRaceSession extends PartySurvivalSession {
         }
         if (event.getItem() != null && event.getItem().getType() == Material.CLOCK) {
             event.setCancelled(true);
-            if (event.getHand() == EquipmentSlot.HAND
-                    && event.getAction().isRightClick()
-                    && gameTick() >= resetReady.getOrDefault(p.getUniqueId(), 0L)) reset(p);
+            if (event.getHand() == EquipmentSlot.HAND) {
+                if (event.getAction().isRightClick()
+                        && gameTick() >= resetReady.getOrDefault(p.getUniqueId(), 0L)) reset(p);
+                else if (event.getAction().isLeftClick()) stageInfo(p);
+            }
         }
         // All other interactions remain native, including mining, bucket use and item cooldowns.
     }
@@ -584,6 +593,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
 
     @Override
     void playerOut(Player p) {
+        if (guide != null) guide.remove(p.getUniqueId());
         failed.remove(p.getUniqueId());
         skipped.remove(p.getUniqueId());
         clearEntities(p.getUniqueId());
@@ -625,6 +635,14 @@ final class ParkourRaceSession extends PartySurvivalSession {
         if (race.finished(id)) lines.add(I18n.tr("party.rounds.parkour_race.waiting"));
         else {
             lines.add(I18n.tr(course.stage(race.checkpoint(id)).key() + ".name"));
+            lines.add(
+                    I18n.tr(
+                            "party.rounds.parkour_race.target",
+                            race.checkpoint(id) + 2,
+                            course.stages() + 1));
+            Location goal = arena.checkpoint(id, race.checkpoint(id) + 1);
+            if (p.getWorld().equals(goal.getWorld()))
+                lines.add(ParkourGuide.height(goal.getY() - p.getLocation().getY()));
             lines.add(I18n.tr("party.rounds.parkour_race.clock.hint"));
         }
         return List.copyOf(lines);
@@ -632,6 +650,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
 
     @Override
     void cleanup() {
+        if (guide != null) guide.clear();
         for (UUID id : List.copyOf(entities.keySet())) clearEntities(id);
         resetReady.clear();
         failed.clear();

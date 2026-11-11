@@ -109,11 +109,19 @@ final class ParkourArena {
 
     Location checkpoint(UUID id, int checkpoint) {
         var island = course.island(checkpoint);
-        return new Location(
-                world,
-                indices.get(id) * ParkourCourse.PITCH + island.centerX(),
-                island.y() + 1,
-                island.z() + 3.5);
+        Location at =
+                new Location(
+                        world,
+                        indices.get(id) * ParkourCourse.PITCH + island.centerX(),
+                        island.y() + 1,
+                        island.z() + 3.5);
+        if (checkpoint < course.stages()) {
+            var next = course.island(checkpoint + 1);
+            at.setDirection(
+                    new org.bukkit.util.Vector(
+                            next.centerX() - island.centerX(), 0, next.z() - island.z()));
+        }
+        return at;
     }
 
     boolean landed(UUID id, int checkpoint, Location at) {

@@ -27,7 +27,15 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         evidence = getDataFolder().toPath().resolve("result.txt");
         Bukkit.getScheduler().runTask(this, () -> {
             try {
-                if (!Boolean.getBoolean("finals.smoke.loadoutOnly")) runChecks();
+                if (!Boolean.getBoolean("finals.smoke.loadoutOnly") && !Boolean.getBoolean("finals.smoke.previewOnly")) runChecks();
+                if (Boolean.getBoolean("finals.smoke.includePreviews") || Boolean.getBoolean("finals.smoke.previewOnly")) {
+                    evidence = getDataFolder().toPath().resolve("preview-result.txt");
+                    JavaPlugin main=(JavaPlugin)Bukkit.getPluginManager().getPlugin("PotatoMinigames");
+                    int count=FinalsPreviewSmoke.run(this,main);
+                    Files.createDirectories(evidence.getParent());
+                    Files.writeString(evidence,"PASS: "+count+" native map preview assertions\n");
+                    getLogger().info("FINALS_PREVIEW_SMOKE_PASS: "+count+" assertions");
+                }
                 if (Boolean.getBoolean("finals.smoke.includeLoadouts") || Boolean.getBoolean("finals.smoke.loadoutOnly")) {
                     evidence = getDataFolder().toPath().resolve("loadout-result.txt");
                     JavaPlugin main=(JavaPlugin)Bukkit.getPluginManager().getPlugin("PotatoMinigames");
@@ -68,6 +76,143 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         require(Component.text("Native template").equals(sign.getSide(Side.FRONT).line(0)),"Native sign text persists");
         require(world.getBlockAt(94,65,196).getBlockData().getAsString().equals(stairData),"Native stair orientation persists");
     }
+    private void checkVaults(FinalsMapArena arena, World source) {
+        require(arena.vaultLocations().size()==3,"All three saved vault candidates survive service reload");
+        Location original=arena.vaultLocations().getFirst().clone();
+        arena.vaultLocations().getFirst().add(400,0,0);
+        require(arena.vaultLocations().getFirst().equals(original),"Candidate coordinates are defensive copies");
+        Location active=arena.vault(); arena.build();
+        require(arena.vault().equals(active),"Repeated build does not move an active vault");
+        for(Location candidate:arena.vaultLocations()) {
+            Block head=candidate.getBlock().getRelative(BlockFace.UP); var originalData=head.getBlockData();
+            head.setType(Material.WHITE_CONCRETE,false);
+            require(!arena.isCover(head),"Future vault headroom stays protected even before its marker is active");
+            head.setBlockData(originalData,false);
+        }
+        for(int cycle=0;cycle<24;cycle++) {
+            Location previous=arena.vault(); arena.nextVault();
+            require(!previous.equals(arena.vault()),"Successive cashout cycles do not repeat the same vault spot");
+            int markers=0;
+            for(Location candidate:arena.vaultLocations()) {
+                Block block=candidate.getBlock();
+                require(!arena.isCover(block) && !arena.isCover(block.getRelative(BlockFace.DOWN))
+                        && !arena.isCover(block.getRelative(BlockFace.UP)),"All vault candidates retain protected block, support and headroom");
+                if(candidate.equals(arena.vault())) {
+                    markers++;
+                    require(block.getType()==Material.EMERALD_BLOCK && arena.isVault(block),"Active candidate is the interactive emerald vault");
+                } else {
+                    require(!arena.isVault(block),"Inactive candidates cannot activate the vault");
+                    Block expected=source.getBlockAt(block.getX(),block.getY(),block.getZ());
+                    require(block.getBlockData().equals(expected.getBlockData()),"Inactive vault restores its original native block data");
+                    if(expected.getState() instanceof Sign sign) {
+                        require(block.getState() instanceof Sign restored
+                                && restored.getSide(Side.FRONT).line(0).equals(sign.getSide(Side.FRONT).line(0)),
+                                "Moving a vault restores the original sign text");
+                    }
+                }
+            }
+            require(markers==1,"Exactly one configured vault is active");
+        }
+    }
+    private void checkVaultSetup(JavaPlugin main, World editor, SessionServices services) {
+        FinalsMaps maps=new FinalsMaps(main);
+        maps.create("vaultsettings",at(editor,88.5,65,200.5)); configure(maps,"vaultsettings",editor);
+        maps.vaultAdd("vaultsettings",at(editor,96.5,65,200.5));
+        maps.vaultClear("vaultsettings");
+        boolean rejected=false;
+        try { maps.save("vaultsettings"); } catch(IllegalArgumentException expected) { rejected=true; }
+        require(rejected,"Clearing all vaults requires a new candidate before saving");
+        maps.vaultAdd("vaultsettings",at(editor,96.5,65,200.5)); maps.save("vaultsettings");
+        maps=new FinalsMaps(main);
+        FinalsMapArena single=maps.open(services,"vaultsettings"); single.build();
+        require(single.vaultLocations().size()==1 && single.vault().getBlockX()==96,"Clear then add persists exactly one new location");
+        Location previous=single.vault(); single.nextVault();
+        require(single.vault().equals(previous) && single.vault().getBlock().getType()==Material.EMERALD_BLOCK,
+                "One-location maps keep a working vault on the next cycle");
+        maps.vaultAdd("vaultsettings",at(editor,100.5,65,200.5)); maps.save("vaultsettings");
+        FinalsMapArena pair=new FinalsMaps(main).open(services,"vaultsettings"); pair.build();
+        require(pair.vaultLocations().size()==2,"Appending retains the existing candidate after save and reload");
+        for(int cycle=0;cycle<2;cycle++) {
+            Location old=pair.vault(); pair.nextVault();
+            require(!old.equals(pair.vault()),"Two-location map always alternates candidates");
+            Block restored=old.getBlock();
+            require(restored.getBlockData().equals(editor.getBlockAt(old.getBlockX(),old.getBlockY(),old.getBlockZ()).getBlockData()),
+                    "Moving between two candidates restores exact original block data");
+            if(old.getBlockX()==96)
+                require(restored.getState() instanceof Sign sign
+                        && sign.getSide(Side.FRONT).line(0).equals(Component.text("Vault candidate sign")),
+                        "Sign block entity text survives a full vault placement and removal");
+        }
+        maps.vault("vaultsettings",at(editor,104.5,65,200.5)); maps.save("vaultsettings");
+        FinalsMapArena reset=new FinalsMaps(main).open(services,"vaultsettings"); reset.build();
+        require(reset.vaultLocations().size()==1 && reset.vault().getBlockX()==104,
+                "Legacy vault setter replaces all candidates with the specified single location");
+        stage("Vault setup append, clear, reset and single-location compatibility persisted through native service reload");
+    }
+    private void checkCashouts(FinalsMapArena arena, World source) {
+        require(arena.cashoutLocations().size()==4,"All saved cashout candidates survive reload");
+        for(Location candidate:arena.cashoutLocations()) {
+            Block head=candidate.getBlock().getRelative(BlockFace.UP); var originalData=head.getBlockData();
+            head.setType(Material.WHITE_CONCRETE,false);
+            require(!arena.isCover(head),"Future cashout headroom is protected while the candidate is inactive");
+            head.setBlockData(originalData,false);
+        }
+        for(int cycle=0;cycle<20;cycle++) {
+            int slot=cycle%2;
+            Location previous=arena.station(slot), other=arena.station(1-slot);
+            arena.nextCashout(slot);
+            require(!previous.equals(arena.station(slot)),"Completed cashout relocates to an unused different candidate");
+            require(other.equals(arena.station(1-slot)),"The other active cashout remains in place");
+            require(!arena.station(0).equals(arena.station(1)),"Two active cashouts never overlap");
+            int active=0;
+            for(Location candidate:arena.cashoutLocations()) {
+                Block block=candidate.getBlock(); int recognized=arena.stationAt(block);
+                require(!arena.isCover(block) && !arena.isCover(block.getRelative(BlockFace.DOWN)),
+                        "Every cashout candidate and support remain protected");
+                if(recognized>=0) {
+                    active++;
+                    require(block.getType()==Material.GOLD_BLOCK && candidate.equals(arena.station(recognized)),
+                            "Only active cashout candidates contain an interactive gold marker");
+                } else {
+                    Block original=source.getBlockAt(block.getX(),block.getY(),block.getZ());
+                    require(block.getBlockData().equals(original.getBlockData()),"Retired cashout restores exact source block data");
+                    if(original.getState() instanceof Sign sign)
+                        require(block.getState() instanceof Sign restored
+                                && restored.getSide(Side.FRONT).line(0).equals(sign.getSide(Side.FRONT).line(0)),
+                                "Retired cashout restores native sign text");
+                }
+            }
+            require(active==2,"Exactly two cashout candidates are active after every replacement");
+        }
+        stage("Cashout rotation preserves exactly two active stations and restores retired block metadata");
+    }
+
+    private void checkCashoutSetup(JavaPlugin main, World editor, SessionServices services) {
+        FinalsMaps maps=new FinalsMaps(main);
+        maps.create("cashoutsettings",at(editor,88.5,65,200.5)); configure(maps,"cashoutsettings",editor);
+        maps.save("cashoutsettings");
+        FinalsMapArena legacy=new FinalsMaps(main).open(services,"cashoutsettings"); legacy.build();
+        Location a=legacy.station(0), b=legacy.station(1);
+        legacy.nextCashout(0); legacy.nextCashout(1);
+        require(legacy.station(0).equals(a) && legacy.station(1).equals(b),
+                "A two-location map keeps both old cashouts usable after completion");
+        maps.cashoutAdd("cashoutsettings",at(editor,88.5,65,188.5));
+        editor.getBlockAt(88,66,188).setType(Material.STONE,false);
+        boolean rejected=false;
+        try { maps.save("cashoutsettings"); } catch(IllegalArgumentException expected) { rejected=true; }
+        require(rejected,"Saving validates headroom at additional cashout locations");
+        editor.getBlockAt(88,66,188).setType(Material.AIR,false);
+        maps.cashoutClear("cashoutsettings");
+        rejected=false;
+        try { maps.save("cashoutsettings"); } catch(IllegalArgumentException expected) { rejected=true; }
+        require(rejected,"A cleared cashout pool cannot be saved without two locations");
+        maps.cashoutAdd("cashoutsettings",at(editor,88.5,65,188.5));
+        maps.cashoutAdd("cashoutsettings",at(editor,112.5,65,212.5)); maps.save("cashoutsettings");
+        FinalsMapArena reset=new FinalsMaps(main).open(services,"cashoutsettings"); reset.build();
+        require(reset.cashoutLocations().size()==2 && reset.station(0).getBlockX()==88 && reset.station(1).getBlockX()==112,
+                "Clearing and adding replacement cashouts persists exactly the new pool");
+        stage("Cashout setup append, clear, legacy pair and candidate validation survive reload");
+    }
     private void runChecks() throws Exception {
         JavaPlugin main=(JavaPlugin)Bukkit.getPluginManager().getPlugin("PotatoMinigames");
         require(main!=null && main.isEnabled(),"Combined minigame plugin is enabled");
@@ -88,9 +233,28 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         sign.getSide(Side.FRONT).line(0,Component.text("Native template")); sign.update(true,false);
         Stairs stairs=(Stairs)Material.OAK_STAIRS.createBlockData(); stairs.setFacing(BlockFace.EAST); stairs.setHalf(Stairs.Half.TOP);
         editor.getBlockAt(94,65,196).setBlockData(stairs,false); String stairData=stairs.getAsString();
+        editor.getBlockAt(96,65,200).setBlockData(Bukkit.createBlockData("minecraft:oak_sign[rotation=5,waterlogged=false]"),false);
+        Sign vaultSign=(Sign)editor.getBlockAt(96,65,200).getState();
+        vaultSign.getSide(Side.FRONT).line(0,Component.text("Vault candidate sign")); vaultSign.update(true,false);
+        editor.getBlockAt(88,65,188).setBlockData(Bukkit.createBlockData("minecraft:oak_sign[rotation=9,waterlogged=false]"),false);
+        Sign cashoutSign=(Sign)editor.getBlockAt(88,65,188).getState();
+        cashoutSign.getSide(Side.FRONT).line(0,Component.text("Cashout candidate sign")); cashoutSign.update(true,false);
         ArmorStand actor=editor.spawn(at(editor,96.5,65,200.5),ArmorStand.class); actor.setGravity(false);
         checkMetadata(editor,stairData);
-        maps.create("native",at(editor,88.5,65,200.5)); configure(maps,"native",editor); maps.save("native"); maps.select("native");
+        maps.create("native",at(editor,88.5,65,200.5)); configure(maps,"native",editor);
+        maps.vaultAdd("native",at(editor,96.5,65,200.5)); maps.vaultAdd("native",at(editor,104.5,65,200.5));
+        maps.cashoutAdd("native",at(editor,88.5,65,188.5)); maps.cashoutAdd("native",at(editor,112.5,65,212.5));
+        editor.getBlockAt(104,66,200).setType(Material.STONE,false);
+        boolean unsafeVaultRejected=false;
+        try { maps.save("native"); } catch(IllegalArgumentException expected) { unsafeVaultRejected=true; }
+        require(unsafeVaultRejected,"Saving validates headroom of additional vault candidates");
+        editor.getBlockAt(104,66,200).setType(Material.AIR,false);
+        editor.getBlockAt(96,64,200).setType(Material.AIR,false);
+        unsafeVaultRejected=false;
+        try { maps.save("native"); } catch(IllegalArgumentException expected) { unsafeVaultRejected=true; }
+        require(unsafeVaultRejected,"Saving validates supporting floor of additional vault candidates");
+        editor.getBlockAt(96,64,200).setType(Material.STONE,false);
+        maps.save("native"); maps.select("native");
         require(editor.getBlockAt(100,65,200).getType()==Material.AIR,"Saving does not place source objective markers");
         Path finals=main.getDataFolder().toPath().resolve("finals");
         Path snapshot;
@@ -127,6 +291,9 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         require(first.isCover(match.getBlockAt(106,66,206)),"Interior cover is destructible");
         require(match.getEntities().isEmpty(),"Source armor stand is absent from the match copy");
         checkMetadata(match,stairData);
+        checkVaults(first,editor);
+        checkCashouts(first,editor);
+        stage("Random vault rotation kept one active marker, avoided repeats and restored native block states");
         match.getBlockAt(106,66,206).setType(Material.AIR,false);
         ((Chest)match.getBlockAt(94,65,206).getState()).getBlockInventory().clear();
         require(editor.getBlockAt(106,66,206).getType()==Material.WHITE_CONCRETE,"Match destruction leaves source blocks intact");
@@ -135,6 +302,8 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         require(second.world().getBlockAt(106,66,206).getType()==Material.WHITE_CONCRETE,"Fresh match restores destroyed cover");
         checkMetadata(second.world(),stairData);
         require(hash(snapshot).equals(snapshotHash),"Multiple matches never rewrite the saved template");
+        checkVaultSetup(main,editor,services);
+        checkCashoutSetup(main,editor,services);
         worlds.destroyVoid("finals");
         stage("Two real disposable match copies restored destructible cover and block-entity metadata without touching the source/template");
 

@@ -12,6 +12,8 @@ import java.util.List;
 final class FinalsMapData {
     static final long MAX_BLOCKS = 1_000_000;
     static final int MAX_AXIS = 512;
+    static final int MAX_VAULTS = 16;
+    static final int MAX_CASHOUTS = 16;
 
     record Point(double x, double y, double z, float yaw, float pitch) {
         Point {
@@ -137,7 +139,9 @@ final class FinalsMapData {
         String world;
         String folder;
         boolean imported;
-        Point first, second, vault, stationA, stationB;
+        Point first, second;
+        List<Point> vaults = new ArrayList<>();
+        List<Point> cashouts = new ArrayList<>();
         List<Point> red = new ArrayList<>(), blue = new ArrayList<>();
 
         Draft copy() {
@@ -147,12 +151,50 @@ final class FinalsMapData {
             result.imported = imported;
             result.first = first;
             result.second = second;
-            result.vault = vault;
-            result.stationA = stationA;
-            result.stationB = stationB;
+            result.vaults = new ArrayList<>(vaults);
+            result.cashouts = new ArrayList<>(cashouts);
             result.red = new ArrayList<>(red);
             result.blue = new ArrayList<>(blue);
             return result;
+        }
+
+        void setVault(Point point) {
+            vaults.clear();
+            addVault(point);
+        }
+
+        void addVault(Point point) {
+            if (point == null) throw FinalsMaps.failure("invalid_position");
+            if (vaults.size() >= MAX_VAULTS) throw FinalsMaps.failure("vault_limit", MAX_VAULTS);
+            if (vaults.stream().anyMatch(point::sameBlock))
+                throw FinalsMaps.failure("vault_duplicate");
+            vaults.add(point);
+        }
+
+        void setCashout(int index, Point point) {
+            if (index < 0 || index > 1)
+                throw new IllegalArgumentException("Cashout must be A or B");
+            validateCashout(point, index);
+            while (cashouts.size() <= index) cashouts.add(null);
+            cashouts.set(index, point);
+        }
+
+        void addCashout(Point point) {
+            validateCashout(point, -1);
+            int empty = cashouts.indexOf(null);
+            if (empty >= 0) cashouts.set(empty, point);
+            else {
+                if (cashouts.size() >= MAX_CASHOUTS)
+                    throw FinalsMaps.failure("cashout_limit", MAX_CASHOUTS);
+                cashouts.add(point);
+            }
+        }
+
+        private void validateCashout(Point point, int replacing) {
+            if (point == null) throw FinalsMaps.failure("invalid_position");
+            for (int i = 0; i < cashouts.size(); i++)
+                if (i != replacing && cashouts.get(i) != null && point.sameBlock(cashouts.get(i)))
+                    throw FinalsMaps.failure("cashout_duplicate");
         }
 
         void write(ConfigurationSection section) {
@@ -161,9 +203,17 @@ final class FinalsMapData {
             section.set("imported", imported);
             if (first != null) first.write(section, "pos1");
             if (second != null) second.write(section, "pos2");
-            if (vault != null) vault.write(section, "vault");
-            if (stationA != null) stationA.write(section, "cashout-a");
-            if (stationB != null) stationB.write(section, "cashout-b");
+            section.set("vault", null);
+            section.createSection("vaults");
+            for (int i = 0; i < vaults.size(); i++) vaults.get(i).write(section, "vaults." + i);
+            section.set("cashout-a", null);
+            section.set("cashout-b", null);
+            section.createSection("cashouts");
+            for (int i = 0; i < cashouts.size(); i++) {
+                Point point = cashouts.get(i);
+                if (point == null) section.set("cashouts." + i, List.of());
+                else point.write(section, "cashouts." + i);
+            }
             for (int i = 0; i < red.size(); i++) red.get(i).write(section, "red." + i);
             for (int i = 0; i < blue.size(); i++) blue.get(i).write(section, "blue." + i);
         }
@@ -175,9 +225,36 @@ final class FinalsMapData {
             draft.imported = section.getBoolean("imported");
             draft.first = Point.read(section, "pos1");
             draft.second = Point.read(section, "pos2");
-            draft.vault = Point.read(section, "vault");
-            draft.stationA = Point.read(section, "cashout-a");
-            draft.stationB = Point.read(section, "cashout-b");
+            if (section.contains("vaults")) {
+                ConfigurationSection candidates = section.getConfigurationSection("vaults");
+                if (candidates == null) throw FinalsMaps.failure("invalid_position");
+                int count = candidates.getKeys(false).size();
+                if (count > MAX_VAULTS) throw FinalsMaps.failure("vault_limit", MAX_VAULTS);
+                for (int i = 0; i < count; i++) draft.addVault(Point.read(candidates, "" + i));
+            } else if (section.contains("vault")) {
+                draft.addVault(Point.read(section, "vault"));
+            }
+            if (section.contains("cashouts")) {
+                ConfigurationSection candidates = section.getConfigurationSection("cashouts");
+                if (candidates == null) throw FinalsMaps.failure("invalid_position");
+                int count = candidates.getKeys(false).size();
+                if (count > MAX_CASHOUTS) throw FinalsMaps.failure("cashout_limit", MAX_CASHOUTS);
+                for (int i = 0; i < count; i++) {
+                    Object raw = candidates.get("" + i);
+                    if (i < 2 && raw instanceof List<?> values && values.isEmpty()) {
+                        draft.cashouts.add(null);
+                    } else {
+                        Point point = Point.read(candidates, "" + i);
+                        draft.validateCashout(point, -1);
+                        draft.cashouts.add(point);
+                    }
+                }
+            } else {
+                if (section.contains("cashout-a"))
+                    draft.setCashout(0, Point.read(section, "cashout-a"));
+                if (section.contains("cashout-b"))
+                    draft.setCashout(1, Point.read(section, "cashout-b"));
+            }
             for (int i = 0; i < 16 && section.contains("red." + i); i++)
                 draft.red.add(Point.read(section, "red." + i));
             for (int i = 0; i < 16 && section.contains("blue." + i); i++)
@@ -192,30 +269,46 @@ final class FinalsMapData {
             Bounds bounds,
             List<Point> red,
             List<Point> blue,
-            Point vault,
-            Point stationA,
-            Point stationB,
+            List<Point> vaults,
+            List<Point> cashouts,
             String template) {
         Saved {
             red = List.copyOf(red);
             blue = List.copyOf(blue);
+            vaults = List.copyOf(vaults);
+            cashouts = List.copyOf(cashouts);
         }
 
         static Saved from(Draft draft, String template) {
             Bounds bounds = Bounds.between(draft.first, draft.second);
             if (draft.red.isEmpty()
                     || draft.blue.isEmpty()
-                    || draft.vault == null
-                    || draft.stationA == null
-                    || draft.stationB == null) throw FinalsMaps.failure("incomplete");
-            List<Point> objectives = List.of(draft.vault, draft.stationA, draft.stationB);
+                    || draft.vaults.isEmpty()
+                    || draft.cashouts.size() < 2
+                    || draft.cashouts.contains(null)) throw FinalsMaps.failure("incomplete");
+            if (draft.vaults.size() > MAX_VAULTS)
+                throw FinalsMaps.failure("vault_limit", MAX_VAULTS);
+            if (draft.cashouts.size() > MAX_CASHOUTS)
+                throw FinalsMaps.failure("cashout_limit", MAX_CASHOUTS);
+            List<Point> stations = draft.cashouts;
+            List<Point> objectives = concat(draft.vaults, stations);
             for (Point point : objectives)
                 if (!bounds.standingRoom(point)) throw FinalsMaps.failure("outside");
-            for (int i = 0; i < objectives.size(); i++) {
-                for (int j = i + 1; j < objectives.size(); j++) {
-                    if (objectives.get(i).distanceSquared(objectives.get(j)) < 64)
+            for (int i = 0; i < stations.size(); i++)
+                for (int j = 0; j < i; j++) {
+                    if (stations.get(i).sameBlock(stations.get(j)))
+                        throw FinalsMaps.failure("cashout_duplicate");
+                    if (stations.get(i).distanceSquared(stations.get(j)) < 64)
                         throw FinalsMaps.failure("objectives_close");
                 }
+            for (int i = 0; i < draft.vaults.size(); i++) {
+                Point point = draft.vaults.get(i);
+                for (Point station : stations)
+                    if (point.distanceSquared(station) < 64)
+                        throw FinalsMaps.failure("objectives_close");
+                for (int j = 0; j < i; j++)
+                    if (point.sameBlock(draft.vaults.get(j)))
+                        throw FinalsMaps.failure("vault_duplicate");
             }
             for (Point spawn : concat(draft.red, draft.blue)) {
                 if (!bounds.standingRoom(spawn)) throw FinalsMaps.failure("outside");
@@ -226,14 +319,7 @@ final class FinalsMapData {
                 for (Point blue : draft.blue) {
                     if (red.distanceSquared(blue) < 16) throw FinalsMaps.failure("teams_close");
                 }
-            return new Saved(
-                    bounds,
-                    draft.red,
-                    draft.blue,
-                    draft.vault,
-                    draft.stationA,
-                    draft.stationB,
-                    template);
+            return new Saved(bounds, draft.red, draft.blue, draft.vaults, draft.cashouts, template);
         }
     }
 

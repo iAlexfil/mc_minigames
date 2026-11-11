@@ -18,9 +18,15 @@ import org.bukkit.entity.Player;
 /** Admin-only custom map import, setup, snapshot and selection commands. */
 public final class FinalsMapCommands {
     private final FinalsMaps maps;
+    private final FinalsMapPreview previews;
 
     public FinalsMapCommands(FinalsMaps maps) {
+        this(maps, null);
+    }
+
+    public FinalsMapCommands(FinalsMaps maps, FinalsMapPreview previews) {
         this.maps = maps;
+        this.previews = previews;
     }
 
     public void register(LiteralArgumentBuilder<CommandSourceStack> root) {
@@ -54,6 +60,7 @@ public final class FinalsMapCommands {
                                                                     GameCommands.requirePlayer(c)
                                                                             .getLocation());
                                                             send(c, "created", name(c));
+                                                            showPreview(c);
                                                         }))));
         map.then(
                 Commands.literal("import")
@@ -93,7 +100,24 @@ public final class FinalsMapCommands {
                                                                 throw FinalsMaps.failure(
                                                                         "teleport");
                                                             send(c, "goto", name(c));
+                                                            showPreview(c);
                                                         }))));
+        if (previews != null) {
+            RequiredArgumentBuilder<CommandSourceStack, String> preview = nameArgument();
+            preview.executes(ctx -> run(ctx, this::showPreview));
+            preview.then(Commands.literal("on").executes(ctx -> run(ctx, this::showPreview)));
+            preview.then(
+                    Commands.literal("off")
+                            .executes(ctx ->
+                                    run(
+                                            ctx,
+                                            c -> {
+                                                maps.previewDraft(name(c));
+                                                previews.hide(GameCommands.requirePlayer(c));
+                                                send(c, "preview.disabled");
+                                            })));
+            map.then(Commands.literal("preview").then(preview));
+        }
         for (int corner = 0; corner < 2; corner++) {
             int index = corner;
             map.then(
@@ -149,20 +173,38 @@ public final class FinalsMapCommands {
             }
             map.then(Commands.literal(operation).then(argument));
         }
-        map.then(
-                Commands.literal("vault")
-                        .then(
-                                nameArgument()
-                                        .executes(ctx ->
-                                                run(
-                                                        ctx,
-                                                        c -> {
-                                                            maps.vault(
-                                                                    name(c),
-                                                                    GameCommands.requirePlayer(c)
-                                                                            .getLocation());
-                                                            send(c, "updated", name(c));
-                                                        }))));
+        for (String operation : new String[] {"vault", "vaultadd", "vaultclear"}) {
+            map.then(
+                    Commands.literal(operation)
+                            .then(
+                                    nameArgument()
+                                            .executes(ctx ->
+                                                    run(
+                                                            ctx,
+                                                            c -> {
+                                                                if (operation.equals(
+                                                                        "vaultclear")) {
+                                                                    maps.vaultClear(name(c));
+                                                                } else {
+                                                                    Location location =
+                                                                            GameCommands
+                                                                                    .requirePlayer(
+                                                                                            c)
+                                                                                    .getLocation();
+                                                                    if (operation.equals(
+                                                                            "vaultadd"))
+                                                                        maps.vaultAdd(
+                                                                                name(c), location);
+                                                                    else
+                                                                        maps.vault(
+                                                                                name(c), location);
+                                                                }
+                                                                send(
+                                                                        c,
+                                                                        operation + "_updated",
+                                                                        name(c));
+                                                            }))));
+        }
         RequiredArgumentBuilder<CommandSourceStack, String> cashout = nameArgument();
         for (int station = 0; station < 2; station++) {
             int index = station;
@@ -181,6 +223,31 @@ public final class FinalsMapCommands {
                                             })));
         }
         map.then(Commands.literal("cashout").then(cashout));
+        for (String operation : new String[] {"cashoutadd", "cashoutclear"}) {
+            map.then(
+                    Commands.literal(operation)
+                            .then(
+                                    nameArgument()
+                                            .executes(ctx ->
+                                                    run(
+                                                            ctx,
+                                                            c -> {
+                                                                if (operation.equals(
+                                                                        "cashoutclear"))
+                                                                    maps.cashoutClear(name(c));
+                                                                else
+                                                                    maps.cashoutAdd(
+                                                                            name(c),
+                                                                            GameCommands
+                                                                                    .requirePlayer(
+                                                                                            c)
+                                                                                    .getLocation());
+                                                                send(
+                                                                        c,
+                                                                        operation + "_updated",
+                                                                        name(c));
+                                                            }))));
+        }
         map.then(
                 Commands.literal("save")
                         .then(
@@ -227,6 +294,12 @@ public final class FinalsMapCommands {
                                                                                         name(
                                                                                                 c)))))));
         root.then(map);
+    }
+
+    private void showPreview(CommandContext<CommandSourceStack> ctx) throws CommandFailure {
+        if (previews == null) return;
+        previews.show(GameCommands.requirePlayer(ctx), name(ctx));
+        send(ctx, "preview.enabled", name(ctx));
     }
 
     private RequiredArgumentBuilder<CommandSourceStack, String> nameArgument() {

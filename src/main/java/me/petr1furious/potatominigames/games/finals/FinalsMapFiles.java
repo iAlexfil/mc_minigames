@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -243,14 +244,30 @@ final class FinalsMapFiles {
 
     static void replace(Path temporary, Path destination) throws IOException {
         // A failed atomic move preserves the previous registry. No delete-and-rewrite fallback.
-        try {
-            Files.move(
-                    temporary,
-                    destination,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException failure) {
-            throw new IOException("Atomic replacement is unavailable", failure);
+        for (int attempt = 1; ; attempt++) {
+            try {
+                Files.move(
+                        temporary,
+                        destination,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (AtomicMoveNotSupportedException failure) {
+                throw new IOException("Atomic replacement is unavailable", failure);
+            } catch (AccessDeniedException denied) {
+                // Windows readers can briefly deny replacement while releasing a file handle.
+                if (attempt >= 5) throw denied;
+                try {
+                    Thread.sleep(25);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    IOException failure =
+                            new IOException(
+                                    "Interrupted while waiting to replace map data", interrupted);
+                    failure.addSuppressed(denied);
+                    throw failure;
+                }
+            }
         }
     }
 

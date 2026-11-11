@@ -21,6 +21,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.TNTPrimed;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -70,6 +71,8 @@ public final class FinalsSessionCheck {
         customDamageAndActionGates();
         menuAndEquipmentSlotGates();
         protectedPlacementAreas();
+        vaultMovesOnlyAfterCashout();
+        cashoutMovesOnlyAfterPayout();
         fixedCountdownAnchor();
         System.out.println("FinalsSessionCheck: " + checks + " checks passed");
     }
@@ -127,25 +130,25 @@ public final class FinalsSessionCheck {
                 "protected player cannot launch a projectile");
         f.red.location = f.arena.vault().add(0, 0, 2);
         f.session.onPlayerInteract(
-                interact(f.red.player, f.world.block(0, 65, 0), EquipmentSlot.HAND));
+                interact(f.red.player, f.arena.vault().getBlock(), EquipmentSlot.HAND));
         check(
                 f.state.phase() == FinalsState.Phase.VAULT_CLOSED,
                 "spawn protection blocks vault activation");
         f.protection().clear();
         f.session.onPlayerInteract(
-                interact(f.red.player, f.world.block(0, 65, 0), EquipmentSlot.OFF_HAND));
+                interact(f.red.player, f.arena.vault().getBlock(), EquipmentSlot.OFF_HAND));
         check(
                 f.state.phase() == FinalsState.Phase.VAULT_CLOSED,
                 "offhand duplicate cannot activate vault");
         f.red.location = new Location(f.world.world, 20, 65, 20);
         f.session.onPlayerInteract(
-                interact(f.red.player, f.world.block(0, 65, 0), EquipmentSlot.HAND));
+                interact(f.red.player, f.arena.vault().getBlock(), EquipmentSlot.HAND));
         check(
                 f.state.phase() == FinalsState.Phase.VAULT_CLOSED,
                 "distant objective interaction is rejected");
         f.red.location = f.arena.vault().add(0, 0, 2);
         f.session.onPlayerInteract(
-                interact(f.red.player, f.world.block(0, 65, 0), EquipmentSlot.HAND));
+                interact(f.red.player, f.arena.vault().getBlock(), EquipmentSlot.HAND));
         check(
                 f.state.phase() == FinalsState.Phase.VAULT_OPENING,
                 "nearby unprotected player can activate vault");
@@ -399,15 +402,16 @@ public final class FinalsSessionCheck {
             check(
                     handHit.isCancelled(),
                     "gadget, specialization, demolition and menu slots cannot deal vanilla melee"
-                        + " damage");
+                            + " damage");
         }
     }
 
     private static void protectedPlacementAreas() throws Exception {
         Fixture f = new Fixture();
         FinalsCombatContext context = context(f.session);
-        for (Location objective :
-                List.of(f.arena.vault(), f.arena.station(0), f.arena.station(1))) {
+        List<Location> objectives = new ArrayList<>(f.arena.vaultLocations());
+        objectives.addAll(f.arena.cashoutLocations());
+        for (Location objective : objectives) {
             check(
                     !context.canPlace(objective.getBlock()),
                     "objective block rejects temporary cover");
@@ -440,10 +444,10 @@ public final class FinalsSessionCheck {
                 !context.canPlace(spawn.getBlock()),
                 "disconnected roster members retain safe future spawn locations");
         check(
-                context.canPlace(f.world.block(8, 65, 0)),
+                context.canPlace(f.world.block(5, 65, 0)),
                 "remote in-bounds terrain remains available for useful cover");
         check(
-                context.canPlace(f.world.block(8, 67, 0)),
+                context.canPlace(f.world.block(5, 67, 0)),
                 "remote upper cover is permitted outside reserved areas");
         check(
                 !context.canPlace(f.world.block(30, 65, 0)),
@@ -458,11 +462,118 @@ public final class FinalsSessionCheck {
         check(
                 !(boolean) placeable.invoke(gadgets, spawn.clone().add(0, 1, 0).getBlock()),
                 "gadget placement enforces the session's spawn restriction before touching"
-                    + " terrain");
+                        + " terrain");
         check(
                 !(boolean)
                         placeable.invoke(gadgets, f.arena.vault().clone().add(0, 1, 0).getBlock()),
                 "gadget placement enforces the session's objective restriction");
+    }
+
+    private static void vaultMovesOnlyAfterCashout() throws Exception {
+        Fixture f = new Fixture();
+        Location initial = f.arena.vault();
+        f.state.activateVault(RED, 0);
+        advanceObjective(f, 50);
+        check(initial.equals(f.arena.vault()), "opening a vault never moves it");
+        advanceObjective(f, 100);
+        check(initial.equals(f.arena.vault()), "an opened vault keeps its cashbox location");
+        check(
+                initial.clone()
+                        .add(0, 1, 0)
+                        .equals(field(f.session, "cashboxLocation").get(f.session)),
+                "the cashbox appears at the randomly selected vault");
+        f.state.pickUp(RED, 100);
+        advanceObjective(f, 101);
+        check(initial.equals(f.arena.vault()), "carrying a cashbox never moves the vault");
+        f.state.deposit(RED, 0, 101);
+        advanceObjective(f, 900);
+        check(initial.equals(f.arena.vault()), "an ongoing cashout keeps the current vault");
+        advanceObjective(f, 901);
+        Location next = f.arena.vault();
+        check(!initial.equals(next), "a paid cashout selects a different next vault");
+        check(
+                f.state.phase() == FinalsState.Phase.VAULT_CLOSED && f.state.score(0) == 10000,
+                "the next vault accompanies exactly one payout");
+        check(
+                field(f.session, "cashboxLocation").get(f.session) == null,
+                "a paid cashout clears the old cashbox position");
+        advanceObjective(f, 902);
+        check(next.equals(f.arena.vault()), "ordinary ticks do not reroll the next vault");
+        f.state.activateVault(RED, 902);
+        f.state.pickUp(RED, 1002);
+        f.state.deposit(RED, 1, 1002);
+        advanceObjective(f, 1802);
+        check(
+                f.state.isFinished() && next.equals(f.arena.vault()),
+                "the winning cashout ends the match without spawning another vault");
+    }
+
+    private static void advanceObjective(Fixture fixture, long tick) throws Exception {
+        set(fixture.session, "tick", tick);
+        var method = FinalsSession.class.getDeclaredMethod("advanceObjective");
+        method.setAccessible(true);
+        method.invoke(fixture.session);
+    }
+
+    private static void cashoutMovesOnlyAfterPayout() throws Exception {
+        Fixture f = new Fixture();
+        Location first = f.arena.station(0), second = f.arena.station(1);
+        Location[] labelPositions = {first.clone().add(0, 2, 0), second.clone().add(0, 2, 0)};
+        TextDisplay[] labels = (TextDisplay[]) field(f.session, "cashoutLabels").get(f.session);
+        for (int i = 0; i < 2; i++) {
+            int index = i;
+            labels[i] =
+                    proxy(
+                            TextDisplay.class,
+                            (p, method, args) ->
+                                    switch (method.getName()) {
+                                        case "isValid" -> true;
+                                        case "teleport" -> {
+                                            labelPositions[index] = ((Location) args[0]).clone();
+                                            yield true;
+                                        }
+                                        default ->
+                                                throw new AssertionError(
+                                                        "Unexpected display call: "
+                                                                + method.getName());
+                                    });
+        }
+        f.depositRed();
+        advanceObjective(f, 899);
+        check(
+                first.equals(f.arena.station(0)) && second.equals(f.arena.station(1)),
+                "an ongoing cashout keeps both station positions");
+        advanceObjective(f, 900);
+        Location replacement = f.arena.station(0);
+        check(
+                !first.equals(replacement),
+                "a completed cashout moves its station to another location");
+        check(
+                second.equals(f.arena.station(1)),
+                "a completed cashout leaves the other station in place");
+        check(
+                labelPositions[0].equals(replacement.clone().add(0, 2, 0)),
+                "the cashout label follows its replacement station");
+        check(
+                labelPositions[1].equals(second.clone().add(0, 2, 0)),
+                "the other cashout label stays at its station");
+        check(
+                !replacement.equals(second),
+                "the replacement never occupies the other active station");
+        check(
+                f.arena.stationAt(first.getBlock()) == -1,
+                "the old station stops accepting deposits after payout");
+        advanceObjective(f, 901);
+        check(
+                replacement.equals(f.arena.station(0)),
+                "ordinary ticks do not move cashout stations");
+        f.state.activateVault(RED, 901);
+        f.state.pickUp(RED, 1001);
+        f.state.deposit(RED, 1, 1001);
+        advanceObjective(f, 1801);
+        check(
+                f.state.isFinished() && second.equals(f.arena.station(1)),
+                "the winning payout ends the match without replacing its station");
     }
 
     private static void fixedCountdownAnchor() throws Exception {

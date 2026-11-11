@@ -6,18 +6,24 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.structure.Mirror;
 import org.bukkit.block.structure.StructureRotation;
 import org.bukkit.structure.Structure;
 
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /** A saved structure placed in a session-owned void world, with protected setup anchors. */
 final class FinalsImportedArena implements FinalsMapArena {
     private final World world;
     private final Saved map;
     private final Structure structure;
+    private List<BlockState> vaultBlocks;
+    private List<BlockState> cashoutBlocks;
+    private int activeVault = -1;
+    private int[] activeCashouts;
     private boolean built;
 
     FinalsImportedArena(World world, Saved map, Structure structure) {
@@ -42,12 +48,23 @@ final class FinalsImportedArena implements FinalsMapArena {
                 0,
                 1f,
                 new Random(0));
-        marker(map.vault(), Material.EMERALD_BLOCK);
-        marker(map.stationA(), Material.GOLD_BLOCK);
-        marker(map.stationB(), Material.GOLD_BLOCK);
+        vaultBlocks =
+                map.vaults().stream()
+                        .map(point ->
+                                world.getBlockAt(point.bx(), point.by(), point.bz()).getState())
+                        .toList();
+        cashoutBlocks =
+                map.cashouts().stream()
+                        .map(point ->
+                                world.getBlockAt(point.bx(), point.by(), point.bz()).getState())
+                        .toList();
+        activeCashouts =
+                FinalsCashoutLocations.initial(map.cashouts().size(), ThreadLocalRandom.current());
+        for (int index : activeCashouts) marker(map.cashouts().get(index), Material.GOLD_BLOCK);
         Point spawn = map.red().getFirst();
         world.setSpawnLocation(spawn.bx(), spawn.by(), spawn.bz());
         built = true;
+        nextVault();
     }
 
     private void marker(Point point, Material material) {
@@ -79,13 +96,58 @@ final class FinalsImportedArena implements FinalsMapArena {
 
     @Override
     public Location vault() {
-        return map.vault().at(world);
+        if (activeVault < 0)
+            throw new IllegalStateException("Build the arena before using its vault");
+        return map.vaults().get(activeVault).at(world);
+    }
+
+    @Override
+    public List<Location> vaultLocations() {
+        return map.vaults().stream().map(point -> point.at(world)).toList();
+    }
+
+    @Override
+    public void nextVault() {
+        if (!built) throw new IllegalStateException("Build the arena before selecting its vault");
+        int next =
+                FinalsVaultLocations.nextIndex(
+                        map.vaults().size(), activeVault, ThreadLocalRandom.current());
+        if (next == activeVault) return;
+        if (activeVault >= 0) vaultBlocks.get(activeVault).update(true, false);
+        activeVault = next;
+        marker(map.vaults().get(activeVault), Material.EMERALD_BLOCK);
     }
 
     @Override
     public Location station(int index) {
         if (index < 0 || index > 1) throw new IllegalArgumentException("Station must be 0 or 1");
-        return (index == 0 ? map.stationA() : map.stationB()).at(world);
+        if (activeCashouts == null)
+            throw new IllegalStateException("Build the arena before using its cashouts");
+        return map.cashouts().get(activeCashouts[index]).at(world);
+    }
+
+    @Override
+    public List<Location> cashoutLocations() {
+        return map.cashouts().stream().map(point -> point.at(world)).toList();
+    }
+
+    @Override
+    public void nextCashout(int station) {
+        if (station < 0 || station > 1)
+            throw new IllegalArgumentException("Station must be 0 or 1");
+        if (activeCashouts == null)
+            throw new IllegalStateException("Build the arena before replacing its cashouts");
+        int current = activeCashouts[station];
+        int next =
+                FinalsCashoutLocations.nextIndex(
+                        map.cashouts().size(),
+                        current,
+                        activeCashouts[1 - station],
+                        ThreadLocalRandom.current());
+        if (next == current) return;
+        cashoutBlocks.get(current).update(true, false);
+        activeCashouts[station] = next;
+        marker(map.cashouts().get(next), Material.GOLD_BLOCK);
     }
 
     @Override
@@ -109,7 +171,7 @@ final class FinalsImportedArena implements FinalsMapArena {
         if (block == null || !contains(block.getLocation()) || block.getY() <= map.bounds().minY())
             return false;
         for (Point spawn : concat(map.red(), map.blue())) if (protects(block, spawn)) return false;
-        for (Point objective : List.of(map.vault(), map.stationA(), map.stationB())) {
+        for (Point objective : concat(map.vaults(), map.cashouts())) {
             if (protects(block, objective)) return false;
         }
         return switch (block.getType()) {
@@ -126,12 +188,15 @@ final class FinalsImportedArena implements FinalsMapArena {
 
     @Override
     public int stationAt(Block block) {
-        return matches(block, map.stationA()) ? 0 : matches(block, map.stationB()) ? 1 : -1;
+        if (activeCashouts == null) return -1;
+        return matches(block, map.cashouts().get(activeCashouts[0]))
+                ? 0
+                : matches(block, map.cashouts().get(activeCashouts[1])) ? 1 : -1;
     }
 
     @Override
     public boolean isVault(Block block) {
-        return matches(block, map.vault());
+        return activeVault >= 0 && matches(block, map.vaults().get(activeVault));
     }
 
     private boolean matches(Block block, Point point) {

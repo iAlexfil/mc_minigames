@@ -12,11 +12,16 @@ import org.bukkit.structure.Structure;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.reflect.Proxy;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -27,9 +32,146 @@ import java.util.zip.ZipOutputStream;
 public final class FinalsMapsCheck {
     public static void main(String[] args) throws Exception {
         geometry();
+        vaultPersistence();
+        cashoutPersistence();
         arenaCopies();
+        atomicReplacementLocks();
         imports();
         System.out.println("FinalsMapsCheck passed");
+    }
+
+    private static void cashoutPersistence() throws Exception {
+        YamlConfiguration legacy = new YamlConfiguration();
+        legacy.set("world", "editor");
+        legacy.set("cashout-a", List.of(0.5, 65d, -11.5, 0d, 0d));
+        legacy.set("cashout-b", List.of(0.5, 65d, 12.5, 0d, 0d));
+        Draft migrated = Draft.read(legacy);
+        YamlConfiguration written = new YamlConfiguration();
+        migrated.write(written);
+        require(
+                written.getDoubleList("cashouts.0").equals(List.of(0.5, 65d, -11.5, 0d, 0d)),
+                "Legacy maps retain station A in the cashout candidate pool");
+        require(
+                written.getDoubleList("cashouts.1").equals(List.of(0.5, 65d, 12.5, 0d, 0d)),
+                "Legacy maps retain station B in the cashout candidate pool");
+        require(
+                !written.contains("cashout-a") && !written.contains("cashout-b"),
+                "New cashout data removes legacy anchors on write");
+        Point third = new Point(12.5, 65, 12.5, 90, 0);
+        migrated.addCashout(third);
+        migrated.write(written);
+        YamlConfiguration reloaded = new YamlConfiguration();
+        reloaded.loadFromString(written.saveToString());
+        Draft restored = Draft.read(reloaded);
+        require(
+                restored.cashouts.equals(
+                        List.of(
+                                new Point(.5, 65, -11.5, 0, 0),
+                                new Point(.5, 65, 12.5, 0, 0),
+                                third)),
+                "Every cashout candidate survives a YAML round trip");
+        Draft copy = restored.copy();
+        copy.cashouts.clear();
+        require(restored.cashouts.size() == 3, "Editing cashouts cannot mutate a previous draft");
+        Point replacement = new Point(-12.5, 65, 12.5, 0, 0);
+        restored.setCashout(0, replacement);
+        require(
+                restored.cashouts.getFirst().equals(replacement)
+                        && restored.cashouts.get(2).equals(third),
+                "Setting cashout A preserves additional candidates");
+        fails(
+                () -> restored.setCashout(1, third),
+                "Cashout replacement cannot duplicate another candidate");
+        restored.cashouts.clear();
+        written.set("cashout-a", List.of(0.5, 65d, -11.5, 0d, 0d));
+        restored.write(written);
+        reloaded.loadFromString(written.saveToString());
+        require(
+                Draft.read(reloaded).cashouts.isEmpty(),
+                "Clearing cashouts cannot resurrect legacy anchors");
+        legacy.set("cashout-a", null);
+        Draft partial = Draft.read(legacy);
+        partial.write(written);
+        reloaded.loadFromString(written.saveToString());
+        Draft partialReloaded = Draft.read(reloaded);
+        require(
+                partialReloaded.cashouts.size() == 2
+                        && partialReloaded.cashouts.get(0) == null
+                        && partialReloaded.cashouts.get(1).equals(new Point(.5, 65, 12.5, 0, 0)),
+                "A legacy B-only draft preserves the empty A slot through YAML");
+        partialReloaded.addCashout(replacement);
+        require(
+                partialReloaded.cashouts.size() == 2
+                        && partialReloaded.cashouts.getFirst().equals(replacement),
+                "Adding a cashout fills an unconfigured legacy slot before appending");
+        partialReloaded.write(written);
+        written.set("cashouts.3", List.of(12.5, 65d, 12.5, 0d, 0d));
+        fails(() -> Draft.read(written), "Sparse cashout lists cannot silently discard a location");
+        written.set("cashouts", "invalid");
+        fails(() -> Draft.read(written), "Malformed cashout lists are rejected");
+        Draft full = new Draft();
+        for (int i = 0; i < 16; i++) full.addCashout(new Point(i + .5, 65, .5, 0, 0));
+        fails(
+                () -> full.addCashout(new Point(17.5, 65, .5, 0, 0)),
+                "More than 16 cashout candidates are rejected");
+        Draft duplicate = new Draft();
+        duplicate.addCashout(third);
+        fails(
+                () -> duplicate.addCashout(new Point(12.1, 65.5, 12.1, 0, 0)),
+                "Different fractional coordinates cannot duplicate a cashout block");
+    }
+
+    private static void vaultPersistence() throws Exception {
+        YamlConfiguration legacy = new YamlConfiguration();
+        legacy.set("world", "editor");
+        legacy.set("vault", List.of(0.5, 65d, 0.5, 0d, 0d));
+        Draft migrated = Draft.read(legacy);
+        YamlConfiguration written = new YamlConfiguration();
+        migrated.write(written);
+        require(
+                written.getDoubleList("vaults.0").equals(List.of(0.5, 65d, 0.5, 0d, 0d)),
+                "Legacy maps retain their vault when migrated to a candidate list");
+        require(!written.contains("vault"), "Writing the new format removes the legacy position");
+        Point second = new Point(5.5, 65, .5, 90, 0);
+        migrated.addVault(second);
+        migrated.write(written);
+        YamlConfiguration reloaded = new YamlConfiguration();
+        reloaded.loadFromString(written.saveToString());
+        Draft restored = Draft.read(reloaded);
+        require(
+                restored.vaults.equals(List.of(new Point(.5, 65, .5, 0, 0), second)),
+                "Every candidate survives a YAML round trip in order");
+        Draft copy = restored.copy();
+        copy.vaults.clear();
+        require(
+                restored.vaults.size() == 2,
+                "Editing a draft does not mutate its previous version");
+        restored.setVault(second);
+        require(
+                restored.vaults.equals(List.of(second)),
+                "Legacy vault command replaces all candidates");
+        restored.vaults.clear();
+        written.set("vault", List.of(0.5, 65d, 0.5, 0d, 0d));
+        restored.write(written);
+        reloaded.loadFromString(written.saveToString());
+        require(
+                Draft.read(reloaded).vaults.isEmpty(),
+                "Clearing candidates cannot resurrect a legacy vault");
+        written.set("vaults.0", List.of(0.5, 65d, 0.5, 0d, 0d));
+        written.set("vaults.2", List.of(5.5, 65d, 0.5, 0d, 0d));
+        fails(() -> Draft.read(written), "Sparse candidate lists cannot silently drop locations");
+        written.set("vaults", "invalid");
+        fails(() -> Draft.read(written), "Malformed candidate lists are rejected");
+        Draft full = new Draft();
+        for (int i = 0; i < 16; i++) full.addVault(new Point(i + .5, 65, .5, 0, 0));
+        fails(
+                () -> full.addVault(new Point(17.5, 65, .5, 0, 0)),
+                "More than 16 candidates are rejected");
+        Draft duplicate = new Draft();
+        duplicate.addVault(second);
+        fails(
+                () -> duplicate.addVault(new Point(5.1, 65.5, .1, 45, 12)),
+                "Different facing or fractional coordinates cannot duplicate a candidate block");
     }
 
     private static Draft draft() {
@@ -39,9 +181,9 @@ public final class FinalsMapsCheck {
         draft.second = new Point(16, 80, 16, 0, 0);
         draft.red.add(new Point(-12.5, 65, .5, -90, 0));
         draft.blue.add(new Point(12.5, 65, .5, 90, 0));
-        draft.vault = new Point(.5, 65, .5, 0, 0);
-        draft.stationA = new Point(.5, 65, -11.5, 0, 0);
-        draft.stationB = new Point(.5, 65, 12.5, 0, 0);
+        draft.vaults.add(new Point(.5, 65, .5, 0, 0));
+        draft.setCashout(0, new Point(.5, 65, -11.5, 0, 0));
+        draft.setCashout(1, new Point(.5, 65, 12.5, 0, 0));
         return draft;
     }
 
@@ -61,7 +203,7 @@ public final class FinalsMapsCheck {
         require(saved.red().size() == 1, "Saved spawns are immutable copies");
         fails(() -> Saved.from(draft, "test.nbt"), "Missing team spawn rejected");
         Draft close = draft();
-        close.stationB = close.vault;
+        close.cashouts.set(1, close.vaults.getFirst());
         fails(() -> Saved.from(close, "test.nbt"), "Overlapping objectives rejected");
         Draft outside = draft();
         outside.red.set(0, new Point(-17, 65, 0, 0, 0));
@@ -78,6 +220,60 @@ public final class FinalsMapsCheck {
                 () -> new Bounds(Integer.MIN_VALUE, 0, 0, Integer.MAX_VALUE, 5, 5),
                 "Bounds arithmetic cannot overflow");
         fails(() -> new Point(Double.NaN, 65, 0, 0, 0), "Non-finite position rejected");
+        Draft multiple = draft();
+        multiple.addVault(new Point(5.5, 65, .5, 0, 0));
+        Saved multiSaved = Saved.from(multiple, "test.nbt");
+        multiple.vaults.clear();
+        require(multiSaved.vaults().size() == 2, "Saved candidates are immutable copies");
+        fails(() -> Saved.from(multiple, "test.nbt"), "At least one vault candidate is required");
+        multiple.vaults.add(new Point(.5, 65, .5, 0, 0));
+        multiple.vaults.add(new Point(17.5, 65, .5, 0, 0));
+        fails(
+                () -> Saved.from(multiple, "test.nbt"),
+                "Every vault candidate must lie inside bounds");
+        multiple.vaults.set(1, new Point(.5, 65, -10.5, 0, 0));
+        fails(
+                () -> Saved.from(multiple, "test.nbt"),
+                "Every candidate must be separated from cashouts");
+        multiple.vaults.set(1, new Point(-12.5, 65, .5, 0, 0));
+        fails(
+                () -> Saved.from(multiple, "test.nbt"),
+                "Every candidate must be separated from team spawns");
+        multiple.vaults.set(1, new Point(.7, 65, .7, 20, 0));
+        fails(
+                () -> Saved.from(multiple, "test.nbt"),
+                "Saved geometry rejects duplicate candidate blocks");
+        Draft cashoutPool = draft();
+        cashoutPool.addCashout(new Point(12.5, 65, 12.5, 0, 0));
+        Saved poolSaved = Saved.from(cashoutPool, "test.nbt");
+        cashoutPool.cashouts.clear();
+        require(poolSaved.cashouts().size() == 3, "Saved cashout candidates are immutable copies");
+        fails(() -> Saved.from(cashoutPool, "test.nbt"), "A map needs at least two cashouts");
+        cashoutPool.addCashout(new Point(.5, 65, -11.5, 0, 0));
+        fails(
+                () -> Saved.from(cashoutPool, "test.nbt"),
+                "A single cashout cannot start a two-station match");
+        cashoutPool.addCashout(new Point(.5, 65, 12.5, 0, 0));
+        cashoutPool.addCashout(new Point(17.5, 65, 12.5, 0, 0));
+        fails(
+                () -> Saved.from(cashoutPool, "test.nbt"),
+                "All cashout candidates must be inside the selected map");
+        cashoutPool.cashouts.set(2, new Point(4.5, 65, 12.5, 0, 0));
+        fails(
+                () -> Saved.from(cashoutPool, "test.nbt"),
+                "Any two cashout candidates must remain separated");
+        cashoutPool.cashouts.set(2, new Point(5.5, 65, .5, 0, 0));
+        fails(
+                () -> Saved.from(cashoutPool, "test.nbt"),
+                "Every cashout candidate stays separated from vaults");
+        cashoutPool.cashouts.set(2, new Point(12.5, 65, .5, 0, 0));
+        fails(
+                () -> Saved.from(cashoutPool, "test.nbt"),
+                "Every cashout candidate stays separated from team spawns");
+        cashoutPool.cashouts.set(2, null);
+        fails(
+                () -> Saved.from(cashoutPool, "test.nbt"),
+                "Unconfigured cashout slots cannot reach a saved match");
     }
 
     private static void arenaCopies() {
@@ -146,6 +342,88 @@ public final class FinalsMapsCheck {
         require(
                 !a.contains(new Location(editor.world, 0, 65, 0)),
                 "Containment rejects the editor world");
+    }
+
+    private static void atomicReplacementLocks() throws Exception {
+        if (!System.getProperty("os.name", "").startsWith("Windows")) return;
+        Path temporary = Files.createTempDirectory("finals-atomic-lock-check-");
+        try {
+            Path registry = temporary.resolve("maps.yml"),
+                    pending = temporary.resolve("pending.yml");
+            Files.writeString(registry, "previous registry");
+            Files.writeString(pending, "complete new registry");
+            AtomicReference<Throwable> releaseFailure = new AtomicReference<>();
+            try (FileChannel lock =
+                    FileChannel.open(
+                            registry,
+                            StandardOpenOption.READ,
+                            com.sun.nio.file.ExtendedOpenOption.NOSHARE_DELETE)) {
+                Thread releaser =
+                        Thread.ofPlatform()
+                                .start(() -> {
+                                    try {
+                                        Thread.sleep(50);
+                                        lock.close();
+                                    } catch (Throwable error) {
+                                        releaseFailure.set(error);
+                                    }
+                                });
+                try {
+                    FinalsMapFiles.replace(pending, registry);
+                } finally {
+                    releaser.join();
+                }
+            }
+            if (releaseFailure.get() != null)
+                throw new AssertionError(
+                        "The transient registry lock was released", releaseFailure.get());
+            require(
+                    Files.readString(registry).equals("complete new registry")
+                            && !Files.exists(pending),
+                    "A briefly locked registry is replaced atomically once the lock clears");
+            Files.writeString(pending, "later registry");
+            try (FileChannel lock =
+                    FileChannel.open(
+                            registry,
+                            StandardOpenOption.READ,
+                            com.sun.nio.file.ExtendedOpenOption.NOSHARE_DELETE)) {
+                boolean denied = false;
+                try {
+                    FinalsMapFiles.replace(pending, registry);
+                } catch (AccessDeniedException expected) {
+                    denied = true;
+                }
+                require(denied, "A permanently locked registry fails after bounded retries");
+                require(
+                        Files.readString(registry).equals("complete new registry"),
+                        "Failed locked replacement preserves the previous registry");
+                require(
+                        Files.readString(pending).equals("later registry"),
+                        "Failed locked replacement retains the pending bytes for caller cleanup");
+                Thread.currentThread().interrupt();
+                boolean interruptedFailure = false;
+                boolean interruptPreserved;
+                try {
+                    FinalsMapFiles.replace(pending, registry);
+                } catch (IOException expected) {
+                    interruptedFailure = expected.getCause() instanceof InterruptedException;
+                } finally {
+                    interruptPreserved = Thread.interrupted();
+                }
+                require(
+                        interruptedFailure && interruptPreserved,
+                        "Interrupted retry fails promptly and preserves the thread interrupt flag");
+                require(
+                        Files.readString(registry).equals("complete new registry")
+                                && Files.readString(pending).equals("later registry"),
+                        "Interrupted replacement leaves both registry and pending bytes intact");
+            }
+        } finally {
+            try (var paths = Files.walk(temporary)) {
+                for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList())
+                    Files.deleteIfExists(path);
+            }
+        }
     }
 
     private static void imports() throws Exception {
@@ -248,7 +526,7 @@ public final class FinalsMapsCheck {
                     | java.nio.file.FileSystemException unavailable) {
                 System.out.println(
                         "Source symlink creation unavailable on this host; ZIP symlink rejection"
-                            + " was checked");
+                                + " was checked");
             }
             Path registry = temporary.resolve("maps.yml"),
                     pending = temporary.resolve("pending.yml");

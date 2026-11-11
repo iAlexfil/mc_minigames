@@ -49,10 +49,33 @@ final class CsItems {
                 gun.weapon.material,
                 "gun:" + gun.weapon.id,
                 tr("weapon." + gun.weapon.id),
-                List.of(
-                        tr("controls.gun"),
-                        tr("item.ammo", gun.weapon.magazine, gun.weapon.reserve)),
+                gunLore(gun.weapon),
                 viewer);
+    }
+
+    static List<Component> gunLore(CsWeapon w) {
+        List<Component> lore =
+                new ArrayList<>(
+                        List.of(
+                                tr("controls.gun"),
+                                tr("item.ammo", w.magazine, w.reserve),
+                                tr("category." + w.category.name().toLowerCase(Locale.ROOT)),
+                                tr("item.ballistics", w.damage, Math.round(w.penetration * 100)),
+                                tr(
+                                        w.automatic() ? "item.auto" : "item.semi",
+                                        Math.round(1200 / w.cadence))));
+        if (w.pellets > 1) lore.add(tr("item.pellets", w.pellets));
+        if (w.scope()) lore.add(tr("controls.scope"));
+        if (w.silenced()) lore.add(tr("item.silenced"));
+        if (w == CsWeapon.NEGEV) lore.add(tr("item.negev"));
+        return lore;
+    }
+
+    static List<Component> shopLore(CsWeapon w) {
+        List<Component> lore = new ArrayList<>();
+        lore.add(tr("buy.price", w.price));
+        lore.addAll(gunLore(w));
+        return lore;
     }
 
     static ItemStack utility(CsMatch.Utility utility, Player viewer) {

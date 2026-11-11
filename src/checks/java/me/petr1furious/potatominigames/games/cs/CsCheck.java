@@ -20,6 +20,7 @@ public final class CsCheck {
         hudTranslations();
         buying();
         ammunition();
+        expandedArsenal();
         damageAndRewards();
         objectives();
         rounds();
@@ -155,6 +156,120 @@ public final class CsCheck {
         check(
                 nova.fire(21) && nova.reloadAt < 0 && nova.magazine == 0,
                 "loaded shell can interrupt shotgun reload");
+    }
+
+    private static void expandedArsenal() {
+        Set<CsWeapon> offered = EnumSet.noneOf(CsWeapon.class);
+        for (int side = 0; side < 2; side++) {
+            var choices = CsShop.weapons(side);
+            offered.addAll(choices);
+            check(
+                    choices.size() <= CsShop.GEAR_START && CsShop.GEAR_START + 7 <= CsShop.SIZE,
+                    "all guns fit without replacing equipment buttons");
+            check(
+                    choices.contains(side == 0 ? CsWeapon.TEC9 : CsWeapon.FIVE_SEVEN),
+                    "side-specific armor-piercing pistol is offered");
+            check(
+                    !choices.contains(side == 0 ? CsWeapon.AUG : CsWeapon.SG553),
+                    "opposite side's scoped rifle is not offered");
+        }
+        check(
+                offered.equals(EnumSet.allOf(CsWeapon.class)),
+                "every weapon is obtainable in a faction's shop");
+        CsMatch m = live();
+        var t = m.actor(T);
+        var ct = m.actor(CT);
+        CsMatch.credit(t, 16000);
+        CsMatch.credit(ct, 16000);
+        m.weapon(t, CsWeapon.GALIL, 3);
+        var primary = t.primary;
+        check(
+                m.weapon(t, CsWeapon.P250, 3) == CsMatch.Buy.OK
+                        && t.primary == primary
+                        && t.secondary.weapon == CsWeapon.P250,
+                "new pistol replaces only the pistol slot");
+        var secondary = t.secondary;
+        check(
+                m.weapon(t, CsWeapon.SG553, 3) == CsMatch.Buy.OK
+                        && t.secondary == secondary
+                        && t.primary.weapon == CsWeapon.SG553,
+                "new rifle replaces only the primary slot");
+        check(
+                m.weapon(t, CsWeapon.FIVE_SEVEN, 3) == CsMatch.Buy.SIDE
+                        && m.weapon(ct, CsWeapon.TEC9, 3) == CsMatch.Buy.SIDE,
+                "pistol faction restrictions enforced by economy");
+        ct.armour = 100;
+        ct.helmet = true;
+        check(
+                !m.hurt(CT, T, CsWeapon.SSG08.damage, false, false, CsWeapon.SSG08, false).killed(),
+                "Scout body hit cannot replace AWP one-shot");
+        m = live();
+        m.hurt(CT, T, 500, false, false, CsWeapon.CZ75, false);
+        check(m.actor(T).money == 900, "automatic pistol kill pays only $100");
+        m = live();
+        m.hurt(CT, T, 500, false, false, CsWeapon.P90, false);
+        check(m.actor(T).money == 1100, "P90 does not receive the cheaper SMG kill bonus");
+        CsGun cz = new CsGun(CsWeapon.CZ75);
+        cz.deploy(0);
+        check(
+                !cz.fire(34) && cz.fire(35) && cz.weapon.automatic() && cz.reserve == 12,
+                "CZ automatic fire trades against reserve and long draw time");
+        for (CsWeapon w : List.of(CsWeapon.XM1014, CsWeapon.SAWED_OFF)) {
+            CsGun g = new CsGun(w);
+            g.magazine = 0;
+            g.reserve = 2;
+            g.reload(0);
+            g.tick(20);
+            check(
+                    g.magazine == 1 && g.reserve == 1 && g.reloadAt >= 0,
+                    "additional tube shotgun loads one shell");
+            check(
+                    g.fire(21) && g.reloadAt < 0,
+                    "additional tube shotgun can interrupt reload to fire");
+        }
+        CsGun mag = new CsGun(CsWeapon.MAG7);
+        mag.magazine = 0;
+        mag.reload(0);
+        mag.tick(20);
+        check(mag.magazine == 0, "MAG-7 cannot fire before its magazine replacement finishes");
+        mag.tick(CsWeapon.MAG7.reload);
+        check(mag.magazine == 5 && mag.reserve == 27, "MAG-7 replaces its entire magazine");
+        check(
+                CsWeapon.XM1014.automatic() && !CsWeapon.MAG7.automatic(),
+                "automatic shotgun and pump shotgun have distinct firing controls");
+        CsGun negev = new CsGun(CsWeapon.NEGEV);
+        for (int now = 0; negev.burst < 12; now++) negev.fire(now);
+        check(
+                negev.weapon.shotSpread(false, negev.burst) < negev.weapon.shotSpread(false, 1),
+                "sustained belt fire stabilizes spread");
+        negev.fire(negev.lastShot + 10);
+        check(
+                negev.burst == 1 && negev.weapon.shotSpread(false, negev.burst) > .02,
+                "idle gap resets machine gun stabilization");
+        check(
+                CsWeapon.AUG.shotSpread(true, 1) < CsWeapon.AUG.shotSpread(false, 1)
+                        && CsWeapon.AUG.range() < CsWeapon.SSG08.range(),
+                "scoped assault rifle gains accuracy without sniper range");
+        check(
+                CsWeapon.XM1014.rangeFalloff() < CsWeapon.AK47.rangeFalloff(),
+                "shotgun pellets lose more damage at distance than rifle bullets");
+        me.petr1furious.potatominigames.i18n.I18n.register();
+        try {
+            for (CsWeapon w : CsWeapon.values()) {
+                var name = me.petr1furious.potatominigames.i18n.I18n.tr("cs.weapon." + w.id);
+                List<net.kyori.adventure.text.Component> text =
+                        new ArrayList<>(CsItems.shopLore(w));
+                text.add(name);
+                for (var line : text)
+                    for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru")))
+                        check(
+                                !me.petr1furious.potatominigames.i18n.I18n.plain(line, locale)
+                                        .contains("potatominigames."),
+                                "each weapon name and shop trait renders in both languages");
+            }
+        } finally {
+            me.petr1furious.potatominigames.i18n.I18n.unregister();
+        }
     }
 
     private static void damageAndRewards() {

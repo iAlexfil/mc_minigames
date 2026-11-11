@@ -35,7 +35,7 @@ final class CsCombat {
     void left(Player p) {
         if (!session.canAct(p)) return;
         CsGun gun = session.gun(p);
-        if (gun != null && gun.weapon == CsWeapon.AWP) {
+        if (gun != null && gun.weapon.scope()) {
             gun.scoped = !gun.scoped;
             if (gun.scoped) p.startUsingItem(EquipmentSlot.HAND);
             else p.clearActiveItem();
@@ -94,19 +94,18 @@ final class CsCombat {
         session.cancelChannel(p.getUniqueId());
         var w = gun.weapon;
         Location eye = p.getEyeLocation();
-        double spread = w.spread;
-        if (w == CsWeapon.AWP && gun.scoped) spread = .0008;
+        double spread = w.shotSpread(gun.scoped, gun.burst);
         if (p.isSneaking()) spread *= .65;
         if (p.getVelocity().clone().setY(0).lengthSquared() > .01)
-            spread += w == CsWeapon.AWP ? .14 : .045;
+            spread +=
+                    w.category == CsWeapon.Category.SNIPER ? .14 : w == CsWeapon.NEGEV ? .10 : .045;
         if (!p.isOnGround()) spread += .10;
-        double recoilPitch =
-                w.primary && w != CsWeapon.AWP && w != CsWeapon.NOVA
-                        ? Math.min(5.5, (gun.burst - 1) * .35)
-                        : 0;
+        double recoilPitch = w.recoilPitch(gun.burst, gun.scoped);
         double recoilYaw =
-                w.primary
-                        ? Math.sin((gun.burst - 1) * .72) * Math.min(2.3, (gun.burst - 1) * .12)
+                w.automatic()
+                        ? Math.sin((gun.burst - 1) * .72)
+                                * Math.min(2.3, (gun.burst - 1) * .12)
+                                * (w == CsWeapon.NEGEV && gun.burst >= 12 ? .2 : 1)
                         : 0;
         Location aim = eye.clone();
         aim.setPitch(
@@ -120,8 +119,9 @@ final class CsCombat {
         Map<HitGroup, Impact> hits = new LinkedHashMap<>();
         for (int pellet = 0; pellet < w.pellets; pellet++) {
             Vector direction = spread(aim.getDirection(), spread);
-            Impact hit = trace(p, eye, direction, w == CsWeapon.AWP ? 160 : 100, w);
-            if (pellet == 0) tracer(eye, direction, hit == null ? 100 : hit.distance);
+            Impact hit = trace(p, eye, direction, w.range(), w);
+            if (pellet == 0 && !w.silenced())
+                tracer(eye, direction, hit == null ? w.range() : hit.distance);
             if (hit != null)
                 hits.merge(
                         new HitGroup(hit.target.getUniqueId(), hit.head, hit.leg),
@@ -137,11 +137,13 @@ final class CsCombat {
         session.world()
                 .playSound(
                         p.getLocation(),
-                        w == CsWeapon.AWP
+                        w.category == CsWeapon.Category.SNIPER
                                 ? Sound.ENTITY_FIREWORK_ROCKET_BLAST
                                 : Sound.ENTITY_FIREWORK_ROCKET_SHOOT,
-                        w == CsWeapon.USP ? .30f : .85f,
-                        w == CsWeapon.AWP ? .6f : w == CsWeapon.NOVA ? .8f : 1.6f);
+                        w.silenced() ? .30f : .85f,
+                        w.category == CsWeapon.Category.SNIPER
+                                ? .6f
+                                : w.category == CsWeapon.Category.SHOTGUN ? .8f : 1.6f);
         for (Impact hit : hits.values())
             session.hurt(hit.target, p.getUniqueId(), hit.damage, hit.head, hit.leg, w, false);
         if (!hits.isEmpty()) p.playSound(p.getLocation(), Sound.ENTITY_ARROW_HIT_PLAYER, .5f, 1.2f);
@@ -187,10 +189,7 @@ final class CsCombat {
                         feet = target.getLocation().getY();
                 boolean head = y > feet + height - .38, leg = y < feet + .58;
                 double multiplier = head ? 4 : leg ? .75 : y < feet + 1.0 ? 1.25 : 1;
-                double falloff =
-                        Math.pow(
-                                weapon == CsWeapon.MP9 || weapon == CsWeapon.MAC10 ? .87 : .98,
-                                travelled / 16);
+                double falloff = Math.pow(weapon.rangeFalloff(), travelled / 16);
                 return new Impact(
                         target, weapon.damage * multiplier * scale * falloff, head, leg, travelled);
             }
@@ -209,7 +208,11 @@ final class CsCombat {
                                     ? 1.25
                                     : material.contains("LEAVES")
                                             ? 2.5
-                                            : weapon == CsWeapon.AWP || weapon == CsWeapon.AK47
+                                            : weapon.category == CsWeapon.Category.SNIPER
+                                                            || weapon.category
+                                                                    == CsWeapon.Category.HEAVY
+                                                            || weapon == CsWeapon.AK47
+                                                            || weapon == CsWeapon.SG553
                                                     ? .65
                                                     : 0;
             if (walls++ >= 2 || max == 0) return null;

@@ -26,12 +26,12 @@ final class CsGun {
 
     void tick(long now) {
         if (reloadAt < 0 || now < reloadAt) return;
-        if (weapon == CsWeapon.NOVA) {
+        if (weapon.shellReload()) {
             while (reloadAt >= 0 && now >= reloadAt) {
                 magazine++;
                 reserve--;
                 if (magazine == weapon.magazine || reserve == 0) reloadAt = -1;
-                else reloadAt += 11;
+                else reloadAt += weapon.shellTicks();
             }
         } else {
             int n = Math.min(weapon.magazine - magazine, reserve);
@@ -43,7 +43,7 @@ final class CsGun {
 
     boolean fire(long now) {
         tick(now);
-        if (weapon == CsWeapon.NOVA && reloadAt >= 0 && magazine > 0) reloadAt = -1;
+        if (weapon.shellReload() && reloadAt >= 0 && magazine > 0) reloadAt = -1;
         if (reloadAt >= 0 || now < deployUntil || now + 1e-6 < nextShot || magazine == 0)
             return false;
         if (now - lastShot > 8) {
@@ -60,7 +60,7 @@ final class CsGun {
     boolean reload(long now) {
         tick(now);
         if (reloadAt >= 0 || magazine == weapon.magazine || reserve == 0) return false;
-        reloadAt = now + (weapon == CsWeapon.NOVA ? 20 : weapon.reload);
+        reloadAt = now + (weapon.shellReload() ? 20 : weapon.reload);
         heldUntil = -1;
         return true;
     }
@@ -73,6 +73,6 @@ final class CsGun {
 
     void deploy(long now) {
         switchAway();
-        deployUntil = now + (weapon == CsWeapon.AWP ? 25 : 12);
+        deployUntil = now + weapon.deployTicks();
     }
 }

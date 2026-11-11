@@ -877,22 +877,20 @@ final class CsSession implements GameSession, Listener {
             }
         p.clearActiveItem();
         Shop shop = new Shop(a.id);
-        shop.inventory = Bukkit.createInventory(shop, 27, I18n.render(tr("buy.title", a.money), p));
+        shop.inventory =
+                Bukkit.createInventory(shop, CsShop.SIZE, I18n.render(tr("buy.title", a.money), p));
         int index = 0;
-        for (CsWeapon weapon : CsWeapon.values())
-            if (weapon.allowed(match.side(a))) {
-                ItemStack item =
-                        CsItems.item(
-                                weapon.material,
-                                "shop",
-                                tr("weapon." + weapon.id),
-                                List.of(
-                                        tr("buy.price", weapon.price),
-                                        tr("item.ammo", weapon.magazine, weapon.reserve)),
-                                p);
-                shop.inventory.setItem(index, item);
-                shop.choices.put(index++, weapon.id);
-            }
+        for (CsWeapon weapon : CsShop.weapons(match.side(a))) {
+            ItemStack item =
+                    CsItems.item(
+                            weapon.material,
+                            "shop",
+                            tr("weapon." + weapon.id),
+                            CsItems.shopLore(weapon),
+                            p);
+            shop.inventory.setItem(index, item);
+            shop.choices.put(index++, weapon.id);
+        }
         String[] gear = {"vest", "helmet", "kit", "he", "flash", "smoke", "fire"};
         Material[] icons = {
             Material.CHAINMAIL_CHESTPLATE,
@@ -915,14 +913,14 @@ final class CsSession implements GameSession, Listener {
                         default -> 300;
                     };
             shop.inventory.setItem(
-                    18 + i,
+                    CsShop.GEAR_START + i,
                     CsItems.item(
                             icons[i],
                             "shop",
                             tr("buy." + gear[i]),
                             List.of(tr("buy.price", price)),
                             p));
-            shop.choices.put(18 + i, gear[i]);
+            shop.choices.put(CsShop.GEAR_START + i, gear[i]);
         }
         p.openInventory(shop.inventory);
     }

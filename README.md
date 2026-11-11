@@ -1337,13 +1337,41 @@ source entities, player records and executable world data are excluded.
 
 ### Weapons and controls
 
-The first selection is **Glock-18, USP-S, Desert Eagle, AK-47, M4A4, AWP, MP9,
-MAC-10 and Nova**, plus the knife. Faction restrictions apply to purchases, not
-captured weapons. There are finite magazines/reserves, draw and reload times,
-held automatic fire, burst recoil/recovery, movement/jump spread, crouch accuracy,
-AWP scoping, head/body/leg damage, armor/helmet penetration, hit tagging and aim
-punch. Nova reloads individual shells and can interrupt a reload to fire. Limited
-wallbangs lose damage; breakable glass is restored between rounds.
+The arsenal contains **27 guns**, plus the knife:
+
+| Category | Weapons |
+| --- | --- |
+| Pistols | Glock-18 (T), USP-S (CT), P250, Dual Berettas, Five-SeveN (CT), Tec-9 (T), CZ75-Auto, Desert Eagle |
+| SMGs | MAC-10 (T), MP9 (CT), UMP-45, MP7, P90 |
+| Assault rifles | Galil AR (T), FAMAS (CT), AK-47 (T), M4A1-S (CT), M4A4 (CT), AUG (CT), SG 553 (T) |
+| Sniper rifles | SSG 08, AWP |
+| Shotguns | Nova, XM1014, MAG-7 (CT), Sawed-Off (T) |
+| Machine gun | Negev |
+
+Faction restrictions apply to purchases, not captured weapons. The buy menu has
+45 slots with a separate equipment row; weapon entries show price, ammunition,
+category, damage per bullet/pellet, armor penetration and rate of fire. Every gun
+has its own price, magazine/reserve, fire/reload timing, mobility and spread.
+Values are adapted to Minecraft ticks and the classic CS:GO economy, rather than
+a claim of exact parity with the latest CS2 balance.
+
+There are finite magazines/reserves, draw times, held automatic fire,
+burst recoil/recovery, movement/jump spread, crouch accuracy, head/body/leg
+damage, armor/helmet penetration, hit tagging and aim punch. AWP and SSG 08
+have 160-block range and scoped accuracy; SSG is cheaper and faster to move with,
+but an armored body hit is survivable. AUG and SG 553 trade mobility for scoped
+accuracy at the normal rifle range. Their scope toggles with left-click.
+USP-S and M4A1-S are quieter and omit visible bullet trails; M4A1-S trades magazine
+size and fire rate for accuracy. CZ75-Auto fires automatically, but has only one
+reserve magazine, a longer draw time and a $100 kill reward. P90 has 50 rounds
+and the normal $300 kill reward; other SMGs pay $600. Shotguns lose damage faster
+at distance: Nova, XM1014 and Sawed-Off load individual shells and can interrupt
+reload to fire; MAG-7 replaces a whole magazine. XM1014 supports held fire.
+Negev is slow and takes a long time to reload, with a 150-round belt; its initially
+wide spread stabilizes on the twelfth uninterrupted shot, and resets after an
+idle gap. Limited wallbangs lose damage; breakable glass is restored each round.
+FAMAS currently uses automatic fire only; Glock burst mode and removable
+suppressors are not implemented.
 
 HE, flash, smoke and Molotov/incendiary grenades bounce and detonate with fuses;
 HE respects cover, flash duration depends on distance and facing, smoke hides
@@ -1353,7 +1381,7 @@ most four grenades, with at most two flashes and one of each other kind.
 | Input / slot | Action |
 | --- | --- |
 | Right-click | Fire / throw / heavy knife attack |
-| Left-click | Quick knife attack / toggle AWP scope |
+| Left-click | Quick knife attack / toggle scope on AWP, SSG 08, AUG or SG 553 |
 | F / `/cs reload` | Reload |
 | Q / `/cs drop` | Drop selected weapon, grenade, kit or C4 |
 | Slots 1–2 | Primary and secondary gun |

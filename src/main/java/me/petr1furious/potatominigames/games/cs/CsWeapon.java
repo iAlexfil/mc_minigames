@@ -2,31 +2,119 @@ package me.petr1furious.potatominigames.games.cs;
 
 import org.bukkit.Material;
 
-/** Initial CS:GO selection; prices, finite magazines and armour penetration are in CS units. */
+/** CS:GO-inspired economy and roles, with firing/accuracy values adapted to Minecraft ticks. */
 enum CsWeapon {
-    GLOCK("glock", false, 0, 200, 28, .47, 20, 120, 3, 46, 1.0, .014, 1, Material.IRON_NUGGET),
-    USP("usp", false, 1, 200, 35, .505, 12, 24, 3.4, 44, 1.0, .009, 1, Material.FLINT),
-    DEAGLE("deagle", false, -1, 700, 53, .932, 7, 35, 4.5, 44, .92, .012, 1, Material.GOLD_INGOT),
-    AK47("ak47", true, 0, 2700, 36, .775, 30, 90, 2, 50, .86, .007, 1, Material.IRON_HORSE_ARMOR),
-    M4A4(
-            "m4a4",
-            true,
+    GLOCK(
+            "glock",
+            Category.PISTOL,
+            0,
+            200,
+            28,
+            .47,
+            20,
+            120,
+            3,
+            46,
+            1.0,
+            .014,
             1,
-            3100,
-            33,
-            .70,
+            Material.IRON_NUGGET),
+    USP("usp", Category.PISTOL, 1, 200, 35, .505, 12, 24, 3.4, 44, 1.0, .009, 1, Material.FLINT),
+    P250(
+            "p250",
+            Category.PISTOL,
+            -1,
+            300,
+            38,
+            .64,
+            13,
+            26,
+            3,
+            44,
+            1.0,
+            .015,
+            1,
+            Material.IRON_INGOT),
+    DUAL_BERETTAS(
+            "dual_berettas",
+            Category.PISTOL,
+            -1,
+            300,
+            38,
+            .575,
             30,
-            90,
-            1.8,
-            62,
-            .90,
-            .006,
+            120,
+            2.4,
+            76,
+            .96,
+            .020,
             1,
-            Material.GOLDEN_HORSE_ARMOR),
-    AWP("awp", true, -1, 4750, 115, .975, 10, 30, 29, 74, .80, .10, 1, Material.SPYGLASS),
+            Material.GOLD_NUGGET),
+    FIVE_SEVEN(
+            "five_seven",
+            Category.PISTOL,
+            1,
+            500,
+            32,
+            .911,
+            20,
+            100,
+            3,
+            44,
+            .96,
+            .015,
+            1,
+            Material.PRISMARINE_SHARD),
+    TEC9(
+            "tec9",
+            Category.PISTOL,
+            0,
+            500,
+            33,
+            .906,
+            18,
+            90,
+            2.4,
+            50,
+            .96,
+            .018,
+            1,
+            Material.AMETHYST_SHARD),
+    CZ75("cz75", Category.PISTOL, -1, 500, 31, .776, 12, 12, 2, 54, .96, .020, 1, Material.QUARTZ),
+    DEAGLE(
+            "deagle",
+            Category.PISTOL,
+            -1,
+            700,
+            53,
+            .932,
+            7,
+            35,
+            4.5,
+            44,
+            .92,
+            .012,
+            1,
+            Material.GOLD_INGOT),
+
+    MAC10(
+            "mac10",
+            Category.SMG,
+            0,
+            1050,
+            29,
+            .575,
+            30,
+            100,
+            1.5,
+            52,
+            .96,
+            .018,
+            1,
+            Material.COPPER_INGOT),
     MP9(
             "mp9",
-            true,
+            Category.SMG,
             1,
             1250,
             26,
@@ -39,10 +127,235 @@ enum CsWeapon {
             .014,
             1,
             Material.LEATHER_HORSE_ARMOR),
-    MAC10("mac10", true, 0, 1050, 29, .575, 30, 100, 1.5, 52, .96, .018, 1, Material.COPPER_INGOT),
-    NOVA("nova", true, -1, 1050, 26, .50, 8, 32, 18, 64, .88, .075, 9, Material.BLAZE_ROD);
+    UMP45(
+            "ump45",
+            Category.SMG,
+            -1,
+            1200,
+            35,
+            .65,
+            25,
+            100,
+            1.8,
+            70,
+            .92,
+            .014,
+            1,
+            Material.NETHERITE_SCRAP),
+    MP7("mp7", Category.SMG, -1, 1500, 29, .625, 30, 120, 1.6, 62, .88, .012, 1, Material.IRON_HOE),
+    P90(
+            "p90",
+            Category.SMG,
+            -1,
+            2350,
+            26,
+            .69,
+            50,
+            100,
+            1.33,
+            66,
+            .92,
+            .017,
+            1,
+            Material.GOLDEN_HOE),
+
+    GALIL(
+            "galil",
+            Category.RIFLE,
+            0,
+            1800,
+            30,
+            .775,
+            35,
+            90,
+            1.8,
+            60,
+            .86,
+            .010,
+            1,
+            Material.STONE_HOE),
+    FAMAS(
+            "famas",
+            Category.RIFLE,
+            1,
+            2050,
+            30,
+            .70,
+            25,
+            90,
+            1.8,
+            66,
+            .88,
+            .009,
+            1,
+            Material.DIAMOND_HOE),
+    AK47(
+            "ak47",
+            Category.RIFLE,
+            0,
+            2700,
+            36,
+            .775,
+            30,
+            90,
+            2,
+            50,
+            .86,
+            .007,
+            1,
+            Material.IRON_HORSE_ARMOR),
+    M4A1S(
+            "m4a1s",
+            Category.RIFLE,
+            1,
+            2900,
+            38,
+            .70,
+            20,
+            80,
+            2,
+            62,
+            .90,
+            .004,
+            1,
+            Material.DIAMOND_HORSE_ARMOR),
+    M4A4(
+            "m4a4",
+            Category.RIFLE,
+            1,
+            3100,
+            33,
+            .70,
+            30,
+            90,
+            1.8,
+            62,
+            .90,
+            .006,
+            1,
+            Material.GOLDEN_HORSE_ARMOR),
+    AUG("aug", Category.RIFLE, 1, 3300, 28, .90, 30, 90, 2, 76, .88, .009, 1, Material.SPYGLASS),
+    SG553(
+            "sg553",
+            Category.RIFLE,
+            0,
+            3000,
+            30,
+            1.0,
+            30,
+            90,
+            2.2,
+            56,
+            .84,
+            .010,
+            1,
+            Material.SPYGLASS),
+
+    SSG08(
+            "ssg08",
+            Category.SNIPER,
+            -1,
+            1700,
+            88,
+            .85,
+            10,
+            90,
+            25,
+            74,
+            .92,
+            .060,
+            1,
+            Material.SPYGLASS),
+    AWP(
+            "awp",
+            Category.SNIPER,
+            -1,
+            4750,
+            115,
+            .975,
+            10,
+            30,
+            29,
+            74,
+            .80,
+            .10,
+            1,
+            Material.SPYGLASS),
+
+    NOVA(
+            "nova",
+            Category.SHOTGUN,
+            -1,
+            1050,
+            26,
+            .50,
+            8,
+            32,
+            18,
+            64,
+            .88,
+            .075,
+            9,
+            Material.BLAZE_ROD),
+    XM1014(
+            "xm1014",
+            Category.SHOTGUN,
+            -1,
+            2000,
+            20,
+            .80,
+            7,
+            32,
+            5,
+            80,
+            .86,
+            .065,
+            6,
+            Material.BREEZE_ROD),
+    MAG7("mag7", Category.SHOTGUN, 1, 1300, 30, .75, 5, 32, 17, 48, .90, .070, 8, Material.STICK),
+    SAWED_OFF(
+            "sawed_off",
+            Category.SHOTGUN,
+            0,
+            1100,
+            32,
+            .75,
+            7,
+            32,
+            24,
+            88,
+            .84,
+            .095,
+            8,
+            Material.BONE),
+
+    NEGEV(
+            "negev",
+            Category.HEAVY,
+            -1,
+            1700,
+            35,
+            .71,
+            150,
+            300,
+            1.5,
+            114,
+            .60,
+            .055,
+            1,
+            Material.NETHERITE_INGOT);
+
+    enum Category {
+        PISTOL,
+        SMG,
+        RIFLE,
+        SNIPER,
+        SHOTGUN,
+        HEAVY
+    }
 
     final String id;
+    final Category category;
     final boolean primary;
     final int side, price, magazine, reserve, reload, pellets;
     final double damage, penetration, cadence, mobility, spread;
@@ -50,7 +363,7 @@ enum CsWeapon {
 
     CsWeapon(
             String id,
-            boolean primary,
+            Category category,
             int side,
             int price,
             double damage,
@@ -64,7 +377,8 @@ enum CsWeapon {
             int pellets,
             Material material) {
         this.id = id;
-        this.primary = primary;
+        this.category = category;
+        this.primary = category != Category.PISTOL;
         this.side = side;
         this.price = price;
         this.damage = damage;
@@ -80,11 +394,66 @@ enum CsWeapon {
     }
 
     boolean automatic() {
-        return this == AK47 || this == M4A4 || this == MP9 || this == MAC10;
+        return category == Category.RIFLE
+                || category == Category.SMG
+                || category == Category.HEAVY
+                || this == CZ75
+                || this == XM1014;
+    }
+
+    boolean scope() {
+        return category == Category.SNIPER || this == AUG || this == SG553;
+    }
+
+    boolean silenced() {
+        return this == USP || this == M4A1S;
+    }
+
+    boolean shellReload() {
+        return this == NOVA || this == XM1014 || this == SAWED_OFF;
+    }
+
+    int shellTicks() {
+        return this == XM1014 ? 10 : 11;
+    }
+
+    int deployTicks() {
+        return this == CZ75 ? 35 : category == Category.SNIPER || this == NEGEV ? 25 : 12;
+    }
+
+    double range() {
+        return category == Category.SNIPER ? 160 : 100;
+    }
+
+    double rangeFalloff() {
+        return this == UMP45
+                ? .75
+                : category == Category.SMG
+                        ? .87
+                        : category == Category.SHOTGUN
+                                ? .70
+                                : category == Category.SNIPER ? .99 : this == M4A1S ? .94 : .98;
+    }
+
+    double shotSpread(boolean scoped, int burst) {
+        if (scoped && scope()) return category == Category.SNIPER ? .0008 : .002;
+        // The first rounds are deliberately hard to control; a sustained spray stabilizes.
+        if (this == NEGEV) return burst < 12 ? spread : .003;
+        return spread;
+    }
+
+    double recoilPitch(int burst, boolean scoped) {
+        if (!automatic()) return 0;
+        if (this == NEGEV) return burst < 12 ? 2 + burst * .2 : .7;
+        return Math.min(5.5, Math.max(0, burst - 1) * .35) * (scoped ? .6 : 1);
     }
 
     int killReward() {
-        return this == AWP ? 100 : this == NOVA ? 900 : this == MP9 || this == MAC10 ? 600 : 300;
+        return this == AWP || this == CZ75
+                ? 100
+                : category == Category.SHOTGUN
+                        ? 900
+                        : category == Category.SMG && this != P90 ? 600 : 300;
     }
 
     boolean allowed(int side) {

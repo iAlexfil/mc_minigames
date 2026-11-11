@@ -37,9 +37,11 @@ final class HoleWallFlow {
     private final HoleWallLayout layout;
     private final List<Wall> walls = new ArrayList<>();
     private long nextSpawn;
-    private int radius = 8, number;
+    private int radius = 8, number, lateWalls;
     private HoleWallPhysics.Direction lastDirection;
     private final Deque<HoleWallPhysics.Direction> directions = new ArrayDeque<>();
+    private final Set<HoleWallPhysics.Direction> lateDirections =
+            EnumSet.noneOf(HoleWallPhysics.Direction.class);
     private final Deque<Integer> patternStages = new ArrayDeque<>();
 
     HoleWallFlow(long duration, Random random) {
@@ -72,6 +74,7 @@ final class HoleWallFlow {
             if (wall.depth > 16) {
                 finished.add(wall);
                 it.remove();
+                if (wall.pattern.requiresIslands()) nextSpawn = Math.max(nextSpawn, tick + 40);
             }
         }
         int target = tick >= duration * 2 / 3 ? 4 : tick >= duration / 3 ? 6 : 8;
@@ -87,6 +90,8 @@ final class HoleWallFlow {
                 if (shuffled.get(0).dx * shuffled.get(1).dx
                                 + shuffled.get(0).dz * shuffled.get(1).dz
                         == -1) Collections.swap(shuffled, 1, 2);
+                if (tick >= duration * 2 / 3)
+                    shuffled.sort(Comparator.comparing(lateDirections::contains));
                 directions.addAll(shuffled);
             }
             var direction = directions.getFirst();
@@ -95,14 +100,23 @@ final class HoleWallFlow {
             // Delayed arrivals must still fit the narrowed arms when they eventually cross.
             long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
             int gateRadius = latestExit >= duration / 3 ? 1 : 2;
-            var pattern = layout.pattern(patternStages.getFirst(), gateRadius, random);
+            boolean islandWave =
+                    layout == HoleWallLayout.PLUS && tick >= duration * 2 / 3 && lateWalls % 3 == 0;
+            var pattern =
+                    islandWave
+                            ? HoleWallPattern.islands(random)
+                            : layout.pattern(patternStages.getFirst(), gateRadius, random);
             if (canApproach(direction, pattern, tick, speed)) {
-                patternStages.removeFirst();
+                if (!islandWave) patternStages.removeFirst();
+                if (tick >= duration * 2 / 3) {
+                    lateWalls++;
+                    lateDirections.add(direction);
+                }
                 directions.removeFirst();
                 lastDirection = direction;
                 // A wall that might survive past the first shrink must already fit the narrower
                 // arms.
-                var wall = new Wall(++number, pattern, direction, tick + 40);
+                var wall = new Wall(++number, pattern, direction, tick + (islandWave ? 80 : 40));
                 walls.add(wall);
                 started.add(wall);
                 nextSpawn = tick + Math.round(80 - 40 * Math.clamp((double) tick / duration, 0, 1));
@@ -119,6 +133,9 @@ final class HoleWallFlow {
 
     private boolean canApproach(
             HoleWallPhysics.Direction direction, HoleWallPattern pattern, long tick, double speed) {
+        // Give corner jumps a clear approach and return: ordinary walls must not seal their route.
+        if (walls.stream().anyMatch(w -> w.pattern.requiresIslands())) return false;
+        if (pattern.requiresIslands()) return walls.isEmpty();
         // Earliest arrival uses maximum speed; old-wall clearance uses its current minimum
         // speed. Two blocks of margin cover wall thickness and player footprint at the rim.
         // The first movement step happens on moveAt itself, so subtract that inclusive tick.
@@ -137,5 +154,6 @@ final class HoleWallFlow {
         walls.clear();
         directions.clear();
         patternStages.clear();
+        lateDirections.clear();
     }
 }

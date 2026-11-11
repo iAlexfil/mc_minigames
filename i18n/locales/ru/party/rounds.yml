@@ -342,3 +342,7 @@ hole_wall.donut.8: "Римские ворота"
 hole_wall.donut.9: "Ярусы окон"
 hole_wall.donut.10: "Калитка кольца"
 hole_wall.donut.11: "Низкие ворота кольца"
+
+hole_wall.pattern.islands_0: "Арки островков — прыгай на углы!"
+hole_wall.pattern.islands_1: "Окна островков — прыгай на углы!"
+hole_wall.pattern.islands_2: "Низкие ворота островков — прыгай и пригнись!"

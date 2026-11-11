@@ -139,11 +139,7 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                         double bottom = gate.bottom(), top = bottom + gate.height();
                         if (y >= bottom && y + 1 <= top) block = null;
                         else if (y < bottom) block = full;
-                        else if (y < top && y + 1 > top)
-                            block =
-                                    new HoleWallBlock(
-                                            Material.SMOOTH_STONE_SLAB,
-                                            HoleWallBlock.Shape.UPPER_SLAB);
+                        else if (y < top && y + 1 > top) block = full.upperSlab();
                     }
                 if (kind >= 13 && kind <= 15 && (u == -1 || u == 0)) {
                     // Two disconnected posts leave 0.75/0.875 blocks; a separate full-width route
@@ -155,10 +151,7 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                                         kind == 15
                                                 ? HoleWallBlock.Shape.BARS
                                                 : HoleWallBlock.Shape.FENCE_POST);
-                    else if (kind == 14 && y == 1)
-                        block =
-                                new HoleWallBlock(
-                                        Material.SMOOTH_STONE_SLAB, HoleWallBlock.Shape.UPPER_SLAB);
+                    else if (kind == 14 && y == 1) block = full.upperSlab();
                     else block = full;
                 } else if (block != null && kind == 16 && y < 4) {
                     // Keep any crouching lintel solid; hanging chains themselves form many thin
@@ -209,6 +202,32 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                             .toList();
         return new HoleWallPattern(
                 cells, gates, I18n.tr("party.rounds.hole_wall.pattern." + NAMES[kind]));
+    }
+
+    boolean requiresIslands() {
+        return !gates.isEmpty()
+                && gates.stream().allMatch(g -> g.start() >= 5 || g.start() + g.width() <= -4);
+    }
+
+    static HoleWallPattern islands(Random random) {
+        int kind = random.nextInt(3);
+        var full =
+                new HoleWallBlock(
+                        random.nextBoolean() ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
+                        HoleWallBlock.Shape.FULL);
+        double height = kind == 2 ? 1.5 : kind == 1 ? 2 : 3;
+        var gates = List.of(new Gate(-6, 2, 0, height), new Gate(5, 2, 0, height));
+        var cells = new ArrayList<Cell>();
+        for (int u = -HALF_WIDTH; u <= HALF_WIDTH; u++)
+            for (int y = 0; y < HEIGHT; y++) {
+                int a = Math.abs(u);
+                boolean opening = a == 5 || a == 6;
+                if (opening && y + 1 <= height) continue;
+                if (!opening && a > 7 && y > 3 + (a % 2)) continue;
+                cells.add(new Cell(u, y, opening && y < height ? full.upperSlab() : full));
+            }
+        return new HoleWallPattern(
+                cells, gates, I18n.tr("party.rounds.hole_wall.pattern.islands_" + kind));
     }
 
     private static List<Gate> routes(int kind, int radius) {

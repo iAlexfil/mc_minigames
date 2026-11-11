@@ -10,6 +10,7 @@ import java.util.*;
 final class HoleWallLayoutCheck {
     static void run() {
         donutDimensions();
+        islandWavesAndMaterials();
         for (var layout : HoleWallLayout.values()) {
             Set<String> previous = null;
             var fixture = new PartyArenaCheck.WorldMap();
@@ -81,6 +82,121 @@ final class HoleWallLayoutCheck {
         var random = new Random(42);
         for (int i = 0; i < 60; i++) selected.add(HoleWallLayout.choose(random));
         check(selected.size() == 3, "All three layouts can be selected");
+    }
+
+    private static void islandWavesAndMaterials() {
+        for (var layout : HoleWallLayout.values()) {
+            for (int seed = 0; seed < 8; seed++) {
+                int islandCount = 0;
+                var flow = new HoleWallFlow(2400, new Random(seed), layout);
+                for (int tick = 0; tick < 2400; tick++) {
+                    var frame = flow.tick(tick);
+                    for (var wall : frame.started()) {
+                        boolean islands =
+                                wall.pattern.gates().stream()
+                                        .allMatch(
+                                                g -> g.start() >= 5 || g.start() + g.width() <= -4);
+                        if (islands) {
+                            islandCount++;
+                            check(
+                                    layout == HoleWallLayout.PLUS && tick >= 1600,
+                                    "Island-only walls are exclusive to the final third of plus");
+                            check(
+                                    wall.moveAt - tick >= 80,
+                                    "Island jumps get four seconds of preparation");
+                            for (int x = -4; x <= 4; x++)
+                                for (int z = -4; z <= 4; z++)
+                                    if (layout.onFloor(x, z, 4, 1)) {
+                                        var body =
+                                                new BoundingBox(
+                                                        x + .2, 81, z + .2, x + .8, 82.8, z + .8);
+                                        check(
+                                                HoleWallPhysics.collides(
+                                                        wall.pattern.cells(),
+                                                        wall.direction,
+                                                        -10,
+                                                        10,
+                                                        body,
+                                                        body),
+                                                "No surviving core floor cell bypasses an island"
+                                                    + " wall");
+                                    }
+                            for (var gate : wall.pattern.gates()) {
+                                double u = gate.start() + gate.width() / 2;
+                                check(
+                                        layout.supports(u, 5.5, 4, 1)
+                                                && layout.supports(u, -5.5, 4, 1),
+                                        "Island routes land on permanent corner platforms");
+                                var body =
+                                        wall.direction.dx == 0
+                                                ? new BoundingBox(
+                                                        u - .3,
+                                                        81,
+                                                        .2,
+                                                        u + .3,
+                                                        81 + gate.bodyHeight(),
+                                                        .8)
+                                                : new BoundingBox(
+                                                        .2,
+                                                        81,
+                                                        u - .3,
+                                                        .8,
+                                                        81 + gate.bodyHeight(),
+                                                        u + .3);
+                                check(
+                                        !HoleWallPhysics.collides(
+                                                wall.pattern.cells(),
+                                                wall.direction,
+                                                -1,
+                                                1,
+                                                body,
+                                                body),
+                                        "Island passage physically fits the player");
+                            }
+                        }
+                    }
+                    if (flow.active().stream()
+                            .anyMatch(w ->
+                                    w.pattern.gates().stream()
+                                            .allMatch(g ->
+                                                    g.start() >= 5 || g.start() + g.width() <= -4)))
+                        check(flow.active().size() == 1, "Island jumps never overlap another wall");
+                }
+                check(
+                        layout != HoleWallLayout.PLUS || islandCount >= 2,
+                        "Final third includes repeated mandatory island jumps");
+            }
+            for (int seed = 0; seed < 8; seed++)
+                for (int stage = 1; stage <= layout.patternCount(); stage++) {
+                    var p = layout.pattern(stage, 1, new Random(seed));
+                    var full =
+                            p.cells().stream()
+                                    .map(c -> c.block().material())
+                                    .filter(m ->
+                                            Set.of(
+                                                            Material.STONE_BRICKS,
+                                                            Material.DARK_PRISMARINE,
+                                                            Material.PRISMARINE_BRICKS,
+                                                            Material.PURPUR_BLOCK)
+                                                    .contains(m))
+                                    .findFirst();
+                    for (var cell : p.cells())
+                        if (cell.block().shape() == HoleWallBlock.Shape.UPPER_SLAB
+                                || cell.block().shape() == HoleWallBlock.Shape.LOWER_SLAB) {
+                            Material expected =
+                                    switch (full.orElseThrow()) {
+                                        case STONE_BRICKS -> Material.STONE_BRICK_SLAB;
+                                        case DARK_PRISMARINE -> Material.DARK_PRISMARINE_SLAB;
+                                        case PRISMARINE_BRICKS -> Material.PRISMARINE_BRICK_SLAB;
+                                        case PURPUR_BLOCK -> Material.PURPUR_SLAB;
+                                        default -> throw new AssertionError();
+                                    };
+                            check(
+                                    cell.block().material() == expected,
+                                    "Slabs match their wall material");
+                        }
+                }
+        }
     }
 
     private static void donutDimensions() {

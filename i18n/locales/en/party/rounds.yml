@@ -342,3 +342,7 @@ hole_wall.donut.8: "Roman gates"
 hole_wall.donut.9: "Layered eyelets"
 hole_wall.donut.10: "Ring wicket"
 hole_wall.donut.11: "Low ring gates"
+
+hole_wall.pattern.islands_0: "Island arches — jump to the corners!"
+hole_wall.pattern.islands_1: "Island windows — jump to the corners!"
+hole_wall.pattern.islands_2: "Low island gates — jump, then sneak!"

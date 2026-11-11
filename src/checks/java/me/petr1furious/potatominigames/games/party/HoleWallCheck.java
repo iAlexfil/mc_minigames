@@ -391,10 +391,13 @@ public final class HoleWallCheck {
                                         && a.depth - a.from <= 1,
                                 "Walls move in discrete one-block piston steps");
                         for (var gate : a.pattern.gates())
-                            check(
-                                    gate.start() >= -frame.armRadius()
-                                            && gate.start() + gate.width() <= frame.armRadius() + 1,
-                                    "Even existing wall gates fit the floor when the arms narrow");
+                            if (!a.pattern.requiresIslands())
+                                check(
+                                        gate.start() >= -frame.armRadius()
+                                                && gate.start() + gate.width()
+                                                        <= frame.armRadius() + 1,
+                                        "Even existing wall gates fit the floor when the arms"
+                                            + " narrow");
                         for (var b : active)
                             if (a != b) {
                                 int dot =

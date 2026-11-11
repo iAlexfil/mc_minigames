@@ -90,11 +90,17 @@ final class HoleWallSession extends PartySurvivalSession {
         if (newWarning || reshaping) arena.warn(frame.warningRadius(), frame.warningArmRadius());
         for (var wall : frame.started()) {
             wallNumber = wall.number;
-            if (!newWarning)
-                announceTitle(
-                        wall.direction.title,
-                        I18n.tr("party.rounds.hole_wall.wall", wall.pattern.title(), wallNumber),
-                        1);
+            Component announcement =
+                    wall.direction
+                            .title
+                            .append(Component.text(" • "))
+                            .append(
+                                    I18n.tr(
+                                            "party.rounds.hole_wall.wall",
+                                            wall.pattern.title(),
+                                            wallNumber));
+            for (Player viewer : services.session().audiencePlayers())
+                viewer.sendActionBar(announcement);
             PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, .6f, 1.2f);
         }
         var walls = flow.active();

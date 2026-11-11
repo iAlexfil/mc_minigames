@@ -25,6 +25,18 @@ record HoleWallBlock(Material material, Shape shape) {
 
     static final HoleWallBlock STONE = new HoleWallBlock(Material.STONE_BRICKS, Shape.FULL);
 
+    HoleWallBlock upperSlab() {
+        Material slab =
+                switch (material) {
+                    case STONE_BRICKS -> Material.STONE_BRICK_SLAB;
+                    case DARK_PRISMARINE -> Material.DARK_PRISMARINE_SLAB;
+                    case PRISMARINE_BRICKS -> Material.PRISMARINE_BRICK_SLAB;
+                    case PURPUR_BLOCK -> Material.PURPUR_SLAB;
+                    default -> throw new IllegalStateException("No matching slab for " + material);
+                };
+        return new HoleWallBlock(slab, Shape.UPPER_SLAB);
+    }
+
     String data(HoleWallPhysics.Direction direction) {
         String properties =
                 switch (shape) {

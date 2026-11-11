@@ -54,21 +54,14 @@ final class HoleWallMapPatterns {
                         double bottom = gate.bottom(), top = bottom + gate.height();
                         if (y >= bottom && y + 1 <= top) block = null;
                         else if (y < bottom) block = full;
-                        else if (y < top && y + 1 > top)
-                            block =
-                                    new HoleWallBlock(
-                                            Material.SMOOTH_STONE_SLAB,
-                                            HoleWallBlock.Shape.UPPER_SLAB);
+                        else if (y < top && y + 1 > top) block = full.upperSlab();
                     }
                 if (kind >= 10 && (u == -4 || u == -3)) {
                     if (y < (kind == 11 ? 1 : 3))
                         block =
                                 new HoleWallBlock(
                                         Material.OAK_FENCE, HoleWallBlock.Shape.FENCE_POST);
-                    else if (kind == 11 && y == 1)
-                        block =
-                                new HoleWallBlock(
-                                        Material.SMOOTH_STONE_SLAB, HoleWallBlock.Shape.UPPER_SLAB);
+                    else if (kind == 11 && y == 1) block = full.upperSlab();
                     else block = full;
                 }
                 if (block != null) cells.add(new HoleWallPattern.Cell(mirror ? -u : u, y, block));

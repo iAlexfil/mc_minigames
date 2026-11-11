@@ -100,6 +100,11 @@ public final class PvpCheck {
         return ids;
     }
     private static void arenaChecks() {
+        Set<PvpArena.Position> courtyard = arenaChecks(PvpArena.Layout.COURTYARD);
+        Set<PvpArena.Position> ruins = arenaChecks(PvpArena.Layout.DESERT_RUINS);
+        check(!courtyard.equals(ruins), "The new map changes cover geometry as well as materials");
+    }
+    private static Set<PvpArena.Position> arenaChecks(PvpArena.Layout layout) {
         Map<PvpArena.Position, Material> blocks = new HashMap<>();
         World[] world = new World[1];
         world[0] = (World) Proxy.newProxyInstance(World.class.getClassLoader(), new Class<?>[] { World.class }, (proxy, method, args) -> {
@@ -113,7 +118,20 @@ public final class PvpCheck {
                 default -> throw new AssertionError("Unexpected world operation: " + method.getName());
             };
         });
-        PvpArena arena = new PvpArena(world[0]);
+        int[] draws = {0};
+        Random selector = new Random(0) {
+            @Override public int nextInt(int bound) {
+                check(bound == 2, "Each map has one of two equally weighted selection slots");
+                draws[0]++;
+                return layout.ordinal();
+            }
+        };
+        PvpArena arena = new PvpArena(world[0], selector);
+        check(arena.layout() == layout && draws[0] == 1, "Both maps can be selected at session creation");
+        for (var language : List.of(java.util.Locale.ENGLISH, java.util.Locale.forLanguageTag("ru"))) {
+            String title = me.petr1furious.potatominigames.i18n.I18n.plain(layout.title(), language);
+            check(!title.contains("potatominigames."), "Both map titles exist in both language catalogs");
+        }
         arena.build();
         check(PvpArena.BORDER_SIZE == 49, "Full-height world border matches the inner arena, containing wind-charge jumps");
         check(blocks.size() < 5000, "Courtyard construction stays below 5000 block writes");
@@ -125,7 +143,7 @@ public final class PvpCheck {
             if (Math.abs(x) != 25 && Math.abs(z) != 25) continue;
             for (int y = 1; y <= PvpArena.WALL_HEIGHT; y++) {
                 check(blocks.get(new PvpArena.Position(x, PvpArena.FLOOR + y, z))
-                        == (y == 1 ? Material.POLISHED_ANDESITE : Material.BARRIER), "Low rim plus continuous barrier perimeter");
+                        == (y > 1 ? Material.BARRIER : layout == PvpArena.Layout.COURTYARD ? Material.POLISHED_ANDESITE : Material.CUT_RED_SANDSTONE), "Low rim plus continuous barrier perimeter");
             }
         }
         System.out.println("PvP/Arms Race courtyard: " + blocks.size() + " blocks, open roof and barrier perimeter verified");
@@ -135,9 +153,18 @@ public final class PvpCheck {
         }
         for (int x = -24; x <= 24; x++) for (int z = -24; z <= 24; z++) {
             Material floor = blocks.get(new PvpArena.Position(x, PvpArena.FLOOR, z));
-            check(floor == Material.POLISHED_ANDESITE || floor == Material.STONE_BRICKS, "49x49 solid floor without holes");
+            check(floor != null && floor != Material.AIR, "49x49 solid floor without holes on both maps");
         }
+        for (boolean east : new boolean[] {false, true}) {
+            var spawn = arena.spawn(east);
+            check(arena.contains(spawn), "Both duel spawns stay inside each map");
+            for (int y = 0; y < 2; y++)
+                check(!blocks.containsKey(new PvpArena.Position(spawn.getBlockX(), spawn.getBlockY() + y, spawn.getBlockZ())),
+                        "Duel spawns have clear headroom");
+        }
+        Map<PvpArena.Position, Material> baseline = new HashMap<>(blocks);
         Block original = block(world[0], 0, 80, 0, blocks);
+        Material originalMaterial = original.getType();
         Block placed = block(world[0], 1, 81, 1, blocks);
         check(!arena.isPlaced(original), "Original arena never mutable");
         check(arena.canPlace(placed), "Can build in play area");
@@ -148,7 +175,19 @@ public final class PvpCheck {
         check(arena.isPlaced(placed), "Player block can be broken");
         arena.reset();
         check(placed.getType() == Material.AIR && !arena.isPlaced(placed), "Reset removes placed blocks and tracking");
-        check(original.getType() == Material.POLISHED_ANDESITE, "Reset preserves original map");
+        check(original.getType() == originalMaterial, "Reset preserves original map");
+        for (var entry : baseline.entrySet())
+            check(entry.getValue() == blocks.get(entry.getKey()), "Round reset preserves every protected map cell");
+        arena.reset();
+        check(arena.layout() == layout && draws[0] == 1, "BO3 resets never reroll the selected map");
+        Set<PvpArena.Position> cover = new HashSet<>();
+        blocks.forEach((pos, material) -> {
+            if (material != Material.AIR && pos.y() > PvpArena.FLOOR && Math.abs(pos.x()) <= 24 && Math.abs(pos.z()) <= 24) {
+                check(pos.y() <= PvpArena.FLOOR + 2, "Protected cover never creates tall camping towers");
+                cover.add(pos);
+            }
+        });
+        return cover;
     }
     private static Block block(World world, int x, int y, int z, Map<PvpArena.Position, Material> blocks) {
         var pos = new PvpArena.Position(x, y, z);

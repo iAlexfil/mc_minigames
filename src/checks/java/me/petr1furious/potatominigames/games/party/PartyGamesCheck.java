@@ -9,8 +9,8 @@ public final class PartyGamesCheck {
         UUID a = new UUID(0, 1), b = new UUID(0, 2), c = new UUID(0, 3);
         var s = new PartyGamesState(List.of(a, b, c), PartyGamesState.MODES, new Random(1));
         check(
-                s.schedule().size() == 13 && new HashSet<>(s.schedule()).size() == 13,
-                "Thirteen unique games");
+                s.schedule().size() == 14 && new HashSet<>(s.schedule()).size() == 14,
+                "Fourteen unique games");
         s.beginRound(0);
         s.disconnect(b);
         s.reconnect(b);

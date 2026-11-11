@@ -106,6 +106,20 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     void beginPlay() {}
 
+    boolean prepareArena() {
+        return true;
+    }
+
+    Component preparationStatus() {
+        return null;
+    }
+
+    protected boolean allowTeleport(PlayerTeleportEvent event) {
+        return false;
+    }
+
+    protected void handleMove(PlayerMoveEvent event) {}
+
     void cleanup() {}
 
     void playerOut(Player player) {}
@@ -250,6 +264,11 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
             context.finish(EndReason.ALL_PLAYERS_LEFT, PartyRoundResult.empty());
             return;
         }
+        if (!playing && !prepareArena()) {
+            countdownEnd++;
+            if (tick % 20 == 0) hud();
+            return;
+        }
         if (!playing && tick >= countdownEnd) {
             countdownFreeze.releaseAll();
             playing = true;
@@ -385,17 +404,19 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     private void hud() {
         if (bar == null || done) return;
-        Component line =
-                !playing
-                        ? I18n.tr(
-                                "party.rounds.starts_in",
-                                Math.max(1, (countdownEnd - tick + 19) / 20))
-                        : status();
+        Component preparing = !playing ? preparationStatus() : null;
+        Component line;
+        if (preparing != null) line = preparing;
+        else if (!playing)
+            line = I18n.tr("party.rounds.starts_in", Math.max(1, (countdownEnd - tick + 19) / 20));
+        else line = status();
         bar.name(text(I18n.tr("party.rounds.status", title, line)));
-        bar.progress(
-                playing
-                        ? Math.clamp(1f - (float) elapsed() / durationTicks, 0, 1)
-                        : Math.clamp(1f - (float) tick / Math.max(1, countdownEnd), 0, 1));
+        if (preparing != null) bar.progress(0);
+        else
+            bar.progress(
+                    playing
+                            ? Math.clamp(1f - (float) elapsed() / durationTicks, 0, 1)
+                            : Math.clamp(1f - (float) tick / Math.max(1, countdownEnd), 0, 1));
         for (Player player : services.session().audiencePlayers()) {
             player.showBossBar(bar);
             services.sidebar().update(player, text(title), sidebarLines(player, line));
@@ -491,7 +512,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
     @Override
     public final void onPlayerMove(PlayerMoveEvent event) {
         if (internalTeleport || done || !alive(event.getPlayer())) return;
-        countdownFreeze.hold(event);
+        if (!countdownFreeze.hold(event)) handleMove(event);
     }
 
     @Override
@@ -504,7 +525,8 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
         if (!internalTeleport
                 && !done
                 && standings != null
-                && standings.alive(event.getPlayer().getUniqueId())) event.setCancelled(true);
+                && standings.alive(event.getPlayer().getUniqueId())
+                && !allowTeleport(event)) event.setCancelled(true);
     }
 
     @Override

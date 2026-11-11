@@ -35,8 +35,10 @@ buildMemory:
   stages: 8
 toolRace:
   durationSeconds: 180
+parkourRace:
+  durationSeconds: 240
 partyGames:
-  modes: "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race,hole_in_the_wall,magic_battle"
+  modes: "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race,hole_in_the_wall,magic_battle,parkour_race"
   rounds: 6
   intermissionSeconds: 4
   armsRaceSeconds: 180

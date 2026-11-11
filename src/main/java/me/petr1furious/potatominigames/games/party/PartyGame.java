@@ -51,6 +51,7 @@ public final class PartyGame implements Minigame {
                 "anvils",
                 "build_memory",
                 "tool_race",
+                "parkour_race",
                 "hole_in_the_wall",
                 "party_games");
     }
@@ -75,6 +76,7 @@ public final class PartyGame implements Minigame {
     @Override
     public Material icon(String mode) {
         return switch (mode) {
+            case "parkour_race" -> Material.CLOCK;
             case "magic_battle" -> Material.BLAZE_ROD;
             case "miners", "tool_race" -> Material.DIAMOND_PICKAXE;
             case "color_floor" -> Material.LIME_CONCRETE;
@@ -99,6 +101,7 @@ public final class PartyGame implements Minigame {
                                         "anvils",
                                         "build_memory",
                                         "tool_race",
+                                        "parkour_race",
                                         "hole_in_the_wall",
                                         "party_games")
                                 .contains(mode)
@@ -113,6 +116,8 @@ public final class PartyGame implements Minigame {
 
     @Override
     public GameSession createSession(SessionServices services, String mode) {
+        if (mode.equals("parkour_race"))
+            return new ParkourRaceSession(services, config, PartyRoundContext.standalone(services));
         if (mode.equals("hole_in_the_wall"))
             return new HoleWallSession(services, config, PartyRoundContext.standalone(services));
         if (mode.equals("party_games")) return new PartyGamesSession(services, config);

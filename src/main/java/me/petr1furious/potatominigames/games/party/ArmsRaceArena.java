@@ -1,19 +1,28 @@
 package me.petr1furious.potatominigames.games.party;
 
+import org.bukkit.Location;
+import org.bukkit.World;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
-import org.bukkit.Location;
-import org.bukkit.World;
 
-/** Uses the protected courtyard, with sixteen spawns around its outside lanes. */
+/** Uses one protected PvP layout for the whole match, with sixteen outer-lane spawns. */
 final class ArmsRaceArena {
     private final PvpArena geometry;
     private final List<Location> spawns = new ArrayList<>();
 
     ArmsRaceArena(World world) {
-        geometry = new PvpArena(world);
+        this(world, PvpArena.Layout.COURTYARD);
+    }
+
+    ArmsRaceArena(World world, Random random) {
+        this(world, PvpArena.Layout.pick(random));
+    }
+
+    ArmsRaceArena(World world, PvpArena.Layout layout) {
+        geometry = new PvpArena(world, layout);
         for (int side : new int[] {-1, 1}) {
             for (int along : new int[] {-19, -10, 0, 10, 19}) {
                 add(world, side * 19, along);
@@ -21,17 +30,40 @@ final class ArmsRaceArena {
             }
         }
     }
+
     private void add(World world, int x, int z) {
         Location location = new Location(world, x + .5, PvpArena.FLOOR + 1, z + .5);
         location.setDirection(geometry.center().toVector().subtract(location.toVector()));
         spawns.add(location);
     }
-    void build() { geometry.build(); }
-    void cleanup() { geometry.reset(); }
-    Location center() { return geometry.center(); }
-    Location spectator() { return geometry.spectator(); }
-    boolean contains(Location location) { return geometry.contains(location); }
-    List<Location> spawns() { return spawns.stream().map(Location::clone).toList(); }
+
+    void build() {
+        geometry.build();
+    }
+
+    PvpArena.Layout layout() {
+        return geometry.layout();
+    }
+
+    void cleanup() {
+        geometry.reset();
+    }
+
+    Location center() {
+        return geometry.center();
+    }
+
+    Location spectator() {
+        return geometry.spectator();
+    }
+
+    boolean contains(Location location) {
+        return geometry.contains(location);
+    }
+
+    List<Location> spawns() {
+        return spawns.stream().map(Location::clone).toList();
+    }
 
     /** Maximise distance to the nearest enemy; shuffle only to break equal-distance choices. */
     Location spawn(List<Location> enemies, Random random) {
@@ -46,7 +78,10 @@ final class ArmsRaceArena {
                 double x = candidate.getX() - enemy.getX(), z = candidate.getZ() - enemy.getZ();
                 nearest = Math.min(nearest, x * x + z * z);
             }
-            if (nearest > bestDistance) { best = candidate; bestDistance = nearest; }
+            if (nearest > bestDistance) {
+                best = candidate;
+                bestDistance = nearest;
+            }
         }
         return best.clone();
     }

@@ -965,14 +965,18 @@ dig through them. Mining them gives the usual capped cobblestone supply, without
 ore loot. Continue mining, dig tunnels, build with cobblestone and use the tracking
 compass to locate
 the nearest surviving opponent. PvP has a **three-minute** phase followed by a
-**one-minute** shrinking border with glowing players. Nametags are hidden before the finale; opponents remain visible when encountered
+**one-minute** shrinking zone with glowing players, stopping at **4×4**. The light-blue
+translucent walls mark the safe area without collision or mining restrictions;
+blocks on both sides remain mineable within the arena. Zone damage applies only
+when the player's position is outside these walls, starting at 2 damage per second
+and increasing after the shrinking minute. Players inside the final area never
+take zone damage. Nametags are hidden before the finale; opponents remain visible when encountered
 in tunnels. Spectral arrows keep their native temporary glowing effect. Detection
 Potions can be drunk after the partitions open to make all other surviving players
 glow for five seconds, visible to everyone. They are finite loot (one bottle),
 and repeated uses refresh rather than stack the duration. In the finale, persistent
 entity outlines reveal survivors even while sneaking or after drinking milk. The
-outline is released on elimination, leaving and round cleanup. Increasing damage after
-the final minute prevents indefinite camping/healing. One life: the last survivor
+outline is released on elimination, leaving and round cleanup. One life: the last survivor
 wins three Party points; simultaneous final deaths draw. Disconnecting withdraws
 a player and reconnecting only spectates. Solo training and aborted matches award
 no points. Deaths show the killer and a three-second death-screen pause.

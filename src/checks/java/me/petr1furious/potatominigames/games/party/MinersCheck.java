@@ -33,7 +33,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 /** Exercise real generated geometry/mutations, loot draws and match rules without a server. */
 public final class MinersCheck {
     public static void main(String[] args) throws ReflectiveOperationException {
-        integration(); quotas(); geometry(); loot(); clock(); gold(); drops(); visibility(); explosions(); drillInteraction(); MinersPerksCheck.run();
+        integration(); quotas(); geometry(); loot(); clock(); zone(); gold(); drops(); visibility(); explosions(); drillInteraction(); MinersPerksCheck.run();
         System.out.println("Party Miners: menu/queue/config, fair private cells and sliced walls, random physical loot pools/ammo, finite gold health, phase protection and bounded ground drops passed");
     }
     private static void integration() {
@@ -161,12 +161,41 @@ public final class MinersCheck {
         round.advance(2601, true);
         check(round.phase() == MinersRound.Phase.FIGHT && round.fighting(), "Opening boxes starts the combat phase exactly once");
         round.advance(6201, true);
-        check(round.phase() == MinersRound.Phase.FINALE && round.pressure(7400) == 0, "Players get the full final minute before anti-stalemate damage");
-        check(round.pressure(7401) == 2 && round.pressure(7501) == 4, "Final pressure increases to prevent indefinite healing/camping");
+        check(round.phase() == MinersRound.Phase.FINALE && round.pressure(7400) == 2, "The storm damages outside players during the shrinking minute");
+        check(round.pressure(7401) == 2 && round.pressure(7501) == 4, "Outside damage increases after shrinking stops");
         round.result(7502); round.advance(10000, true);
         check(round.phase() == MinersRound.Phase.RESULT && !round.mining() && round.deadline() == 7562, "Results hold combat for three seconds without resuming another phase");
         round.done(); round.ready(20000);
         check(round.phase() == MinersRound.Phase.DONE, "An ended round cannot restart through a delayed build callback");
+    }
+    private static void zone() {
+        for (int players = 1; players <= 12; players++) {
+            FakeWorld world = new FakeWorld();
+            MinersArena arena = new MinersArena(world.world, players, new Random(players));
+            Location center = arena.center();
+            double size = arena.borderSize();
+            double last = size;
+            for (long tick : new long[] {0, 1, 600, 1199, 1200, 100000}) {
+                var bounds = MinersZone.bounds(center.getX(), center.getZ(), size, tick, 1200);
+                check(bounds.size() <= last && bounds.size() >= 4, "The storm shrinks monotonically and never below 4 by 4");
+                check(!bounds.outside(center.getX(), center.getZ()), "The safe centre never takes zone damage, even after the final minute");
+                double edge = bounds.size() / 2;
+                check(!bounds.outside(center.getX() + edge, center.getZ())
+                        && bounds.outside(center.getX() + edge + .001, center.getZ())
+                        && bounds.outside(center.getX() - edge - .001, center.getZ())
+                        && bounds.outside(center.getX(), center.getZ() + edge + .001)
+                        && bounds.outside(center.getX(), center.getZ() - edge - .001),
+                        "Damage starts only past the visible boundary on all four sides");
+                if (tick >= 1200) check(bounds.size() == 4, "The final 4 by 4 area remains stable indefinitely");
+                last = bounds.size();
+            }
+            while (!arena.openSlice(4096)) { }
+            Location target = new Location(world.world, 1.5, MinersArena.BASE, 1.5);
+            var finalBounds = MinersZone.bounds(center.getX(), center.getZ(), size, 1200, 1200);
+            check(finalBounds.outside(target.getX(), target.getZ())
+                    && arena.editable(world.block(target.getBlockX(), MinersArena.BASE, target.getBlockZ())),
+                    "Blocks beyond the final storm remain inside the editable mining arena");
+        }
     }
     private static void gold() {
         int[] rolls = new int[3];

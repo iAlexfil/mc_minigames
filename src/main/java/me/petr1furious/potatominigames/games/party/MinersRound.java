@@ -25,7 +25,8 @@ final class MinersRound {
     boolean mining() { return phase == Phase.MINING || fighting(); }
     boolean fighting() { return phase == Phase.FIGHT || phase == Phase.FINALE; }
     long secondsLeft(long tick) { return Math.max(0, (deadline - tick + 19) / 20); }
-    double pressure(long tick) { return phase == Phase.FINALE && tick >= deadline ? 2 + (tick - deadline) / 100 * 2 : 0; }
+    /** Only applied outside the storm; the final safe area never takes this damage. */
+    double pressure(long tick) { return phase == Phase.FINALE ? 2 + Math.max(0, tick - deadline) / 100 * 2 : 0; }
     void result(long tick) { if (phase != Phase.DONE && phase != Phase.RESULT) { phase = Phase.RESULT; deadline = tick + DeathPause.TICKS; } }
     void done() { phase = Phase.DONE; }
 }

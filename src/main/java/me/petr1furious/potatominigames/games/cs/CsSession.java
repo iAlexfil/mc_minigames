@@ -257,6 +257,8 @@ final class CsSession implements GameSession, Listener {
 
     @Override
     public void onStart() throws CommandFailure {
+        // Keep the generic color teams hidden too, including during roster refreshes.
+        services.sidebar().setNameTagsVisible(false);
         List<me.petr1furious.potatominigames.core.player.Participant> roster =
                 new ArrayList<>(services.participants().all());
         if (roster.isEmpty() || roster.size() > 10 || !services.isTest() && roster.size() < 2)
@@ -1176,14 +1178,7 @@ final class CsSession implements GameSession, Listener {
                                         TimeFormat.clock(left)));
             services.sidebar().update(p, tr("name"), lines);
             p.showBossBar(bar);
-            var board = p.getScoreboard();
-            var tags = board.getTeam("cs_hidden_names");
-            if (tags == null) tags = board.registerNewTeam("cs_hidden_names");
-            tags.setOption(
-                    org.bukkit.scoreboard.Team.Option.NAME_TAG_VISIBILITY,
-                    org.bukkit.scoreboard.Team.OptionStatus.NEVER);
-            tags.setAllowFriendlyFire(true);
-            for (String username : names.values()) tags.addEntry(username);
+            CsNameTags.update(p.getScoreboard(), match, names, a == null ? null : a.team);
         }
     }
 

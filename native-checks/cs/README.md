@@ -25,7 +25,8 @@ transport and cannot replace an actual client visual test. Success also logs
 `CS_SCOPE_SMOKE_PASS`. To check the shared native metadata adapter too, compile
 `../finals/FinalsTeammateGlowSmoke.java` into the same fixture JAR and launch with
 `-Dcs.smoke.includeFinalsGlow=true`; success logs `CS_SHARED_GLOW_SMOKE_PASS`.
-`CsVisualSmoke` checks real cosmetic armor components and
+`CsVisualSmoke` checks private scoreboard name visibility for both teams and
+spectators, real cosmetic armor components and
 captures fire block packets to verify real terrain stays unchanged, shared fire
 cells survive overlap, late spectators see fire, and cleanup restores the current
 background. Success also logs `CS_VISUAL_SMOKE_PASS`. Repeat on 26.2 and 26.3 when preparing the PR; keep console logs and
@@ -69,6 +70,9 @@ Client playtest before merging:
 - With two allies and an enemy, check that only allies have outlines, including
   through walls, and that smoke/flash suppress them. Check death, reconnect and
   round/end cleanup; other modes must retain their original glow behavior.
+- Only allied overhead names should be visible, including after halftime and
+  reconnect. Enemy names remain hidden; external spectators receive no allied
+  names. Smoke/flash entity hiding must also hide the corresponding nameplate.
 - Walk into/out of smoke and through overlapping smoke and flashes. The cloud
   should obscure the environment; bullets must still cross it, and visual
   intensity should be checked on an actual client.
@@ -84,7 +88,8 @@ Client playtest before merging:
 On 2026-11-12, full Gradle builds passed on both 26.2 and 26.3; the final CS
 suite passed **2,003 checks** on each API, and both i18n gates passed. Native
 Paper 26.2 #135 and 26.3 #249 runs passed flash detonation, scope attributes and
-restoration, cosmetic armor, fire overlays/overlap/cleanup, plus **43 shared
+restoration, cosmetic armor, private ally/enemy/spectator nametag settings,
+fire overlays/overlap/cleanup, plus **43 shared
 teammate-glow packet assertions** per version. Both isolated servers shut down
 cleanly. Player transport is simulated; an actual client visual playtest remains
 outstanding, especially FOV Effects, smoke density and floor-fire presentation.
@@ -92,7 +97,7 @@ outstanding, especially FOV Effects, smoke density and floor-fire presentation.
 Production JAR SHA-256 (identical class/resource payload for both classifiers):
 
 ```text
-4f6f4c0b4ed0cf02f67139b8a517d9703ec6096f7b509c749e77612855442b58
+605c3848558b4bb65067463b418000bec90d0a73445ae05c179a8510373fb81d
 ```
 
 For the plain Paper runs only, the cached ASP API 4.2.0-SNAPSHOT classes were
@@ -102,8 +107,8 @@ in the production artifacts or source change. On AdvancedSlimePaper, use the
 unmodified production JAR. Tested copy SHA-256 values:
 
 ```text
-26.2 03a7db4b71d57d46a9139f157989a845c7ee9edf8943a1b7972f03febda313e3
-26.3 347635a16313bac1867df1a70966d20e6a704410f2cc2064625b6d87f29d33d6
+26.2 fb5c614f23ddb24ed1a4914d9cc381687c9d58c8091d85e8e50f4915b579f6ad
+26.3 fb5c614f23ddb24ed1a4914d9cc381687c9d58c8091d85e8e50f4915b579f6ad
 ```
 
 Build logs, native console logs, runtime worlds and generated binaries are kept

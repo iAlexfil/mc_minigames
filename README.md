@@ -1552,7 +1552,8 @@ Drop your occupied gun slot before walking over a replacement. The radar uses th
 actual imported map: teammates are always shown, enemies only when a living
 teammate sees them, with a brief stationary last-seen marker. Smoke and flashes
 prevent spotting; CT learn the bomb location after seeing it. Ordinary Minecraft
-nameplates are hidden. Native player outlines are sent only to allies, refreshed
+nameplates are visible only for teammates, including after halftime; enemy names
+remain hidden. Native player outlines are sent only to allies, refreshed
 every 0.5 seconds and suppressed across smoke or while flashed; enemies and
 outsiders never receive the override. Outlines are cleared on leaving, round reset
 and match end. The sidebar shows T/CT alive counts; `/cs score` lists each

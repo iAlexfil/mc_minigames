@@ -18,6 +18,62 @@ final class CsVisualSmoke {
     static void run(ClassLoader loader, World world) throws Exception {
         floor(loader, world);
         armour(loader);
+        nameTags(loader);
+    }
+
+    private static void nameTags(ClassLoader loader) throws Exception {
+        UUID red = UUID.randomUUID(), ally = UUID.randomUUID(), blue = UUID.randomUUID();
+        Class<?> model = Class.forName(PKG + "CsMatch", true, loader);
+        var constructor =
+                model.getDeclaredConstructor(
+                        Map.class,
+                        int.class,
+                        int.class,
+                        int.class,
+                        int.class,
+                        int.class,
+                        boolean.class);
+        constructor.setAccessible(true);
+        Object match =
+                constructor.newInstance(
+                        Map.of(red, 0, ally, 0, blue, 1), 12, 2, 100, 20, 10, false);
+        Method update =
+                Class.forName(PKG + "CsNameTags", true, loader)
+                        .getDeclaredMethod(
+                                "update",
+                                org.bukkit.scoreboard.Scoreboard.class,
+                                model,
+                                Map.class,
+                                Integer.class);
+        update.setAccessible(true);
+        Map<UUID, String> names = Map.of(red, "Red", ally, "Ally", blue, "Blue");
+        for (Integer viewerTeam : Arrays.asList(0, 1, null)) {
+            var board = Bukkit.getScoreboardManager().getNewScoreboard();
+            update.invoke(null, board, match, names, viewerTeam);
+            for (String name : names.values()) {
+                boolean friendly =
+                        viewerTeam != null && (name.equals("Blue") ? 1 : 0) == viewerTeam;
+                require(
+                        board.getEntryTeam(name)
+                                        .getOption(
+                                                org.bukkit.scoreboard.Team.Option
+                                                        .NAME_TAG_VISIBILITY)
+                                == (friendly
+                                        ? org.bukkit.scoreboard.Team.OptionStatus.ALWAYS
+                                        : org.bukkit.scoreboard.Team.OptionStatus.NEVER),
+                        "private scoreboard reveals only the viewer's teammates");
+            }
+            // Switching a viewer's allegiance must move entries out of the visible team.
+            update.invoke(null, board, match, names, null);
+            for (String name : names.values())
+                require(
+                        board.getEntryTeam(name)
+                                        .getOption(
+                                                org.bukkit.scoreboard.Team.Option
+                                                        .NAME_TAG_VISIBILITY)
+                                == org.bukkit.scoreboard.Team.OptionStatus.NEVER,
+                        "spectators inherit no visible team names");
+        }
     }
 
     private static void floor(ClassLoader loader, World world) throws Exception {

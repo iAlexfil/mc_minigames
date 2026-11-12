@@ -16,6 +16,7 @@ import java.util.*;
 
 public final class HoleWallCheck {
     public static void main(String[] args) throws Exception {
+        me.petr1furious.potatominigames.core.hud.SidebarVisibilityCheck.run();
         centerRequiresAction();
         directionCoverage();
         randomPatternOrder();

@@ -5,6 +5,8 @@ durationSeconds: 360
 vaultOpenSeconds: 5
 cashoutSeconds: 40
 stealSeconds: 5
+# Other team sizes use this automatic respawn delay. Initial 3v3 matches unlock
+# Space after 8 seconds; three-player team wipes respawn together after 16 seconds.
 respawnSeconds: 5
 protectionSeconds: 2
 cashoutValue: 10000

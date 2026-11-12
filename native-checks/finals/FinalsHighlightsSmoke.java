@@ -1,6 +1,7 @@
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.*;
@@ -49,6 +50,9 @@ public final class FinalsHighlightsSmoke {
                 int.class, Collection.class, Map.class, Function.class);
         Method timed = method(type, "update", FinalsMapArena.class, FinalsState.Phase.class,
                 int.class, long.class, long.class, Collection.class, Map.class, Function.class);
+        Method downedUpdate = method(type, "update", FinalsMapArena.class, FinalsState.Phase.class,
+                int.class, long.class, long.class, Collection.class, Map.class, Function.class,
+                Predicate.class);
         Method remove = method(type, "remove", UUID.class);
         Method clear = method(type, "clear");
         SpawnObserver observer = new SpawnObserver();
@@ -181,17 +185,50 @@ public final class FinalsHighlightsSmoke {
             bob.dead = true;
             bob.mode = GameMode.SPECTATOR;
             bob.location.add(0, 10, 0);
-            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
+            Predicate<Player> downed = player -> player.getUniqueId().equals(bob.id)
+                    || player.getUniqueId().equals(eve.id);
+            Set<Display> beforeDowned = allActive(fixtures);
+            int beforeDownedSpawns = observer.spawned.size();
+            invoke(downedUpdate, highlights, arena, FinalsState.Phase.CASHOUT, 0,
+                    -1L, -1L, players, teams, positions, downed);
             require(hasLabel(alice, bob.name) && label(alice, bob.name) == ally,
                     "A teammate keeps its existing private label throughout death and respawn");
+            require(plain(ally).equals("✚ " + bob.name + " • Downed"),
+                    "Native English downed text contains the allied name and status without health");
+            require(!hasLabel(alice, eve.name) && !hasLabel(eve, bob.name)
+                            && !hasLabel(frank, bob.name) && outsider.active().isEmpty(),
+                    "Downed status never reveals opposing-team names or health to enemies or outsiders");
             close(ally.getLocation().getY(), death.getY() + 2.4,
                     "A respawning teammate's label stays at the death site, not the spectator camera");
+            Location beforeStatueMove = ally.getLocation();
+            death.add(2.5, -.5, -3.25);
+            alice.locale = Locale.forLanguageTag("ru");
+            invoke(downedUpdate, highlights, arena, FinalsState.Phase.CASHOUT, 0,
+                    -1L, -1L, players, teams, positions, downed);
+            require(label(alice, bob.name) == ally
+                            && plain(ally).equals("✚ " + bob.name + " • Повержен"),
+                    "Native Russian downed text changes language while reusing the same private display");
+            moved(ally, beforeStatueMove, 2.5, -.5, -3.25,
+                    "The native downed label follows the moving statue rather than its owner's camera");
+            require(beforeDowned.equals(allActive(fixtures))
+                            && observer.spawned.size() == beforeDownedSpawns,
+                    "Downed status, statue movement and locale changes never allocate replacement entities");
+            alice.locale = Locale.ENGLISH;
             deathLocations.remove(bob.id);
             bob.dead = false;
             bob.mode = GameMode.SURVIVAL;
             invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
+            require(label(alice, bob.name) == ally && plain(ally).equals("◆ " + bob.name),
+                    "Revival removes the downed status and resumes the same ordinary allied name display");
             close(ally.getLocation().getY(), bob.location.getY() + 2.4,
                     "Respawn resumes tracking the teammate's live position");
+            bob.dead = true;
+            bob.mode = GameMode.SPECTATOR;
+            deathLocations.put(bob.id, bob.location.clone());
+            invoke(downedUpdate, highlights, arena, FinalsState.Phase.CARRIED, -1,
+                    -1L, -1L, players, teams, positions, downed);
+            require(label(alice, bob.name) == ally && plain(ally).contains("Downed"),
+                    "A later elimination reuses the same marker before downed-player departure cleanup");
             Set<Display> bobDisplays = bob.active(), eveDisplays = eve.active();
             invoke(remove, highlights, bob.id);
             require(bob.active().isEmpty() && bobDisplays.stream().noneMatch(Entity::isValid),

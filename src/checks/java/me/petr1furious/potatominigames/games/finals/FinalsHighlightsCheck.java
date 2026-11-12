@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Server-independent objective and teammate visibility regressions. */
 public final class FinalsHighlightsCheck {
@@ -53,6 +54,7 @@ public final class FinalsHighlightsCheck {
         movingGeometryAndSourceSafety();
         fractionalCashoutOutlineAlignment();
         timedObjectiveLabels();
+        downedTeammateLabels();
         System.out.println("FinalsHighlightsCheck: " + checks + " checks passed");
     }
 
@@ -91,6 +93,60 @@ public final class FinalsHighlightsCheck {
     private static String plain(Component text, Locale locale) {
         return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                 .serialize(me.petr1furious.potatominigames.i18n.I18n.render(text, locale));
+    }
+
+    private static void downedTeammateLabels() throws Exception {
+        Method downedMarkers = markers.getDeclaringClass().getDeclaredMethod("markers",
+                FinalsMapArena.class, FinalsState.Phase.class, int.class, long.class, long.class,
+                Player.class, Collection.class, Map.class, Function.class, Predicate.class);
+        downedMarkers.setAccessible(true);
+        Fixture f = new Fixture();
+        Player ally = f.player("fallen-ally", f.arena.world, 3, 4);
+        Player enemy = f.player("fallen-enemy", f.arena.world, 5, 6);
+        f.players = List.of(f.viewer, ally, enemy);
+        f.teams.put(ally.getUniqueId(), 0);
+        f.teams.put(enemy.getUniqueId(), 1);
+        Location statue = new Location(f.arena.world, 30.25, 66.5, 40.75);
+        Location source = statue.clone();
+        Function<Player, Location> positions = player -> {
+            require(player == ally, "Enemy and self positions are never queried for allied downed markers");
+            return statue;
+        };
+        Set<UUID> downed = new HashSet<>(Set.of(ally.getUniqueId(), enemy.getUniqueId()));
+        Predicate<Player> isDowned = player -> {
+            require(player == ally, "Enemy and self downed states are never queried for private labels");
+            return downed.contains(player.getUniqueId());
+        };
+        String allyKey = "teammate-" + ally.getUniqueId();
+        var view = keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                f.viewer, f.players, f.teams, positions, isDowned));
+        require(view.keySet().equals(Set.of("vault", allyKey)),
+                "Downed status never reveals an enemy or self marker");
+        Object marker = view.get(allyKey);
+        Component label = (Component) value(marker, "label");
+        require(plain(label, Locale.ENGLISH).equals("✚ fallen-ally • Downed"),
+                "English downed labels contain only the teammate name and localized status, without health");
+        require(plain(label, Locale.forLanguageTag("ru")).equals("✚ fallen-ally • Повержен"),
+                "Russian downed labels localize the status without exposing health");
+        require(value(marker, "location").equals(source) && statue.equals(source),
+                "Downed markers use the supplied statue position without mutating it");
+        statue.add(2.5, -.5, -3.25);
+        var moved = keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                f.viewer, f.players, f.teams, positions, isDowned));
+        require(value(moved.get(allyKey), "location").equals(statue),
+                "Downed markers follow a carried or thrown statue instead of the spectator camera");
+        require(value(marker, "location").equals(source),
+                "An earlier marker retains an independent snapshot of the statue position");
+        downed.clear();
+        var revived = keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                f.viewer, f.players, f.teams, positions, isDowned));
+        require(plain((Component) value(revived.get(allyKey), "label"), Locale.ENGLISH)
+                        .equals("◆ fallen-ally"),
+                "Revival changes the existing teammate key back to the ordinary name-only label");
+        f.players = List.of(f.viewer, enemy);
+        require(keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                        f.viewer, f.players, f.teams, positions, isDowned)).keySet().equals(Set.of("vault")),
+                "Removing a downed contestant removes their descriptor while keeping enemies private");
     }
 
     private static void phaseVisibility() throws Exception {

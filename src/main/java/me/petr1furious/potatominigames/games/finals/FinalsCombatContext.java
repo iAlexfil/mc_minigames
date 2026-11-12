@@ -49,6 +49,10 @@ interface FinalsCombatContext {
         return false;
     }
 
+    default boolean gadgetsBlocked(Player player) {
+        return false;
+    }
+
     default double deviceDistance(Player source, Location eye, Vector direction, double reach) {
         return Double.POSITIVE_INFINITY;
     }

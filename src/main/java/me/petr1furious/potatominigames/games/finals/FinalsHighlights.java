@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Session-owned, private objective outlines and ally name markers. */
 final class FinalsHighlights {
@@ -77,12 +78,20 @@ final class FinalsHighlights {
     void update(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
             long vaultSeconds, long cashoutSeconds, Collection<Player> players,
             Map<UUID, Integer> teams, Function<Player, Location> teammateLocation) {
+        update(arena, phase, activeStation, vaultSeconds, cashoutSeconds, players, teams,
+                teammateLocation, ignored -> false);
+    }
+
+    void update(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
+            long vaultSeconds, long cashoutSeconds, Collection<Player> players,
+            Map<UUID, Integer> teams, Function<Player, Location> teammateLocation,
+            Predicate<Player> downed) {
         teammateGlow.update(arena.world(),
                 phase == FinalsState.Phase.FINISHED ? List.of() : players, teams);
         Set<UUID> present = new HashSet<>();
         for (Player player : players) {
             List<Marker> markers = markers(arena, phase, activeStation, vaultSeconds, cashoutSeconds,
-                    player, players, teams, teammateLocation);
+                    player, players, teams, teammateLocation, downed);
             if (markers.isEmpty()) continue;
             UUID id = player.getUniqueId();
             present.add(id);
@@ -116,6 +125,14 @@ final class FinalsHighlights {
     static List<Marker> markers(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
             long vaultSeconds, long cashoutSeconds, Player viewer, Collection<Player> players,
             Map<UUID, Integer> teams, Function<Player, Location> teammateLocation) {
+        return markers(arena, phase, activeStation, vaultSeconds, cashoutSeconds, viewer,
+                players, teams, teammateLocation, ignored -> false);
+    }
+
+    static List<Marker> markers(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
+            long vaultSeconds, long cashoutSeconds, Player viewer, Collection<Player> players,
+            Map<UUID, Integer> teams, Function<Player, Location> teammateLocation,
+            Predicate<Player> downed) {
         Integer team = teams.get(viewer.getUniqueId());
         if (phase == FinalsState.Phase.FINISHED
                 || team == null
@@ -160,7 +177,8 @@ final class FinalsHighlights {
                     new Marker(
                             "teammate-" + id,
                             point.clone(),
-                            I18n.tr("finals.highlight.teammate", target.getName()),
+                            I18n.tr(downed.test(target) ? "finals.highlight.downed"
+                                    : "finals.highlight.teammate", target.getName()),
                             team == 0 ? NamedTextColor.RED : NamedTextColor.BLUE,
                             null));
         }

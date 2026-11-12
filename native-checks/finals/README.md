@@ -44,8 +44,23 @@ with goo and fluids, full-body pull collisions, directional Mesh protection, and
 cleanup. Player transport is simulated; collision shapes, blocks and display
 entities use the actual server implementation.
 
+`FinalsRespawnInputSmoke.run(smokePlugin, mainPlugin)` checks real Paper input
+events for frozen spectators: Space rising edges, held-key suppression, old
+connections, re-tracking during spawn, and listener cleanup.
+`FinalsRevivesSmoke.run(smokePlugin, mainPlugin)` exercises physical revive
+statues, native item collision and interaction targets, carry/drop/throw,
+hopper protection, manual channels, carried-statue Defibrillator use and cleanup.
+The session/loadout suite also covers the eight-second Space unlock without
+automatic respawn and the 16-second automatic team-wipe wave.
+
 The combined run on 2026-11-12 passed against main JAR SHA-256
 `9620f6596571e9a238f4a62704fb2f5628e9cae75fdac57500c9f8c682654c37`:
 115 highlight, 7 name-tag, 43 teammate-glow, 39 Tab, 17 point-removal,
 88 cashout-physics, 36 thrown-deposit, 444 loadout/team-wipe,
 58 specialization/gadget, 12 drop-input and 32 asynchronous-map assertions.
+
+The subsequent 3v3 revival run on 2026-11-12 passed **975 native assertions**
+against JAR SHA-256 `f8735c583247fd9bbc39937097ca0e1fdbb59805391c67273e8170b3633d037f`.
+This included 473 session/loadout assertions, 36 physical revival assertions,
+12 Space-input assertions and 122 highlight assertions, alongside the existing
+physics, throwing, equipment, visibility and asynchronous-map suites.

@@ -104,7 +104,10 @@ public final class FinalsLoadoutSmoke {
         FakePlayer light=new FakePlayer("NativeLight",initial,28,.27f,.14f);
         FakePlayer medium=new FakePlayer("NativeMedium",initial,32,.31f,.16f);
         FakePlayer heavy=new FakePlayer("NativeHeavy",initial,36,.29f,.18f);
-        for(FakePlayer player:List.of(light,medium,heavy))players.put(player.id,player);
+        FakePlayer opponentA=new FakePlayer("NativeOpponentA",initial,20,.2f,.1f);
+        FakePlayer opponentB=new FakePlayer("NativeOpponentB",initial,20,.2f,.1f);
+        FakePlayer opponentC=new FakePlayer("NativeOpponentC",initial,20,.2f,.1f);
+        for(FakePlayer player:List.of(light,medium,opponentA,heavy,opponentB,opponentC))players.put(player.id,player);
         serverField=Bukkit.class.getDeclaredField("server");serverField.setAccessible(true);
         preloadProductionClasses();
         Server proxy=(Server)Proxy.newProxyInstance(Server.class.getClassLoader(),new Class<?>[]{Server.class},(receiver,method,args)->{
@@ -154,6 +157,7 @@ public final class FinalsLoadoutSmoke {
             call(ticker,"cancel");
             require((boolean)call(ticker,"isCancelled"),"Manual countdown checks disable the scheduled ticker to avoid interference");
             require(((Map<?,?>)get(session,"roster")).size()==players.size(),"Real onStart builds the full participant roster");
+            require((boolean)get(session,"threeVsThree"),"The actual initial six-player roster enables three-v-three revival rules");
             require(get(session,"world") instanceof World,"Real onStart creates the native match world");
             // These packet/display helpers have independent native coverage. Do not create
             // world entities while the scoped lookup-only Server proxy drives manual ticks.
@@ -367,9 +371,12 @@ public final class FinalsLoadoutSmoke {
         Map<UUID,Location> positions=(Map<UUID,Location>)get(session,"teamRespawnPositions");
         long base=(long)get(session,"tick")+100;
         try {
-            roster.replaceAll((id,team)->0);
+            roster.replaceAll((id,team)->cohort.stream().anyMatch(player->player.id.equals(id))?0:1);
             set(session,"state",make("FinalsState",new LinkedHashMap<>(roster),base,get(session,"rules")));
+            set(session,"tick",base);
             require(respawns.isEmpty(),"The native wipe fixture begins with three living contestants");
+            downedSpaceChecks(first,second);
+            base=(long)get(session,"tick")+100;
             for(int wave=0;wave<2;wave++) {
                 long start=base+wave*500;
                 for(int index=0;index<cohort.size();index++) {
@@ -380,12 +387,12 @@ public final class FinalsLoadoutSmoke {
                                 DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true);
                         call(session,"onPlayerDeath",event);return null;
                     });
-                    if(index<2)require(respawns.get(victim.id)==start+index*10+100,
-                            "The first two actual death handlers retain normal five-second respawns");
+                    if(index<2)require(respawns.get(victim.id)==start+index*10+160,
+                            "The first two actual death handlers unlock Space eight seconds later");
                 }
-                long deadline=start+260;
+                long deadline=start+340;
                 require(cohort.stream().allMatch(player->Objects.equals(respawns.get(player.id),deadline)),
-                        "The third native death handler synchronizes all three to last death plus twelve seconds");
+                        "The third native death handler synchronizes all three to last death plus sixteen seconds");
                 set(session,"tick",deadline-1);
                 Location before=first.location.clone();
                 nativeAccess(()->{call(session,"spawn",first.player);return null;});
@@ -436,6 +443,98 @@ public final class FinalsLoadoutSmoke {
             roster.clear();roster.putAll(previousRoster);
             set(session,"state",previousState);
         }
+    }
+
+    @SuppressWarnings("unchecked") private void downedSpaceChecks(FakePlayer target,FakePlayer ally)throws Exception {
+        long start=(long)get(session,"tick");
+        Map<UUID,Long> respawns=(Map<UUID,Long>)get(session,"respawnAt");
+        nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+        require(respawns.get(target.id)==start+160,"A real three-v-three death records an eight-second Space unlock");
+        Object revival=get(session,"revives");
+        Object statue=((Map<?,?>)get(revival,"statues")).get(target.id);
+        require(statue!=null&&((Entity)get(statue,"item")).isValid(),"A real elimination creates its native teammate statue");
+        set(session,"tick",start+159);
+        nativeAccess(()->{call(session,"requestRespawn",target.id);return null;});
+        require(respawns.containsKey(target.id),"Space before the eighth second cannot respawn the eliminated player");
+        // These helpers mutate native entities. Pause them only while the lookup transport
+        // drives the real tick; player spawning must never execute under that proxy.
+        Object cashouts=get(session,"cashouts");
+        target.mode=GameMode.SPECTATOR;
+        set(session,"revives",null);set(session,"cashouts",null);
+        try {
+            withPlayerLookup(session,"tick");
+            require((long)get(session,"tick")==start+160&&respawns.containsKey(target.id),
+                    "The actual eighth-second tick unlocks Space without automatically spawning");
+            set(session,"tick",start+400);
+            withPlayerLookup(session,"tick");
+            require(respawns.containsKey(target.id),"An eliminated player remains downed well after eight seconds without pressing Space");
+        } finally {set(session,"revives",revival);set(session,"cashouts",cashouts);}
+        require(((Entity)get(statue,"item")).isValid(),"The statue remains revivable indefinitely after Space unlocks");
+        withNativePlayerLookup(session,"requestRespawn",target,target.id);
+        require(!respawns.containsKey(target.id)&&target.mode==GameMode.SURVIVAL,
+                "The actual ready Space callback performs the equipped native respawn");
+        require(!((Map<?,?>)get(revival,"statues")).containsKey(target.id),"Space consumes the player's statue and pending revive state");
+
+        set(session,"tick",(long)get(session,"tick")+100);
+        nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+        Object context=call(session,"reviveContext");
+        Location point=(Location)call(revival,"location",target.id);
+        require((boolean)withNativePlayerLookup(context,"complete",target,target.id,ally.player,point,true),
+                "The accepted defibrillator rebuild callback reaches the real Session completion path");
+        close(target.attribute.getHealth(),target.attribute.getAttribute(Attribute.MAX_HEALTH).getValue()/2,
+                "A completed defibrillator rebuild restores exactly half class health");
+        Object combat=call(session,"combatContext");
+        require((boolean)call(combat,"gadgetsBlocked",target.player)&&!(boolean)call(combat,"weaponBlocked",target.player),
+                "Defibrillator sickness blocks gadgets while preserving primary weapons");
+        long sickness=(long)get(session,"tick")+100;
+        set(session,"tick",sickness-1);
+        require((boolean)call(combat,"gadgetsBlocked",target.player),"Gadget sickness lasts its complete five seconds");
+        set(session,"tick",sickness);
+        require(!(boolean)call(combat,"gadgetsBlocked",target.player),"Gadget sickness ends on the exact five-second boundary");
+
+        set(session,"threeVsThree",false);
+        Location allyBefore=ally.location.clone();
+        try {
+            nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                    DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+            ally.location=target.location.clone();
+            require((boolean)nativeAccess(()->call(combat,"revive",target.player,ally.player)),
+                    "Other match sizes retain the original instant Defibrillator completion path");
+            require(!respawns.containsKey(target.id),"The legacy instant revive consumes its ordinary respawn timer");
+            close(target.attribute.getHealth(),target.attribute.getAttribute(Attribute.MAX_HEALTH).getValue(),
+                    "The legacy instant revive retains full class health");
+        } finally {set(session,"threeVsThree",true);ally.location=allyBefore;}
+
+        Object geometry=get(session,"arena");
+        Location cell=(Location)call(geometry,"spawn",0,0);
+        World world=cell.getWorld();int x=cell.getBlockX(),y=cell.getBlockY(),z=cell.getBlockZ();
+        var wall=world.getBlockAt(x+1,y,z).getState();
+        var ceiling=world.getBlockAt(x,y+2,z).getState();
+        try {
+            nativeAccess(()->{wall.getBlock().setType(Material.STONE,false);ceiling.getBlock().setType(Material.STONE,false);return null;});
+            Location edge=new Location(world,x+.95,y+.75,z+.5);
+            Location safe=(Location)nativeAccess(()->call(session,"safeRevivePoint",target.id,edge));
+            close(safe.getX(),x+.5,"Revival centers the complete player body away from an adjacent wall");
+            close(safe.getY(),y,"Revival removes fractional height before checking ceiling clearance");
+            require(safe.getX()+.3<x+1&&safe.getY()+1.8<y+2,
+                    "The actual returned standing position clears both the wall and low ceiling");
+        } finally {nativeAccess(()->{wall.update(true,false);ceiling.update(true,false);return null;});}
+    }
+
+    /** Resolve one fake player, then restore CraftServer before native equipment/world access. */
+    private Object withNativePlayerLookup(Object owner,String method,FakePlayer target,Object... args)throws Exception {
+        Server previous=Bukkit.getServer();
+        Server oneShot=(Server)Proxy.newProxyInstance(Server.class.getClassLoader(),new Class<?>[]{Server.class},(receiver,operation,values)->{
+            if(operation.getName().equals("getPlayer")&&values[0].equals(target.id)) {
+                serverField.set(null,originalServer);return target.player;
+            }
+            try{return operation.invoke(originalServer,values);}
+            catch(InvocationTargetException failure){throw failure.getCause();}
+        });
+        serverField.set(null,oneShot);
+        try{return call(owner,method,args);}finally{serverField.set(null,previous);}
     }
 
     private String nativeText(ItemStack item){

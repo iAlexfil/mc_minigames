@@ -263,6 +263,7 @@ for ((taskName, checkClass) in mapOf(
     "checkFinalsCashboxFlight" to "FinalsCashboxFlightCheck",
     "checkFinalsLoadouts" to "FinalsLoadoutsCheck",
     "checkFinalsTeamWipes" to "FinalsTeamWipesCheck",
+    "checkFinalsRevives" to "FinalsRevivesCheck",
     "checkFinalsCashoutPhysics" to "FinalsCashoutPhysicsCheck")) {
     val finalsCheck = tasks.register<JavaExec>(taskName) {
         dependsOn(checks.classesTaskName)

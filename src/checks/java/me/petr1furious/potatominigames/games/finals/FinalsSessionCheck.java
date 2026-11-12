@@ -71,6 +71,7 @@ public final class FinalsSessionCheck {
         deathAndRejoin();
         creditedEnemyKills();
         teamWipeDeadlines();
+        downedModeAndEligibility();
         legacyItemsAndNativeMutation();
         customDamageAndActionGates();
         menuAndEquipmentSlotGates();
@@ -314,9 +315,9 @@ public final class FinalsSessionCheck {
                 "individual deaths keep the ordinary five-second schedule before a wipe");
         set(f.session, "tick", 120L);
         f.session.onPlayerDeath(death(f.blueMate.player));
-        check(f.respawns().values().stream().allMatch(deadline -> deadline == 360L),
-                "the third teammate death synchronizes all three timers to last death plus240 ticks");
-        set(f.session, "tick", 359L);
+        check(f.respawns().values().stream().allMatch(deadline -> deadline == 440L),
+                "the third teammate death synchronizes all three timers to last death plus320 ticks");
+        set(f.session, "tick", 439L);
         var spawn = FinalsSession.class.getDeclaredMethod("spawn", Player.class);
         spawn.setAccessible(true);
         spawn.invoke(f.session, f.red.player);
@@ -324,10 +325,10 @@ public final class FinalsSessionCheck {
         f.respawns().remove(RED);
         check(!context(f.session).revive(f.blue.player, f.red.player),
                 "revive rejects wipe-locked teammates even if another path makes a reviver active");
-        f.respawns().put(RED, 360L);
+        f.respawns().put(RED, 440L);
         f.connected().remove(BLUE_MATE);
-        f.state.disconnect(BLUE_MATE, 359L);
-        set(f.session, "tick", 360L);
+        f.state.disconnect(BLUE_MATE, 439L);
+        set(f.session, "tick", 440L);
         var prepare = FinalsSession.class.getDeclaredMethod("prepareTeamRespawns");
         prepare.setAccessible(true);
         prepare.invoke(f.session);
@@ -336,11 +337,47 @@ public final class FinalsSessionCheck {
                 "one chosen team spawn is cached identically for the entire cohort including an offline member");
         f.blueMate.dead = true;
         f.session.onParticipantRejoin(f.blueMate.player);
-        check(f.respawns().get(BLUE_MATE) == 360L && positions.containsKey(BLUE_MATE),
+        check(f.respawns().get(BLUE_MATE) == 440L && positions.containsKey(BLUE_MATE),
                 "late reconnect retains its completed wave and shared anchor instead of adding five more seconds");
         f.connected().clear();
         f.session.onEnd(me.petr1furious.potatominigames.core.game.EndReason.ABORTED);
         check(positions.isEmpty(), "match cleanup releases pending shared-spawn anchors");
+    }
+
+    private static void downedModeAndEligibility() throws Exception {
+        FinalsSession exact = sessionFromStart(5, 6);
+        check((Boolean) field(exact, "threeVsThree").get(exact),
+                "only the actual six-player three-per-team start enables downed statues");
+        FinalsSession uneven = sessionFromStart(5, 5);
+        FinalsSession larger = sessionFromStart(5, 8);
+        check(!(Boolean) field(uneven, "threeVsThree").get(uneven)
+                        && !(Boolean) field(larger, "threeVsThree").get(larger),
+                "uneven and larger initial rosters retain normal respawn behavior");
+        Fixture normal = new Fixture();
+        normal.session.onPlayerDeath(death(normal.blue.player));
+        check(context(normal.session).awaitingRespawn(normal.blue.player),
+                "actual deaths outside three-v-three still qualify for the original instant Defibrillator");
+        normal.connected().remove(RED);
+        normal.state.disconnect(RED, 100);
+        normal.red.dead = true;
+        normal.session.onParticipantRejoin(normal.red.player);
+        check(!context(normal.session).awaitingRespawn(normal.red.player),
+                "a reconnect-only recovery timer never creates a revivable corpse");
+        Fixture downed = new Fixture();
+        set(downed.session, "threeVsThree", true);
+        downed.session.onPlayerDeath(death(downed.blue.player));
+        check(downed.respawns().get(BLUE) == 260L, "a three-v-three death unlocks Space exactly eight seconds later");
+        var request = FinalsSession.class.getDeclaredMethod("requestRespawn", UUID.class);
+        request.setAccessible(true);
+        set(downed.session, "tick", 259L);
+        request.invoke(downed.session, BLUE);
+        check(downed.respawns().containsKey(BLUE) && map(downed.session, "classes").isEmpty(),
+                "Space before eight seconds cannot begin the native spawn path");
+        set(downed.session, "tick", 1000L);
+        var actualDowned = FinalsSession.class.getDeclaredMethod("downed", UUID.class);
+        actualDowned.setAccessible(true);
+        check((Boolean) actualDowned.invoke(downed.session, BLUE),
+                "a corpse remains revivable indefinitely after the Space unlock time");
     }
 
     private static PlayerDeathEvent death(Player player) {
@@ -623,6 +660,11 @@ public final class FinalsSessionCheck {
     }
 
     private static long countdownFromStart(int configured) throws Exception {
+        FinalsSession session = sessionFromStart(configured, 2);
+        return (Long) field(session, "countdownEnd").get(session);
+    }
+
+    private static FinalsSession sessionFromStart(int configured, int participantCount) throws Exception {
         ConfigRegistry configs = new ConfigRegistry(null);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("countdownSeconds", configured);
@@ -630,8 +672,8 @@ public final class FinalsSessionCheck {
         FinalsConfig config = new FinalsConfig(configs);
         ParticipantRegistry participants = new ParticipantRegistry();
         FakeWorld world = new FakeWorld();
-        participants.add(new FakePlayer(RED, world.world).player);
-        participants.add(new FakePlayer(BLUE, world.world).player);
+        for (int index = 0; index < participantCount; index++)
+            participants.add(new FakePlayer(new UUID(99, index + 1), world.world).player);
         ActiveSession active = bare(ActiveSession.class);
         set(active, "phase", GamePhase.RUNNING);
         FinalsSession session = new FinalsSession(new SessionServices(null, active, participants,
@@ -646,7 +688,7 @@ public final class FinalsSessionCheck {
                             && expected.getCause().getMessage().contains("createVoid"),
                     "actual start configures rules before requesting unavailable native world transport");
         }
-        return (Long) field(session, "countdownEnd").get(session);
+        return session;
     }
 
     private static final class CountdownStarted extends RuntimeException {}

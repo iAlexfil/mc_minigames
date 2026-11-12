@@ -16,7 +16,7 @@ public final class FinalsTeamWipesCheck {
         Class<?> type;
         try { type = Class.forName("me.petr1furious.potatominigames.games.finals.FinalsTeamWipes"); }
         catch (ClassNotFoundException missing) {
-            throw new AssertionError("Three dead Finals teammates need a shared twelve-second respawn wave", missing);
+            throw new AssertionError("Three dead Finals teammates need a shared sixteen-second respawn wave", missing);
         }
         var constructor = type.getDeclaredConstructor();
         constructor.setAccessible(true);
@@ -27,16 +27,16 @@ public final class FinalsTeamWipesCheck {
         require(call(wipes, "death", a, 10L, roster, withdrawn) == null, "First death retains ordinary respawn");
         require(call(wipes, "death", b, 20L, roster, withdrawn) == null, "Second death retains ordinary respawn");
         Object wave = call(wipes, "death", c, 30L, roster, withdrawn);
-        require(wave != null && (Long) call(wave, "deadline") == 270L,
-                "Third death creates one wave twelve seconds after the last death");
+        require(wave != null && (Long) call(wave, "deadline") == 350L,
+                "Third death creates one wave sixteen seconds after the last death");
         require(call(wave, "members").equals(Set.of(a, b, c)), "Only the wiped three-person team joins the wave");
         require(call(wipes, "death", c, 40L, roster, withdrawn) == null
-                        && (Long) call(call(wipes, "wave", a), "deadline") == 270L,
+                        && (Long) call(call(wipes, "wave", a), "deadline") == 350L,
                 "Duplicate deaths cannot extend an already pending wipe");
-        require((Boolean) call(wipes, "locked", b, 269L), "Revive and spawn remain locked on the final waiting tick");
-        require(!(Boolean) call(wipes, "locked", b, 270L), "All three become eligible at the exact deadline");
-        require(((List<?>) call(wipes, "due", 269L)).isEmpty()
-                        && ((List<?>) call(wipes, "due", 270L)).equals(List.of(wave)),
+        require((Boolean) call(wipes, "locked", b, 349L), "Revive and spawn remain locked on the final waiting tick");
+        require(!(Boolean) call(wipes, "locked", b, 350L), "All three become eligible at the exact deadline");
+        require(((List<?>) call(wipes, "due", 349L)).isEmpty()
+                        && ((List<?>) call(wipes, "due", 350L)).equals(List.of(wave)),
                 "Due-wave lookup observes the same exact deadline for the entire cohort");
         call(wipes, "release", wave);
         require(call(wipes, "wave", a) == null && !(Boolean) call(wipes, "dead", a),
@@ -47,7 +47,7 @@ public final class FinalsTeamWipesCheck {
         require(call(wipes, "death", c, 302L, roster, withdrawn) == null,
                 "An individual respawn or pre-wipe revive prevents a stale three-death wipe");
         wave = call(wipes, "death", a, 303L, roster, withdrawn);
-        require(wave != null && (Long) call(wave, "deadline") == 543L,
+        require(wave != null && (Long) call(wave, "deadline") == 623L,
                 "A later full-team death starts an independent new wipe");
         withdrawn.add(c);
         call(wipes, "withdraw", c);

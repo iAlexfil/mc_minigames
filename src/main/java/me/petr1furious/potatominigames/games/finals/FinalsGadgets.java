@@ -164,6 +164,28 @@ final class FinalsGadgets {
                     .setItem(slot, I18n.item(item(player, selected(choice, slot)), player));
     }
 
+    boolean usingDefibrillator(Player player) {
+        var choice = equipped.get(player.getUniqueId());
+        int slot = player.getInventory().getHeldItemSlot();
+        return choice != null
+                && slot >= 1
+                && slot <= 4
+                && selected(choice, slot) == DEFIBRILLATOR
+                && from(player.getInventory().getItemInMainHand()) == DEFIBRILLATOR;
+    }
+
+    boolean interactStatue(Player player) {
+        if (!usingDefibrillator(player)) return false;
+        return interact(
+                new PlayerInteractEvent(
+                        player,
+                        Action.RIGHT_CLICK_AIR,
+                        player.getInventory().getItemInMainHand(),
+                        null,
+                        null,
+                        EquipmentSlot.HAND));
+    }
+
     boolean interact(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) return false;
         var kind = from(event.getItem());
@@ -179,6 +201,10 @@ final class FinalsGadgets {
                 || slot > 4
                 || selected(choice, slot) != kind
                 || !context.canAct(player)) return true;
+        if (context.gadgetsBlocked(player)) {
+            player.sendActionBar(text("revive_sickness"));
+            return true;
+        }
         if (kind == CLOAKING_DEVICE && hidden.containsKey(player.getUniqueId())) {
             reveal(player);
             return true;
@@ -370,8 +396,8 @@ final class FinalsGadgets {
     }
 
     private boolean defibrillate(Player player) {
-        Player best = null;
-        double nearest = 4 * 4;
+        record Candidate(Player player, Location point, double distance) {}
+        List<Candidate> candidates = new ArrayList<>();
         for (Player teammate : context.players()) {
             if (teammate.equals(player)
                     || !context.friendly(player, teammate)
@@ -379,21 +405,25 @@ final class FinalsGadgets {
             Location death = context.deathLocation(teammate.getUniqueId());
             if (death == null || !context.inside(death)) continue;
             double distance = player.getLocation().distanceSquared(death);
-            if (distance <= nearest
+            if (distance <= 4 * 4
                     && clearLine(player.getEyeLocation(), death.clone().add(0, .8, 0))) {
-                best = teammate;
-                nearest = distance;
+                candidates.add(new Candidate(teammate, death.clone(), distance));
             }
         }
-        if (best == null || !context.revive(best, player)) {
-            player.sendActionBar(text("defib_missing"));
-            return false;
+        candidates.sort(Comparator.comparingDouble(Candidate::distance));
+        for (Candidate candidate : candidates) {
+            // In 3v3 the revive helper accepts only the aimed statue. A nearer,
+            // off-axis teammate must not prevent reaching that valid target.
+            if (!context.revive(candidate.player(), player)) continue;
+            reveal(player);
+            context.world()
+                    .spawnParticle(
+                            Particle.HEART, candidate.point().add(0, 1, 0), 10, .4, .5, .4, 0);
+            player.playSound(player.getLocation(), "minecraft:block.beacon.activate", .8f, 1.7f);
+            return true;
         }
-        reveal(player);
-        context.world()
-                .spawnParticle(Particle.HEART, best.getLocation().add(0, 1, 0), 10, .4, .5, .4, 0);
-        player.playSound(player.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, .8f, 1.7f);
-        return true;
+        player.sendActionBar(text("defib_missing"));
+        return false;
     }
 
     Block placement(Player player) {

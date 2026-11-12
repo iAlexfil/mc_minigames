@@ -45,14 +45,39 @@ destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
-a draw. Death has a five-second respawn delay. When all three members of a
-three-player team are dead together, their respawns switch to a shared 12-second
+a draw. Death normally has a five-second automatic respawn delay. Matches that
+start with exactly two teams of three use the downed/revival rules below.
+When all three members of a three-player team are dead together, their respawns
+switch to a shared 16-second
 team-wipe countdown. They return at the same randomly selected team spawn; a
 disconnected teammate keeps that location and timer. Defibrillators cannot bypass
 the team-wipe delay. Respawns grant two seconds of spawn protection,
 during which combat and objectives are disabled. Teams remain fixed; a disconnected
 team has 15 seconds to return before the match ends without points. Connected
 winners receive three points; practice, draws and aborted matches award none.
+
+**3v3 revivals:** elimination leaves a revive statue. After eight seconds the
+fallen player can press **Space** to respawn; reaching zero does not respawn them
+automatically. They remain available for revival until they actually respawn.
+Teammates see a downed marker at the statue, can right-click to carry or drop it,
+and press **Q** to throw it toward cover. Only teammates can carry the statue.
+Sneak + right-click to begin a four-second manual revive, then stay crouched,
+nearby and aimed at the statue with clear line of sight. Taking damage, attacking,
+opening the loadout menu or breaking the channel cancels it. Manual revives restore
+full health at a safe position beside the statue. A full wipe clears statues and
+pending revives, then automatically returns the team together after 16 seconds.
+
+In 3v3, Defibrillator activation charges for one second while held and aimed at
+the statue, then starts a three-second reconstruction. It restores half health
+and blocks gadgets and specializations for five seconds; weapons remain usable.
+An accepted activation uses a gadget charge even if its initial charge-up is
+interrupted. The reconstruction can finish after the reviver dies, provided the
+team has not been wiped and the target has not respawned or disconnected.
+The original game's [revive-statue interaction](https://www.thefinals.wiki/wiki/Revive_Statue),
+[Defibrillator reconstruction](https://www.reachthefinals.com/patchnotes/200),
+[charge time](https://www.reachthefinals.com/patchnotes/760) and
+[revive sickness](https://www.reachthefinals.com/patchnotes/500) inform this adaptation;
+the eight-second Space unlock and 16-second wipe are this mode's custom timings.
 
 **Loadouts:** `/finals loadout` opens the menu. You can also use
 `/finals class S|M|L` (or `light|medium|heavy`) and `/finals weapon <id>`.
@@ -85,8 +110,9 @@ reach, and the hammer's right-click destroys nearby cover. Hold right-click with
 the Riot Shield or Dual Blades to reduce frontal damage.
 
 Sonar reveals hidden enemies. Carrying a cashbox or attacking ends invisibility.
-The Healing Beam can heal allies (or the user more slowly); Defibrillator revives
-a nearby teammate at their death position during the respawn delay. Dome Shield
+The Healing Beam can heal allies (or the user more slowly); outside 3v3,
+Defibrillator instantly revives a nearby teammate at their death position during
+the respawn delay. Dome Shield
 blocks enemy attacks from outside while enemies can still enter it; cashbox
 carriers do not receive dome protection. Explosives can hurt their owner.
 Turrets and mines can be destroyed with weapons. APS intercepts enemy grenades
@@ -1665,7 +1691,9 @@ independent cloaks, on-hit wand cooldown and blocked-hit rejection, alongside al
 respawn/reconnect handling, three-player team wipes, frozen movement and TNT routing
 through event handlers. `checkFinalsEquipment` and `checkFinalsLoadouts` cover class
 restrictions, localized equipment and saved choices. `checkFinalsTeamWipes` covers
-shared deadlines; `checkFinalsCashboxFlight` checks swept throw-to-deposit collisions.
+shared deadlines; `checkFinalsRevives` covers persistent downed statues, manual
+channels and charged Defibrillator reconstruction. `checkFinalsCashboxFlight`
+checks swept throw-to-deposit collisions.
 `checkFinalsArena` checks the generated arena's protected objectives, safe spawns,
 traversable layout and destructible cover. All run as part of `build`.
 

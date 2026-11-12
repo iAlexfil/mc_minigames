@@ -73,12 +73,33 @@ public final class FinalsGadgetsCheck {
                 !FinalsGadgetState.shouldRestoreGlow(false, false, false),
                 "already changed glow is left alone");
         meshLifecycle();
+        defibrillatorTargetSelection();
         visibilityLifecycle();
         carrierAndSonarTransitions();
         domeEligibility();
         temporaryCoverOwnership();
         beamCancellation();
         System.out.println("FinalsGadgetsCheck: " + checks + " checks passed");
+    }
+
+    private static void defibrillatorTargetSelection() throws Exception {
+        Fixture f = new Fixture();
+        FakePlayer farther = f.player(4, 0);
+        f.redMate.location.setX(1);
+        farther.location.setX(3);
+        f.awaiting.add(f.redMate.id);
+        f.awaiting.add(farther.id);
+        f.reviveTarget = farther.id;
+        check(
+                (boolean)
+                                invoke(
+                                        f.gadgets,
+                                        "defibrillate",
+                                        new Class<?>[] {Player.class},
+                                        f.red.player)
+                        && f.revived == farther.player,
+                "A nearer off-axis statue cannot prevent Defibrillator from charging the aimed"
+                        + " teammate");
     }
 
     private static void meshLifecycle() throws Exception {
@@ -450,6 +471,9 @@ public final class FinalsGadgetsCheck {
         long now;
         final List<FakePlayer> players = new ArrayList<>();
         final Set<UUID> carriers = new HashSet<>();
+        final Set<UUID> awaiting = new HashSet<>();
+        UUID reviveTarget;
+        Player revived;
         final World world =
                 proxy(
                         World.class,
@@ -479,6 +503,22 @@ public final class FinalsGadgetsCheck {
                                     case "inside" -> true;
                                     case "carrier" ->
                                             carriers.contains(((Player) args[0]).getUniqueId());
+                                    case "awaitingRespawn" ->
+                                            awaiting.contains(((Player) args[0]).getUniqueId());
+                                    case "deathLocation" ->
+                                            players.stream()
+                                                    .filter(p -> p.id.equals(args[0]))
+                                                    .findFirst()
+                                                    .orElseThrow()
+                                                    .location
+                                                    .clone();
+                                    case "revive" -> {
+                                        Player target = (Player) args[0];
+                                        boolean accepted =
+                                                target.getUniqueId().equals(reviveTarget);
+                                        if (accepted) revived = target;
+                                        yield accepted;
+                                    }
                                     case "playerClass" -> FinalsClass.LIGHT;
                                     default -> defaultValue(method.getReturnType());
                                 });

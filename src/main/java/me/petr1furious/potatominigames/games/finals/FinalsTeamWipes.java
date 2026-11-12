@@ -25,7 +25,7 @@ final class FinalsTeamWipes {
             if (assigned.equals(team) && !withdrawn.contains(id)) members.add(id);
         });
         if (members.size() != 3 || !dead.containsAll(members)) return null;
-        Wave wave = new Wave(team, members, now > Long.MAX_VALUE - 240 ? Long.MAX_VALUE : now + 240);
+        Wave wave = new Wave(team, members, now > Long.MAX_VALUE - 320 ? Long.MAX_VALUE : now + 320);
         waves.put(team, wave);
         return wave;
     }

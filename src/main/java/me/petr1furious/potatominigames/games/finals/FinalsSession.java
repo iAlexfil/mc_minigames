@@ -70,6 +70,8 @@ final class FinalsSession implements GameSession {
     private Location cashboxLocation;
     private UUID recentDropper;
     private long pickupAfter;
+    private long stealSirenAt;
+    private boolean stealSirenHigh;
     private long tick;
     private long countdownEnd;
     private long missingTeamSince = -1;
@@ -690,6 +692,7 @@ final class FinalsSession implements GameSession {
         }
         if (weapons != null) weapons.tick();
         if (gadgets != null) gadgets.tick();
+        updateStealSiren();
         ensureCashbox();
         if (tick % 2 == 0) updateHighlights();
         if (tick % 5 == 0) updateActionBars();
@@ -828,6 +831,7 @@ final class FinalsSession implements GameSession {
     public void onEnd(EndReason reason) {
         if (done) return;
         done = true;
+        updateStealSiren();
         if (arena != null) arena.cancelBuild();
         if (ticker != null) ticker.cancel();
         if (cashouts != null) cashouts.clear();
@@ -947,6 +951,21 @@ final class FinalsSession implements GameSession {
     private void interruptSteal(Player player) {
         if (state != null && state.cancelSteal(player.getUniqueId()))
             player.sendMessage(text("steal_cancelled"));
+        updateStealSiren();
+    }
+
+    private void updateStealSiren() {
+        if (!running() || state == null || state.phase() != FinalsState.Phase.CASHOUT
+                || state.stealDeadlines().isEmpty()) {
+            stealSirenAt = 0;
+            stealSirenHigh = false;
+            return;
+        }
+        if (tick < stealSirenAt) return;
+        world.playSound(arena.station(state.station()).clone().add(0, .75, 0),
+                "minecraft:block.note_block.pling", 1.6f, stealSirenHigh ? 1.25f : .7f);
+        stealSirenHigh = !stealSirenHigh;
+        stealSirenAt = tick + 6;
     }
 
     private void updateActionBars() {
@@ -1062,6 +1081,7 @@ final class FinalsSession implements GameSession {
             if (weapons != null) weapons.stopFiring(id);
             if (gadgets != null) gadgets.reveal(player);
             player.sendMessage(text("steal_started"));
+            updateStealSiren();
         } else if (station >= 0
                 && station == state.station()
                 && state.ownerTeam() != roster.get(id)) {
@@ -1138,6 +1158,7 @@ final class FinalsSession implements GameSession {
         event.setKeepLevel(true);
         dropCashbox(player);
         if (state != null) state.death(id, tick);
+        updateStealSiren();
         deathLocations.put(id, player.getLocation().clone());
         if (weapons != null) weapons.forget(id);
         if (gadgets != null) gadgets.forget(id);
@@ -1341,6 +1362,7 @@ final class FinalsSession implements GameSession {
             if (permanent) state.withdraw(id, tick);
             else state.disconnect(id, tick);
         }
+        updateStealSiren();
         if (weapons != null) weapons.forget(id);
         if (gadgets != null) gadgets.forget(id);
         clearOrdnance(id);

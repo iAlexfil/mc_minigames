@@ -35,8 +35,9 @@ to deposit it. After 40 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
 blocks for five seconds**. Damage, death, leaving the area or releasing sneak
 interrupts the steal. The action bar shows progress, and the boss bar shows the
-current owner and payout time. Stealing never resets that timer; a payout that
-finishes on the same tick wins over a steal. Cashout stations are simulated entities:
+current owner and payout time. A two-tone siren sounds at the cashout while a steal
+is in progress, stopping when it succeeds or is interrupted. Stealing never resets
+that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
 destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
 

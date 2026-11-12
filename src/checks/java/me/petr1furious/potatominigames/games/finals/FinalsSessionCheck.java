@@ -76,6 +76,7 @@ public final class FinalsSessionCheck {
         mapPreparationGates();
         cashboxThrowDirection();
         cashboxThrowGuards();
+        cashoutStealSiren();
         System.out.println("FinalsSessionCheck: " + checks + " checks passed");
     }
 
@@ -534,6 +535,65 @@ public final class FinalsSessionCheck {
                 "preparation blocks throwing before initialized geometry or item transport");
     }
 
+    private static void cashoutStealSiren() throws Exception {
+        Fixture f = new Fixture();
+        java.lang.reflect.Method pulse;
+        try {
+            pulse = FinalsSession.class.getDeclaredMethod("updateStealSiren");
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError("An active cashout steal needs a repeating warning siren", missing);
+        }
+        pulse.setAccessible(true);
+        pulse.invoke(f.session);
+        f.depositRed();
+        pulse.invoke(f.session);
+        check(f.world.sounds.isEmpty(), "idle objectives and ordinary cashouts stay silent");
+        var interact = FinalsSession.class.getDeclaredMethod("interactStation", Player.class, int.class);
+        interact.setAccessible(true);
+        f.blue.location = f.arena.station(0);
+        f.blueMate.location = f.arena.station(0);
+        interact.invoke(f.session, f.blue.player, 0);
+        check(f.world.sounds.size() == 1, "starting a cashout steal immediately sounds the warning");
+        interact.invoke(f.session, f.blueMate.player, 0);
+        check(f.world.sounds.size() == 1, "simultaneous thieves share one siren without stacking sounds");
+        set(f.session, "tick", 105L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 1, "the siren respects its pulse interval");
+        f.arena.moveStation(0, f.arena.station(0).add(0, -.5, 0));
+        set(f.session, "tick", 106L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 2
+                        && f.world.sounds.get(0).pitch() != f.world.sounds.get(1).pitch(),
+                "an ongoing steal alternates the two warning tones");
+        check(f.world.sounds.get(1).location().equals(f.arena.station(0).add(0, .75, 0)),
+                "each warning pulse follows the current moving cashout position");
+        var interrupt = FinalsSession.class.getDeclaredMethod("interruptSteal", Player.class);
+        interrupt.setAccessible(true);
+        interrupt.invoke(f.session, f.blue.player);
+        set(f.session, "tick", 112L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 3, "the siren continues while another thief is still channeling");
+        interrupt.invoke(f.session, f.blueMate.player);
+        set(f.session, "tick", 118L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 3, "interrupting the last channel immediately silences future pulses");
+        interact.invoke(f.session, f.blue.player, 0);
+        check(f.world.sounds.size() == 4, "a fresh steal immediately restarts its warning");
+        long deadline = f.state.stealDeadlines().get(BLUE);
+        check(f.state.completeSteal(BLUE, deadline), "the siren fixture completes a real steal");
+        set(f.session, "tick", deadline);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 4, "a successful steal stops the warning");
+        f.state.beginSteal(RED, deadline);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 5, "a later opposing channel has its own immediate warning");
+        f.connected().clear();
+        f.session.onEnd(me.petr1furious.potatominigames.core.game.EndReason.ABORTED);
+        set(f.session, "tick", deadline + 6);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 5, "ending the session prevents all remaining siren pulses");
+    }
+
     private static void vaultMovesOnlyAfterCashout() throws Exception {
         Fixture f = new Fixture();
         Location initial = f.arena.vault();
@@ -920,8 +980,11 @@ public final class FinalsSessionCheck {
 
     private record Position(int x, int y, int z) {}
 
+    private record SoundPulse(Location location, float pitch) {}
+
     private static final class FakeWorld {
         final Map<Position, Material> blocks = new HashMap<>();
+        final List<SoundPulse> sounds = new ArrayList<>();
         final World world;
         int spawned;
         Bomb lastBomb;
@@ -943,6 +1006,10 @@ public final class FinalsSessionCheck {
                                                                 (int) args[1],
                                                                 (int) args[2]);
                                         case "setSpawnLocation" -> true;
+                                        case "playSound" -> {
+                                            sounds.add(new SoundPulse(((Location) args[0]).clone(), (float) args[3]));
+                                            yield null;
+                                        }
                                         case "equals" -> p == args[0];
                                         case "hashCode" -> System.identityHashCode(p);
                                         case "spawn" -> {

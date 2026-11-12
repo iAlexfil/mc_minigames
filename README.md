@@ -28,13 +28,18 @@ This is a Minecraft adaptation using vanilla items, sounds and particles; no
 client mod or resource pack is required.
 
 Right-click the emerald vault to open it in five seconds, then touch the cashbox.
-The carrier glows and moves slowly; Q drops it. Right-click gold cashout A or B
+The carrier glows and moves slowly; aim and press Q to throw the cashbox forward
+with force. The thrown box follows a gravity-driven arc; death still drops it normally.
+Right-click gold cashout A or B
 to deposit it. After 40 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
 blocks for five seconds**. Damage, death, leaving the area or releasing sneak
 interrupts the steal. The action bar shows progress, and the boss bar shows the
-current owner and payout time. Stealing never resets that timer; a payout that
-finishes on the same tick wins over a steal.
+current owner and payout time. A two-tone siren sounds at the cashout while a steal
+is in progress, stopping when it succeeds or is interrupted. Stealing never resets
+that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
+destroying their support makes them fall and settle on terrain. Their labels,
+deposit/steal interactions and ongoing payout timers follow their current positions.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
 a draw. Death has a five-second respawn delay and two seconds of spawn protection,
@@ -80,7 +85,8 @@ Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
 1. `/finals map import rooftop "Rooftop.zip"`, then `/finals map goto rooftop`.
    Alternatively, stand in an existing world and run `/finals map create rooftop`.
 2. Look at opposite corner blocks and run `/finals map pos1 rooftop` and
-   `/finals map pos2 rooftop`. Include the floor and room above the players.
+   `/finals map pos2 rooftop`. Only X/Z are selected; the world's entire build
+   height is included automatically, even when both corners are at ground level.
 3. Stand at each desired team spawn and run `/finals map spawn rooftop red`
    or `/finals map spawn rooftop blue`. Repeat for multiple spawns per team;
    `/finals map spawnclear rooftop red|blue` clears that team's draft list.
@@ -92,9 +98,15 @@ Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
    Add extra cashout locations with `/finals map cashoutadd rooftop` (up to 16
    total). `cashout rooftop a|b` edits the first two candidate locations and keeps
    the extras; `/finals map cashoutclear rooftop` clears the draft cashout list.
-5. `/finals map save rooftop`, then `/finals map use rooftop`.
+5. `/finals map save rooftop`, wait for the saved message, then `/finals map use rooftop`.
    Use `/finals map info rooftop` or `/finals map list` to inspect setup.
    Select `generated` to return to the fallback arena.
+
+Remove one draft point by its preview number with `/finals map vaultremove rooftop 2`,
+`/finals map cashoutremove rooftop 3`, or `/finals map spawnremove rooftop red 1`.
+Numbers start at 1; remaining points are renumbered after removal. Save again to apply
+the edits to future matches. Invalid selection errors list every affected point's
+type, number and coordinates.
 
 The vault chooses a random configured location at match start and after each
 completed cashout. With two or more locations it never chooses the previous spot
@@ -116,14 +128,22 @@ saved snapshots, and are visible only to the editor who enabled them. Use
 `/finals map preview rooftop off` to hide them or
 `/finals map preview rooftop on` to show them again while in the editor world.
 
+During matches, active vaults have green outlines and cashouts have gold outlines,
+with localized labels visible through walls. Team-colored name markers show living
+teammates only to their allies. Markers follow objective rotations and player movement;
+opened vaults and departed or dead teammates lose their markers. Visibility is still
+subject to the server's entity tracking and the client's rendering distance.
+
 Setup requires admin permission. Saving validates bounds, safe spawn support,
 headroom and objective spacing. Native snapshots retain block data, chest
 contents and sign text, but exclude entities. Draft edits do not change the
 last saved snapshot until another successful save. Match destruction never edits
-the imported source or saved template. Region imports are limited to 512 MiB,
-64 MiB per file and 20,000 entries; snapshots allow up to one million blocks and
-512 blocks per axis. Only the overworld is imported. Command blocks and portal
-blocks are rejected in playable snapshots.
+the imported source or saved template. There are no plugin-imposed map dimensions,
+volume, import size or file-count caps. ZIP64 imports are supported. Saves and match
+preparation process small native structure sections over multiple server ticks;
+large maps take longer and need sufficient disk space. Existing single-NBT snapshots
+remain usable; saving again converts them to full-height section snapshots. Only the
+overworld is imported. Command blocks and portal blocks are rejected in playable snapshots.
 
 Admins can use `/finals test` for solo practice, `/finals start @a` to launch a
 match, or `/finals start @a rooftop` to force a saved map. `/finals stop` ends it.

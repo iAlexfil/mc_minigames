@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.games.finals;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
@@ -11,6 +12,8 @@ import io.papermc.paper.command.brigadier.Commands;
 import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.command.GameCommands;
 import me.petr1furious.potatominigames.i18n.I18n;
+
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -147,7 +150,6 @@ public final class FinalsMapCommands {
                                                                         name(c),
                                                                         index + 1,
                                                                         point.getBlockX(),
-                                                                        point.getBlockY(),
                                                                         point.getBlockZ());
                                                             }))));
         }
@@ -173,6 +175,25 @@ public final class FinalsMapCommands {
             }
             map.then(Commands.literal(operation).then(argument));
         }
+        RequiredArgumentBuilder<CommandSourceStack, String> spawnRemove = nameArgument();
+        for (int team = 0; team < 2; team++) {
+            int index = team;
+            String pointType = team == 0 ? "red_spawn" : "blue_spawn";
+            spawnRemove.then(
+                    Commands.literal(team == 0 ? "red" : "blue")
+                            .then(
+                                    Commands.argument("number", IntegerArgumentType.integer(1))
+                                            .executes(ctx ->
+                                                    run(
+                                                            ctx,
+                                                            c -> {
+                                                                int number = IntegerArgumentType.getInteger(c, "number");
+                                                                maps.spawnRemove(name(c), index, number);
+                                                                send(c, "point_removed", name(c),
+                                                                        I18n.tr("finals.map.point." + pointType, number));
+                                                            }))));
+        }
+        map.then(Commands.literal("spawnremove").then(spawnRemove));
         for (String operation : new String[] {"vault", "vaultadd", "vaultclear"}) {
             map.then(
                     Commands.literal(operation)
@@ -248,6 +269,24 @@ public final class FinalsMapCommands {
                                                                         name(c));
                                                             }))));
         }
+        for (String pointType : new String[] {"vault", "cashout"}) {
+            map.then(
+                    Commands.literal(pointType + "remove")
+                            .then(
+                                    nameArgument()
+                                            .then(
+                                                    Commands.argument("number", IntegerArgumentType.integer(1))
+                                                            .executes(ctx ->
+                                                                    run(
+                                                                            ctx,
+                                                                            c -> {
+                                                                                int number = IntegerArgumentType.getInteger(c, "number");
+                                                                                if (pointType.equals("vault")) maps.vaultRemove(name(c), number);
+                                                                                else maps.cashoutRemove(name(c), number);
+                                                                                send(c, "point_removed", name(c),
+                                                                                        I18n.tr("finals.map.point." + pointType, number));
+                                                                            })))));
+        }
         map.then(
                 Commands.literal("save")
                         .then(
@@ -256,8 +295,13 @@ public final class FinalsMapCommands {
                                                 run(
                                                         ctx,
                                                         c -> {
-                                                            maps.save(name(c));
-                                                            send(c, "saved", name(c));
+                                                            maps.saveAsync(
+                                                                    name(c),
+                                                                    () -> send(c, "saved", name(c)),
+                                                                    error -> c.getSource().getSender()
+                                                                            .sendMessage(I18n.message(error)
+                                                                                    .color(NamedTextColor.RED)));
+                                                            send(c, "saving", name(c));
                                                         }))));
         map.then(
                 Commands.literal("use")

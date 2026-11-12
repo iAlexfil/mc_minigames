@@ -31,7 +31,12 @@ public final class FinalsArenaCheck {
         for (int x = -24; x <= 24; x++) {
             for (int z = -24; z <= 24; z++) {
                 require(map.type(x, 64, z) != Material.AIR, "The arena floor has no holes");
-                require(!arena.isCover(map.block(x, 64, z)), "The floor survives explosions");
+                int floorX = x, floorZ = z;
+                boolean cashoutSupport = arena.cashoutLocations().stream().anyMatch(point ->
+                        point.getBlockX() == floorX && point.getBlockZ() == floorZ);
+                require(arena.isCover(map.block(x, 64, z)) == cashoutSupport,
+                        "Only cashout pad support can break through the street floor");
+                require(!arena.isCover(map.block(x, 63, z)), "The protected bedrock floor survives explosions");
             }
         }
         for (int team = 0; team < 2; team++) {
@@ -116,10 +121,10 @@ public final class FinalsArenaCheck {
             if (arena.isCover(map.block(cell.x, cell.y, cell.z))) {
                 cover++;
                 require(
-                        cell.y > 64 && Math.abs(cell.x) < 24 && Math.abs(cell.z) < 24,
+                        cell.y >= 64 && Math.abs(cell.x) < 24 && Math.abs(cell.z) < 24,
                         "Only interior structures are destructible");
                 require(
-                        arena.isCover(map.block(-cell.x, cell.y, cell.z)),
+                        cell.y == 64 || arena.isCover(map.block(-cell.x, cell.y, cell.z)),
                         "Cover is fair for both teams");
             }
         }
@@ -130,6 +135,12 @@ public final class FinalsArenaCheck {
         require(!arena.isCover(coverBlock), "Destroyed cover cannot be broken again");
         randomVaults(map, arena);
         completedCashoutMoves(map, arena);
+        Location station = arena.station(0);
+        Block support = map.block(station.getBlockX(), station.getBlockY() - 1, station.getBlockZ());
+        require(arena.isCover(support), "Generated cashout support can be demolished");
+        support.setType(Material.AIR, false);
+        require(!arena.isCover(support) && map.type(station.getBlockX(), 63, station.getBlockZ()) == Material.BEDROCK,
+                "Demolishing cashout support leaves a protected lower landing floor");
         System.out.println("Finals arena checks passed");
     }
 
@@ -174,8 +185,8 @@ public final class FinalsArenaCheck {
                         arena.stationAt(block) == expectedSlot,
                         "Only active cashout spots accept deposits");
                 require(
-                        block.getType() == (expectedSlot < 0 ? Material.AIR : Material.GOLD_BLOCK),
-                        "Exactly the two active locations have gold markers");
+                        block.getType() == Material.AIR,
+                        "Cashout bodies never place gold blocks in the terrain");
                 if (expectedSlot >= 0) active++;
                 require(!arena.isCover(block), "Inactive cashout locations remain protected");
                 require(

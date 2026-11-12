@@ -21,7 +21,6 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.TNTPrimed;
-import org.bukkit.entity.TextDisplay;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -74,6 +73,10 @@ public final class FinalsSessionCheck {
         vaultMovesOnlyAfterCashout();
         cashoutMovesOnlyAfterPayout();
         fixedCountdownAnchor();
+        mapPreparationGates();
+        cashboxThrowDirection();
+        cashboxThrowGuards();
+        cashoutStealSiren();
         System.out.println("FinalsSessionCheck: " + checks + " checks passed");
     }
 
@@ -410,7 +413,8 @@ public final class FinalsSessionCheck {
         Fixture f = new Fixture();
         FinalsCombatContext context = context(f.session);
         List<Location> objectives = new ArrayList<>(f.arena.vaultLocations());
-        objectives.addAll(f.arena.cashoutLocations());
+        objectives.add(f.arena.station(0));
+        objectives.add(f.arena.station(1));
         for (Location objective : objectives) {
             check(
                     !context.canPlace(objective.getBlock()),
@@ -456,6 +460,9 @@ public final class FinalsSessionCheck {
                 !context.canPlace(new FakeWorld().block(8, 65, 0)),
                 "placement cannot leak into a different world");
         check(!context.canPlace(null), "missing placement targets are rejected safely");
+        Location retired = f.arena.station(0).clone();
+        f.arena.moveStation(0, retired.clone().add(0, 4, 0));
+        check(context.canPlace(retired.getBlock()), "cashout protection follows the actual body, freeing its old position");
         FinalsGadgets gadgets = new FinalsGadgets(context);
         var placeable = FinalsGadgets.class.getDeclaredMethod("placeable", Block.class);
         placeable.setAccessible(true);
@@ -467,6 +474,124 @@ public final class FinalsSessionCheck {
                 !(boolean)
                         placeable.invoke(gadgets, f.arena.vault().clone().add(0, 1, 0).getBlock()),
                 "gadget placement enforces the session's objective restriction");
+    }
+
+    private static void mapPreparationGates() throws Exception {
+        Fixture f = new Fixture();
+        set(f.session, "preparing", true);
+        set(f.session, "state", null);
+        set(f.session, "arena", null);
+        FinalsCombatContext context = context(f.session);
+        check(!context.active(f.red.player) && !context.canAct(f.red.player),
+                "map preparation blocks combat before weapons or geometry exist");
+        check(f.session.spectatorLocation(f.red.player) == null,
+                "spectators cannot enter a partially placed map");
+        PlayerInteractEvent objective = interact(f.red.player, null, EquipmentSlot.HAND);
+        f.session.onPlayerInteract(objective);
+        check(objective.isCancelled(), "objective input is rejected while the map is preparing");
+        EntityDamageByEntityEvent hit = hit(f.red.player, f.blue.player, 3);
+        f.session.onEntityDamageByEntity(hit);
+        check(hit.isCancelled(), "preparation prevents player damage");
+        f.session.loadoutChanged(f.red.player);
+        f.connected().remove(RED);
+        f.session.onParticipantRejoin(f.red.player);
+        check(f.connected().contains(RED) && f.respawns().isEmpty(),
+                "rejoining during preparation waits for the prepared callback without spawning");
+        var spawn = FinalsSession.class.getDeclaredMethod("spawn", Player.class);
+        spawn.setAccessible(true);
+        spawn.invoke(f.session, f.red.player);
+        check(map(f.session, "classes").isEmpty(), "early spawn requests cannot apply uninitialized loadouts");
+    }
+
+    private static void cashboxThrowDirection() {
+        Vector aim = new Vector(0, 0, 4);
+        Vector velocity = FinalsSession.cashboxThrowVelocity(aim);
+        check(velocity.getZ() == 1.3 && velocity.getX() == 0 && velocity.getY() == .12,
+                "a horizontal cashbox throw has aimed forward force and a small upward arc");
+        check(aim.equals(new Vector(0, 0, 4)), "throw normalization never mutates the caller's aim");
+        check(FinalsSession.cashboxThrowVelocity(new Vector(0, 1, 0)).getY() > 1.4,
+                "looking up throws the cashbox upward with force");
+        check(FinalsSession.cashboxThrowVelocity(new Vector(0, -1, 0)).getY() < -1.1,
+                "looking down throws the cashbox downward");
+    }
+
+    private static void cashboxThrowGuards() throws Exception {
+        Fixture f = new Fixture();
+        var throwBox = FinalsSession.class.getDeclaredMethod("throwCashbox", Player.class);
+        throwBox.setAccessible(true);
+        throwBox.invoke(f.session, f.red.player);
+        check(f.state.phase() == FinalsState.Phase.VAULT_CLOSED && f.world.spawned == 0,
+                "a non-carrier cannot create or throw a cashbox");
+        f.state.activateVault(RED, 0);
+        f.state.pickUp(RED, 100);
+        f.protection().put(RED, 101L);
+        throwBox.invoke(f.session, f.red.player);
+        check(RED.equals(f.state.carrier()) && f.world.spawned == 0,
+                "a protected carrier cannot release the cashbox with Q");
+        f.protection().clear();
+        set(f.session, "preparing", true);
+        throwBox.invoke(f.session, f.red.player);
+        check(RED.equals(f.state.carrier()) && f.world.spawned == 0,
+                "preparation blocks throwing before initialized geometry or item transport");
+    }
+
+    private static void cashoutStealSiren() throws Exception {
+        Fixture f = new Fixture();
+        java.lang.reflect.Method pulse;
+        try {
+            pulse = FinalsSession.class.getDeclaredMethod("updateStealSiren");
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError("An active cashout steal needs a repeating warning siren", missing);
+        }
+        pulse.setAccessible(true);
+        pulse.invoke(f.session);
+        f.depositRed();
+        pulse.invoke(f.session);
+        check(f.world.sounds.isEmpty(), "idle objectives and ordinary cashouts stay silent");
+        var interact = FinalsSession.class.getDeclaredMethod("interactStation", Player.class, int.class);
+        interact.setAccessible(true);
+        f.blue.location = f.arena.station(0);
+        f.blueMate.location = f.arena.station(0);
+        interact.invoke(f.session, f.blue.player, 0);
+        check(f.world.sounds.size() == 1, "starting a cashout steal immediately sounds the warning");
+        interact.invoke(f.session, f.blueMate.player, 0);
+        check(f.world.sounds.size() == 1, "simultaneous thieves share one siren without stacking sounds");
+        set(f.session, "tick", 105L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 1, "the siren respects its pulse interval");
+        f.arena.moveStation(0, f.arena.station(0).add(0, -.5, 0));
+        set(f.session, "tick", 106L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 2
+                        && f.world.sounds.get(0).pitch() != f.world.sounds.get(1).pitch(),
+                "an ongoing steal alternates the two warning tones");
+        check(f.world.sounds.get(1).location().equals(f.arena.station(0).add(0, .75, 0)),
+                "each warning pulse follows the current moving cashout position");
+        var interrupt = FinalsSession.class.getDeclaredMethod("interruptSteal", Player.class);
+        interrupt.setAccessible(true);
+        interrupt.invoke(f.session, f.blue.player);
+        set(f.session, "tick", 112L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 3, "the siren continues while another thief is still channeling");
+        interrupt.invoke(f.session, f.blueMate.player);
+        set(f.session, "tick", 118L);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 3, "interrupting the last channel immediately silences future pulses");
+        interact.invoke(f.session, f.blue.player, 0);
+        check(f.world.sounds.size() == 4, "a fresh steal immediately restarts its warning");
+        long deadline = f.state.stealDeadlines().get(BLUE);
+        check(f.state.completeSteal(BLUE, deadline), "the siren fixture completes a real steal");
+        set(f.session, "tick", deadline);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 4, "a successful steal stops the warning");
+        f.state.beginSteal(RED, deadline);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 5, "a later opposing channel has its own immediate warning");
+        f.connected().clear();
+        f.session.onEnd(me.petr1furious.potatominigames.core.game.EndReason.ABORTED);
+        set(f.session, "tick", deadline + 6);
+        pulse.invoke(f.session);
+        check(f.world.sounds.size() == 5, "ending the session prevents all remaining siren pulses");
     }
 
     private static void vaultMovesOnlyAfterCashout() throws Exception {
@@ -518,26 +643,6 @@ public final class FinalsSessionCheck {
     private static void cashoutMovesOnlyAfterPayout() throws Exception {
         Fixture f = new Fixture();
         Location first = f.arena.station(0), second = f.arena.station(1);
-        Location[] labelPositions = {first.clone().add(0, 2, 0), second.clone().add(0, 2, 0)};
-        TextDisplay[] labels = (TextDisplay[]) field(f.session, "cashoutLabels").get(f.session);
-        for (int i = 0; i < 2; i++) {
-            int index = i;
-            labels[i] =
-                    proxy(
-                            TextDisplay.class,
-                            (p, method, args) ->
-                                    switch (method.getName()) {
-                                        case "isValid" -> true;
-                                        case "teleport" -> {
-                                            labelPositions[index] = ((Location) args[0]).clone();
-                                            yield true;
-                                        }
-                                        default ->
-                                                throw new AssertionError(
-                                                        "Unexpected display call: "
-                                                                + method.getName());
-                                    });
-        }
         f.depositRed();
         advanceObjective(f, 899);
         check(
@@ -551,12 +656,6 @@ public final class FinalsSessionCheck {
         check(
                 second.equals(f.arena.station(1)),
                 "a completed cashout leaves the other station in place");
-        check(
-                labelPositions[0].equals(replacement.clone().add(0, 2, 0)),
-                "the cashout label follows its replacement station");
-        check(
-                labelPositions[1].equals(second.clone().add(0, 2, 0)),
-                "the other cashout label stays at its station");
         check(
                 !replacement.equals(second),
                 "the replacement never occupies the other active station");
@@ -881,8 +980,11 @@ public final class FinalsSessionCheck {
 
     private record Position(int x, int y, int z) {}
 
+    private record SoundPulse(Location location, float pitch) {}
+
     private static final class FakeWorld {
         final Map<Position, Material> blocks = new HashMap<>();
+        final List<SoundPulse> sounds = new ArrayList<>();
         final World world;
         int spawned;
         Bomb lastBomb;
@@ -904,6 +1006,10 @@ public final class FinalsSessionCheck {
                                                                 (int) args[1],
                                                                 (int) args[2]);
                                         case "setSpawnLocation" -> true;
+                                        case "playSound" -> {
+                                            sounds.add(new SoundPulse(((Location) args[0]).clone(), (float) args[3]));
+                                            yield null;
+                                        }
                                         case "equals" -> p == args[0];
                                         case "hashCode" -> System.identityHashCode(p);
                                         case "spawn" -> {

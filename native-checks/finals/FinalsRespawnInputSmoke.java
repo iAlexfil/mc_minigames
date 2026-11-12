@@ -7,7 +7,7 @@ import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Consumer;
 
-/** Real Paper input events reach the tracked frozen spectator, once per jump-key press. */
+/** Real Paper input edges request respawn or loadout once for the tracked frozen spectator. */
 public final class FinalsRespawnInputSmoke {
     private static int assertions;
 
@@ -18,24 +18,31 @@ public final class FinalsRespawnInputSmoke {
                         "me.petr1furious.potatominigames.games.finals.FinalsRespawnInput",
                         true,
                         main.getClass().getClassLoader());
-        Constructor<?> ctor = type.getDeclaredConstructor(JavaPlugin.class, Consumer.class);
+        Constructor<?> ctor = type.getDeclaredConstructor(JavaPlugin.class, Consumer.class, Consumer.class);
         ctor.setAccessible(true);
         List<UUID> presses = new ArrayList<>();
+        List<UUID> loadouts = new ArrayList<>();
         Consumer<UUID> pressed =
                 id -> {
                     require(Bukkit.isPrimaryThread(), "Respawn requests run on the server thread");
                     presses.add(id);
                 };
-        Object input = ctor.newInstance(main, pressed);
+        Consumer<UUID> loadout =
+                id -> {
+                    require(Bukkit.isPrimaryThread(), "Loadout requests run on the server thread");
+                    loadouts.add(id);
+                };
+        Object input = ctor.newInstance(main, pressed, loadout);
         Fake player = new Fake(UUID.randomUUID());
         Fake outsider = new Fake(UUID.randomUUID());
         try {
             invoke(input, "track", Player.class, player.player);
             send(outsider, true, false);
+            send(outsider, false, false, true);
             send(player, false, true);
             require(
-                    presses.isEmpty(),
-                    "Outsiders and movement without Space cannot request respawn");
+                    presses.isEmpty() && loadouts.isEmpty(),
+                    "Outsiders and ordinary movement cannot request respawn or a loadout");
             send(player, true, false);
             require(
                     presses.equals(List.of(player.id)),
@@ -71,16 +78,55 @@ public final class FinalsRespawnInputSmoke {
             send(replacement, false, false);
             send(replacement, true, false);
             require(presses.size() == 3, "Leaving removes respawn input immediately");
+
+            Fake sneaking = new Fake(UUID.randomUUID());
+            invoke(input, "track", Player.class, sneaking.player);
+            send(sneaking, false, false, true);
+            require(loadouts.equals(List.of(sneaking.id)), "A fresh sneak press requests the downed loadout menu");
+            send(sneaking, false, true, true);
+            send(sneaking, false, false, true);
+            require(loadouts.size() == 1, "Holding sneak while moving never reopens the loadout menu");
+            sneaking.input = new Keys(false, false, false);
+            invoke(input, "track", Player.class, sneaking.player);
+            send(sneaking, false, false, true);
+            require(loadouts.size() == 1, "Re-tracking the same connection preserves the sneak edge before Paper publishes input");
+            send(sneaking, false, false, false);
+            send(sneaking, false, false, true);
+            require(loadouts.size() == 2, "Releasing sneak allows a fresh loadout request");
+            send(sneaking, false, false, false);
+            send(sneaking, true, false, true);
+            require(loadouts.size() == 3 && presses.size() == 3,
+                    "Simultaneous jump and sneak prioritizes the loadout without accidental respawn");
+            send(sneaking, true, true, true);
+            send(sneaking, true, false, false);
+            require(loadouts.size() == 3 && presses.size() == 3,
+                    "Holding jump after a simultaneous press cannot trigger a delayed respawn");
+            Fake sneakReplacement = new Fake(sneaking.id);
+            sneakReplacement.input = new Keys(false, false, true);
+            invoke(input, "track", Player.class, sneakReplacement.player);
+            send(sneaking, false, false, false);
+            send(sneaking, false, false, true);
+            send(sneakReplacement, false, true, true);
+            require(loadouts.size() == 3, "Old connections and already-held sneak on rejoin cannot open a menu");
+            send(sneakReplacement, false, false, false);
+            send(sneakReplacement, false, false, true);
+            require(loadouts.size() == 4, "A replacement connection receives fresh sneak presses");
+            invoke(input, "remove", UUID.class, sneaking.id);
+            send(sneakReplacement, false, false, false);
+            send(sneakReplacement, false, false, true);
+            require(loadouts.size() == 4, "Leaving removes loadout input immediately");
             invoke(input, "track", Player.class, outsider.player);
             invoke(input, "clear", null, null);
             send(outsider, false, false);
             send(outsider, true, false);
+            send(outsider, false, false, true);
             invoke(input, "track", Player.class, player.player);
             send(player, false, false);
             send(player, true, false);
+            send(player, false, false, true);
             require(
-                    presses.size() == 3,
-                    "Session cleanup unregisters the listener and prevents reactivation");
+                    presses.size() == 3 && loadouts.size() == 4,
+                    "Session cleanup unregisters both input actions and prevents reactivation");
             smoke.getLogger()
                     .info("FINALS_RESPAWN_INPUT_SMOKE_PASS: " + assertions + " assertions");
             return assertions;
@@ -101,7 +147,11 @@ public final class FinalsRespawnInputSmoke {
     }
 
     private static void send(Fake player, boolean jump, boolean forward) {
-        Input keys = new Keys(jump, forward);
+        send(player, jump, forward, false);
+    }
+
+    private static void send(Fake player, boolean jump, boolean forward, boolean sneak) {
+        Input keys = new Keys(jump, forward, sneak);
         Bukkit.getPluginManager().callEvent(new PlayerInputEvent(player.player, keys));
         player.input = keys;
     }
@@ -111,7 +161,8 @@ public final class FinalsRespawnInputSmoke {
         if (!condition) throw new AssertionError(message);
     }
 
-    private record Keys(boolean isJump, boolean isForward) implements Input {
+    private record Keys(boolean isJump, boolean isForward, boolean isSneak) implements Input {
+        Keys(boolean jump, boolean forward) { this(jump, forward, false); }
         public boolean isBackward() {
             return false;
         }
@@ -121,10 +172,6 @@ public final class FinalsRespawnInputSmoke {
         }
 
         public boolean isRight() {
-            return false;
-        }
-
-        public boolean isSneak() {
             return false;
         }
 

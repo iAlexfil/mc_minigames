@@ -43,9 +43,10 @@ is in progress, stopping when it succeeds or is interrupted. Stealing never rese
 that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
 destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
-Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 15%
+Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 30%
 volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
-within 16 blocks; it follows a falling station and stops when the payout or match
+within 32 blocks of the station. The background track follows each listener while
+they remain in range and stops when they leave, the payout completes, or the match
 ends. The old saved 40-second default is upgraded once; other custom timings remain.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
@@ -59,6 +60,12 @@ the team-wipe delay. Respawns grant two seconds of spawn protection,
 during which combat and objectives are disabled. Teams remain fixed; a disconnected
 team has 15 seconds to return before the match ends without points. Connected
 winners receive three points; practice, draws and aborted matches award none.
+
+While downed or waiting to respawn, press **Sneak** (Shift by default) to choose a
+loadout, or use `/finals loadout`. Changes apply at your next automatic, Space-key
+or team-wipe respawn. Manual and defibrillator statue revives keep the kit you had
+when eliminated; your new selection stays pending until you respawn. During the
+pre-match countdown, loadout changes still apply immediately.
 
 **2v2 and 3v3 revivals:** elimination leaves a revive statue. After eight seconds the
 fallen player can press **Space** to respawn; reaching zero does not respawn them

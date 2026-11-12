@@ -17,7 +17,7 @@ import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
-/** Listener lifecycle checks for music attached to an active cashout entity. */
+/** Listener-relative music with eligibility measured from the moving cashout. */
 public final class FinalsCashoutMusicCheck {
     private static final String PIGSTEP = "minecraft:music_disc.pigstep";
     private static final String LAVA = "minecraft:music_disc.lava_chicken";
@@ -28,7 +28,7 @@ public final class FinalsCashoutMusicCheck {
         try {
             type = Class.forName("me.petr1furious.potatominigames.games.finals.FinalsCashoutMusic");
         } catch (ClassNotFoundException missing) {
-            throw new AssertionError("Active cashouts need quiet, entity-attached music with listener cleanup", missing);
+            throw new AssertionError("Active cashouts need nearby listener-relative music with cleanup", missing);
         }
         Constructor<?> constructor = type.getDeclaredConstructor();
         constructor.setAccessible(true);
@@ -36,8 +36,8 @@ public final class FinalsCashoutMusicCheck {
         World city = world("city"), elsewhere = world("elsewhere");
         Actor source = new Actor(city, 0, 70, 0, UUID.randomUUID());
         Listener near = new Listener(city, 0, 70, 0);
-        Listener boundary = new Listener(city, 16, 70, 0);
-        Listener far = new Listener(city, 16.001, 70, 0);
+        Listener boundary = new Listener(city, 32, 70, 0);
+        Listener far = new Listener(city, 32.001, 70, 0);
         Listener otherWorld = new Listener(elsewhere, 0, 70, 0);
         Listener offline = new Listener(city, 0, 70, 0);
         offline.online = false;
@@ -49,33 +49,34 @@ public final class FinalsCashoutMusicCheck {
         music.clear();
         require(near.plays.isEmpty() && near.stops.isEmpty(), "Inactive cashouts produce no sound or broad stop packets");
         music.update(source.entity, audience);
-        require(near.plays.isEmpty(), "An eligible listener receives no entity sound before tracking the cashout body");
+        require(near.plays.size() == 1, "Eligible listeners hear their own-player sound even before tracking the cashout body");
         source.tracked.add(near.player);
         music.update(source.entity, audience);
-        require(near.plays.size() == 1 && boundary.plays.size() == 1, "Online listeners within the inclusive sixteen-block radius hear music");
+        require(near.plays.size() == 1 && boundary.plays.size() == 1, "Online listeners within the inclusive thirty-two-block radius hear music");
         require(far.plays.isEmpty() && otherWorld.plays.isEmpty() && offline.plays.isEmpty(),
                 "Distant, other-world and offline players receive no music");
-        playback(near.lastPlay(), source.entity, PIGSTEP);
+        playback(near.lastPlay(), near.player, PIGSTEP);
         for (int tick = 0; tick < 30; tick++) music.update(source.entity, audience);
         require(near.plays.size() == 1 && boundary.plays.size() == 1, "Repeated active updates do not restart the track");
 
         source.location = new Location(city, 1, 69, 0);
         music.update(source.entity, List.of(near.player, boundary.player));
         require(near.plays.size() == 1 && boundary.plays.size() == 1,
-                "Moving or falling the same cashout entity does not restart its attached sound");
-        near.location = new Location(city, 100, 70, 0);
+                "Moving or falling the same cashout does not restart music for listeners still in range");
+        source.location = new Location(city, -40, 69, 0);
         boundary.location = new Location(elsewhere, 1, 69, 0);
         music.update(source.entity, List.of(near.player, boundary.player));
         require(near.stops.size() == 1 && boundary.stops.size() == 1,
-                "Leaving the radius or changing worlds stops the current track");
+                "A cashout moving out of range or a listener changing worlds stops the current track");
         stopped(near.lastStop(), PIGSTEP);
         stopped(boundary.lastStop(), PIGSTEP);
 
+        source.location = new Location(city, 1, 69, 0);
         Listener late = new Listener(city, 1, 69, 0);
         source.tracked.add(late.player);
         music.update(source.entity, List.of(late.player));
         require(late.plays.size() == 1, "A listener joining an ongoing cashout hears its current track");
-        playback(late.lastPlay(), source.entity, PIGSTEP);
+        playback(late.lastPlay(), late.player, PIGSTEP);
         music.update(source.entity, List.of());
         require(late.stops.size() == 1, "Leaving the allowed audience stops music even while standing nearby");
         stopped(late.lastStop(), PIGSTEP);
@@ -97,7 +98,7 @@ public final class FinalsCashoutMusicCheck {
         require(near.stops.size() == stopped + 1, "Removing an already absent listener is idempotent");
 
         music.update(source.entity, List.of(near.player));
-        playback(near.lastPlay(), source.entity, PIGSTEP);
+        playback(near.lastPlay(), near.player, PIGSTEP);
         music.clear();
         stopped(near.lastStop(), PIGSTEP);
         stopped = near.stops.size();
@@ -105,19 +106,19 @@ public final class FinalsCashoutMusicCheck {
         music.update(null, List.of(near.player));
         require(near.stops.size() == stopped, "Repeated cleanup does not send extra stop packets or consume another track");
         music.update(source.entity, List.of(near.player));
-        playback(near.lastPlay(), source.entity, LAVA);
+        playback(near.lastPlay(), near.player, LAVA);
 
         Actor replacement = new Actor(city, 1, 69, 0, UUID.randomUUID());
         played = near.plays.size(); stopped = near.stops.size();
         music.update(replacement.entity, List.of(near.player));
-        require(near.plays.size() == played && near.stops.size() == stopped + 1,
-                "An untracked replacement stops the old source but defers its new entity-sound packet");
+        require(near.plays.size() == played + 1 && near.stops.size() == stopped + 1,
+                "An untracked replacement immediately restarts listener-relative playback of the same track");
         replacement.tracked.add(near.player);
         music.update(replacement.entity, List.of(near.player));
         require(near.plays.size() == played + 1 && near.stops.size() == stopped + 1,
-                "Replacing the active source stops the old attached sound and starts the new source");
+                "Beginning to track the replacement cashout does not restart listener-relative music");
         stopped(near.lastStop(), LAVA);
-        playback(near.lastPlay(), replacement.entity, LAVA);
+        playback(near.lastPlay(), near.player, LAVA);
         Actor sameId = new Actor(city, 1, 69, 0, replacement.id);
         sameId.tracked.add(near.player);
         played = near.plays.size();
@@ -130,7 +131,7 @@ public final class FinalsCashoutMusicCheck {
         music.update(null, List.of(near.player));
         require(near.stops.size() == stopped, "An inactive cashout clears listeners once");
         music.update(source.entity, List.of(near.player));
-        playback(near.lastPlay(), source.entity, PIGSTEP);
+        playback(near.lastPlay(), near.player, PIGSTEP);
         music.clear();
         System.out.println("FinalsCashoutMusicCheck: " + checks + " checks passed");
     }
@@ -140,8 +141,8 @@ public final class FinalsCashoutMusicCheck {
 
     private static void playback(Played played, Entity source, String sound) {
         require(played.source == source && played.sound.equals(sound) && played.category == SoundCategory.RECORDS
-                        && Math.abs(played.volume - .15f) < .00001f && played.pitch == 1f,
-                "Music uses the cashout entity, selected vanilla track, RECORDS category, 15% volume and normal pitch");
+                        && Math.abs(played.volume - .30f) < .00001f && played.pitch == 1f,
+                "Music uses the listener's own player, selected vanilla track, RECORDS category, 30% volume and normal pitch");
     }
 
     private static void stopped(Stopped stopped, String sound) {

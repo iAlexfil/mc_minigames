@@ -2,6 +2,11 @@ package me.petr1furious.potatominigames.games.finals;
 
 import static me.petr1furious.potatominigames.games.finals.FinalsMapData.*;
 
+import com.infernalsuite.asp.api.loaders.SlimeLoader;
+
+import me.petr1furious.potatominigames.core.world.SessionWorlds;
+import me.petr1furious.potatominigames.core.world.SlimeWorldService;
+
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -13,14 +18,21 @@ import org.bukkit.structure.Structure;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
-/** A saved snapshot placed in a session-owned void world, with protected setup anchors. */
+/** A disposable template clone (or legacy snapshot), with protected setup anchors. */
 final class FinalsImportedArena implements FinalsMapArena {
-    private final World world;
+    private World world;
     private final Saved map;
     private final FinalsMapSnapshot snapshot;
     private FinalsMapSnapshot.Work buildWork;
     private org.bukkit.scheduler.BukkitTask buildTask;
+    private Supplier<FinalsMapSnapshot.Work> migration;
+    private SessionWorlds worlds;
+    private SlimeLoader loader;
+    private String templateName, cloneName;
+    private SlimeWorldService.CloneWork cloneWork;
+    private boolean migrationStarted;
     private List<BlockState> vaultBlocks;
     private int activeVault = -1;
     private int[] activeCashouts;
@@ -37,6 +49,28 @@ final class FinalsImportedArena implements FinalsMapArena {
         this.snapshot = snapshot;
     }
 
+    FinalsImportedArena(
+            World world,
+            Saved map,
+            FinalsMapSnapshot snapshot,
+            Supplier<FinalsMapSnapshot.Work> migration) {
+        this(world, map, snapshot);
+        this.migration = migration;
+    }
+
+    FinalsImportedArena(
+            Saved map,
+            SessionWorlds worlds,
+            SlimeLoader loader,
+            String templateName,
+            String cloneName) {
+        this(null, map, (FinalsMapSnapshot) null);
+        this.worlds = worlds;
+        this.loader = loader;
+        this.templateName = templateName;
+        this.cloneName = cloneName;
+    }
+
     @Override
     public World world() {
         return world;
@@ -46,9 +80,22 @@ final class FinalsImportedArena implements FinalsMapArena {
     public void build() {
         if (built) return;
         cancelBuild();
+        if (loader != null) {
+            world = worlds.cloneSlime(loader, templateName, cloneName);
+            validateWorld();
+            finishBuild();
+            return;
+        }
         buildWork = snapshot.placement(null, world);
         try {
             buildWork.finish();
+            if (migration != null) {
+                FinalsMapSnapshot.Work conversion = migration.get();
+                if (conversion != null) {
+                    buildWork = conversion;
+                    buildWork.finish();
+                }
+            }
             finishBuild();
         } finally {
             buildWork.cancel();
@@ -64,6 +111,22 @@ final class FinalsImportedArena implements FinalsMapArena {
             return;
         }
         cancelBuild();
+        if (loader != null) {
+            cloneWork =
+                    worlds.cloneSlimeAsync(
+                            loader,
+                            templateName,
+                            cloneName,
+                            loaded -> {
+                                world = loaded;
+                                validateWorld();
+                                finishBuild();
+                                success.run();
+                            },
+                            failure);
+            return;
+        }
+        migrationStarted = false;
         buildWork = snapshot.placement(plugin, world);
         try {
             buildTask =
@@ -74,12 +137,20 @@ final class FinalsImportedArena implements FinalsMapArena {
                                 long deadline = System.nanoTime() + 4_000_000L;
                                 do {
                                     if (buildWork.step()) {
+                                        if (!migrationStarted && migration != null) {
+                                            migrationStarted = true;
+                                            FinalsMapSnapshot.Work conversion = migration.get();
+                                            if (conversion != null) {
+                                                buildWork = conversion;
+                                                continue;
+                                            }
+                                        }
                                         cancelBuild();
                                         finishBuild();
                                         success.run();
                                         return;
                                     }
-                                } while (System.nanoTime() < deadline);
+                                } while (!buildWork.waiting() && System.nanoTime() < deadline);
                             } catch (RuntimeException error) {
                                 cancelBuild();
                                 failure.accept(error);
@@ -94,6 +165,10 @@ final class FinalsImportedArena implements FinalsMapArena {
 
     @Override
     public void cancelBuild() {
+        if (cloneWork != null) {
+            cloneWork.cancel();
+            cloneWork = null;
+        }
         if (buildTask != null) {
             buildTask.cancel();
             buildTask = null;
@@ -102,6 +177,13 @@ final class FinalsImportedArena implements FinalsMapArena {
             buildWork.cancel();
             buildWork = null;
         }
+    }
+
+    private void validateWorld() {
+        world.setGameRule(org.bukkit.GameRules.COMMAND_BLOCKS_WORK, false);
+        world.setGameRule(org.bukkit.GameRules.SPAWNER_BLOCKS_WORK, false);
+        if (map.bounds().minY() < world.getMinHeight()
+                || map.bounds().maxY() >= world.getMaxHeight()) throw FinalsMaps.failure("height");
     }
 
     private void finishBuild() {
@@ -210,6 +292,7 @@ final class FinalsImportedArena implements FinalsMapArena {
     @Override
     public boolean contains(Location location) {
         if (location == null
+                || world == null
                 || !world.equals(location.getWorld())
                 || !Double.isFinite(location.getX())
                 || !Double.isFinite(location.getY())

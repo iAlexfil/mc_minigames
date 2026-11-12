@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.world.SessionWorlds;
+import me.petr1furious.potatominigames.core.world.SlimeWorldService;
 import me.petr1furious.potatominigames.core.world.ThrowawayWorldService;
 import me.petr1furious.potatominigames.games.finals.FinalsMapArena;
 import me.petr1furious.potatominigames.games.finals.FinalsMaps;
@@ -84,7 +85,7 @@ public final class FinalsAsyncMapSmoke {
             configure(savedName);
             configure(blockedName);
             checkUnsafePoints();
-            worlds = new SessionWorlds(new ThrowawayWorldService(main), null);
+            worlds = new SessionWorlds(new ThrowawayWorldService(main), new SlimeWorldService(main));
             services = new SessionServices(main, null, null, null, null, null, null, null,
                     worlds, null, null, null);
             int started = heartbeat;
@@ -175,8 +176,8 @@ public final class FinalsAsyncMapSmoke {
             registryBeforeCancellation = Files.readAllBytes(registry());
             maps.saveAsync(cancelledName, () -> cancelledCaptureCallback = true,
                     error -> cancelledCaptureCallback = true);
-            // The capture's first scheduled piece runs before this cancellation task.
-            later(1, () -> {
+            // Cancellation is deterministic even when a small prepared template finishes quickly.
+            {
                 require(!cancelledCaptureCallback, "Capture remains pending before cancellation");
                 maps.close();
                 later(5, () -> {
@@ -196,23 +197,23 @@ public final class FinalsAsyncMapSmoke {
                         cancelPlacement();
                     }), this::fail);
                 });
-            });
+            }
         }
 
         private void cancelPlacement() {
             arena = maps.open(services, savedName);
             arena.buildAsync(smoke, () -> cancelledBuildCallback = true,
                     error -> cancelledBuildCallback = true);
-            later(1, () -> {
+            {
                 require(!cancelledBuildCallback, "Placement remains pending before cancellation");
                 arena.cancelBuild();
                 later(5, () -> {
                     require(!cancelledBuildCallback, "Cancelled placement never calls ready or failure callbacks");
-                    require(arena.world().getBlockAt(16, 65, 16).getType() != Material.EMERALD_BLOCK,
-                            "Cancelling partial placement never publishes active objective markers");
+                    require(arena.world() == null || Bukkit.getWorld(arena.world().getUID()) == null,
+                            "Cancelling a pending clone never publishes a live match world");
                     complete();
                 });
-            });
+            }
         }
 
         private Location at(double x, double y, double z) { return new Location(editor, x, y, z); }

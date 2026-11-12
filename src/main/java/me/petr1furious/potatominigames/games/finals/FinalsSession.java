@@ -164,6 +164,7 @@ final class FinalsSession implements GameSession {
     }
 
     private void spawnGameMaster(Player player) {
+        if (preparing || world == null) return;
         forceRespawn(player);
         release(player);
         if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
@@ -576,17 +577,6 @@ final class FinalsSession implements GameSession {
                 maps == null
                         ? new FinalsArena(services.worlds().createVoid("finals"))
                         : maps.open(services, services.option("map"));
-        world = arena.world();
-        services.arena().applyStandardGameRules(world);
-        world.setDifficulty(Difficulty.NORMAL);
-        world.setTime(6000);
-        world.setStorm(false);
-        world.setGameRule(GameRules.PVP, true);
-        world.setGameRule(GameRules.IMMEDIATE_RESPAWN, false);
-        world.setGameRule(GameRules.ADVANCE_TIME, false);
-        world.setGameRule(GameRules.ADVANCE_WEATHER, false);
-        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, true);
-        world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         preparing = true;
         services.messages().broadcast(text("map.preparing"));
         arena.buildAsync(services.plugin(), this::prepared, this::preparationFailed);
@@ -598,6 +588,17 @@ final class FinalsSession implements GameSession {
             services.session().endGame(EndReason.ALL_PLAYERS_LEFT);
             return;
         }
+        world = arena.world();
+        services.arena().applyStandardGameRules(world);
+        world.setDifficulty(Difficulty.NORMAL);
+        world.setTime(6000);
+        world.setStorm(false);
+        world.setGameRule(GameRules.PVP, true);
+        world.setGameRule(GameRules.IMMEDIATE_RESPAWN, false);
+        world.setGameRule(GameRules.ADVANCE_TIME, false);
+        world.setGameRule(GameRules.ADVANCE_WEATHER, false);
+        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, true);
+        world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         preparing = false;
         FinalsCombatContext combat = combatContext();
         weapons = new FinalsWeapons(combat);
@@ -1670,7 +1671,7 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        if (running() && (connected.contains(event.getPlayer().getUniqueId()) || isGameMaster(event.getPlayer())))
+        if (running() && !preparing && (connected.contains(event.getPlayer().getUniqueId()) || isGameMaster(event.getPlayer())))
             event.setRespawnLocation(arena.center().add(0, 10, 0));
     }
 

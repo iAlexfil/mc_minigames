@@ -154,7 +154,13 @@ respawns have sound cues.
 **Custom maps:** the generated arena is a fallback. You can import a vanilla Java
 overworld folder or ZIP, or register an existing persistent world. Put imports in
 `plugins/PotatoMinigames/finals/imports/`; use quotes around a filename with spaces.
-Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
+You can also give a direct public HTTP/HTTPS download URL:
+`/finals map import rooftop https://example.com/maps/rooftop.zip`.
+The ZIP downloads in the background and imports automatically; wait for the
+completion message before using `goto`. Redirects are supported, but login pages,
+map listing pages, and private-network URLs are not. Failed downloads leave no map
+entry or partial archive. Imports create an editor copy, and matches use a fresh
+copy of a saved snapshot.
 
 1. `/finals map import rooftop "Rooftop.zip"`, then `/finals map goto rooftop`.
    Alternatively, stand in an existing world and run `/finals map create rooftop`.
@@ -225,11 +231,19 @@ headroom and objective spacing. Native snapshots retain block data, chest
 contents and sign text, but exclude entities. Draft edits do not change the
 last saved snapshot until another successful save. Match destruction never edits
 the imported source or saved template. There are no plugin-imposed map dimensions,
-volume, import size or file-count caps. ZIP64 imports are supported. Saves and match
-preparation process small native structure sections over multiple server ticks;
-large maps take longer and need sufficient disk space. Existing single-NBT snapshots
-remain usable; saving again converts them to full-height section snapshots. Only the
-overworld is imported. Command blocks and portal blocks are rejected in playable snapshots.
+volume, import size or file-count caps. ZIP64 imports are supported. Saves capture
+native chunk data into a single `.slime` world template and report progress while
+preparing it. Matches use the same disposable AdvancedSlimePaper world clones as
+War: template reading and decompression happen off-thread, then the ready world is
+loaded on the server thread. Empty air does not become thousands of structure files.
+Full-height selections, exact horizontal boundaries, and configured objectives/spawns
+are preserved. Large maps still require sufficient memory and disk space.
+Existing `.nbt` and `.tiles` snapshots are automatically converted once during their
+first load, which can take longer; subsequent matches use the prepared template.
+Alternatively, `/finals map save <name>` captures the editor's current contents directly
+in the new format. Failed or cancelled saves leave the previous saved map usable.
+Only the overworld is imported. Command blocks and portal blocks are rejected in
+playable snapshots.
 
 Admins can use `/finals test` for solo practice, `/finals start @a` to launch a
 match, or `/finals start @a rooftop` to force a saved map. `/finals stop` ends it.

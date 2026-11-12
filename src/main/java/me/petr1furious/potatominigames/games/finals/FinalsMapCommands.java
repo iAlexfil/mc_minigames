@@ -72,22 +72,11 @@ public final class FinalsMapCommands {
                                         .then(
                                                 Commands.argument(
                                                                 "source",
-                                                                StringArgumentType.string())
+                                                                StringArgumentType.greedyString())
                                                         .executes(ctx ->
                                                                 run(
                                                                         ctx,
-                                                                        c -> {
-                                                                            maps.importWorld(
-                                                                                    name(c),
-                                                                                    StringArgumentType
-                                                                                            .getString(
-                                                                                                    c,
-                                                                                                    "source"));
-                                                                            send(
-                                                                                    c,
-                                                                                    "imported",
-                                                                                    name(c));
-                                                                        })))));
+                                                                        this::importMap)))));
         map.then(
                 Commands.literal("goto")
                         .then(
@@ -297,6 +286,7 @@ public final class FinalsMapCommands {
                                                         c -> {
                                                             maps.saveAsync(
                                                                     name(c),
+                                                                    percent -> send(c, "save_progress", name(c), percent),
                                                                     () -> send(c, "saved", name(c)),
                                                                     error -> c.getSource().getSender()
                                                                             .sendMessage(I18n.message(error)
@@ -354,6 +344,38 @@ public final class FinalsMapCommands {
                             .forEach(builder::suggest);
                     return builder.buildFuture();
                 });
+    }
+
+    private void importMap(CommandContext<CommandSourceStack> ctx) {
+        String source = importSource(StringArgumentType.getString(ctx, "source"));
+        String lower = source.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("http:") || lower.startsWith("https:")) {
+            maps.importUrlAsync(
+                    name(ctx),
+                    source,
+                    () -> send(ctx, "imported", name(ctx)),
+                    error -> ctx.getSource().getSender()
+                            .sendMessage(I18n.message(error).color(NamedTextColor.RED)));
+            send(ctx, "downloading", name(ctx));
+        } else {
+            maps.importWorld(name(ctx), source);
+            send(ctx, "imported", name(ctx));
+        }
+    }
+
+    /** Greedy URL arguments also retain the existing quoted local-filename syntax. */
+    static String importSource(String value) {
+        value = value.trim();
+        if (!value.startsWith("\"")) return value;
+        com.mojang.brigadier.StringReader reader = new com.mojang.brigadier.StringReader(value);
+        try {
+            String source = reader.readString();
+            reader.skipWhitespace();
+            if (reader.canRead()) throw FinalsMaps.failure("source");
+            return source;
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException invalid) {
+            throw FinalsMaps.failure("source");
+        }
     }
 
     private static String name(CommandContext<CommandSourceStack> ctx) {

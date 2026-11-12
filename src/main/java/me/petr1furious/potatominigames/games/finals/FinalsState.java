@@ -45,7 +45,7 @@ public final class FinalsState {
         }
 
         public static Rules defaults() {
-            return new Rules(100, 1_800, 100, 7_200, 10_000, 20_000);
+            return new Rules(100, 1_800, 100, 12_000, 10_000, 20_000);
         }
     }
 

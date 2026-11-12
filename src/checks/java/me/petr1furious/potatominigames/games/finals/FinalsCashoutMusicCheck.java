@@ -1,248 +1,175 @@
 package me.petr1furious.potatominigames.games.finals;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-
+import java.util.*;
+import java.util.function.BiFunction;
 import org.bukkit.Location;
 import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
-/** Listener-relative music with eligibility measured from the moving cashout. */
+/** Private music emitters preserve track progress while listeners cross the cashout radius. */
 public final class FinalsCashoutMusicCheck {
-    private static final String PIGSTEP = "minecraft:music_disc.pigstep";
-    private static final String LAVA = "minecraft:music_disc.lava_chicken";
+    private static final String PIGSTEP = "minecraft:music_disc.pigstep", LAVA = "minecraft:music_disc.lava_chicken";
     private static int checks;
 
     public static void main(String[] args) throws Exception {
-        Class<?> type;
-        try {
-            type = Class.forName("me.petr1furious.potatominigames.games.finals.FinalsCashoutMusic");
-        } catch (ClassNotFoundException missing) {
-            throw new AssertionError("Active cashouts need nearby listener-relative music with cleanup", missing);
-        }
-        Constructor<?> constructor = type.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Music music = new Music(constructor.newInstance());
-        World city = world("city"), elsewhere = world("elsewhere");
-        Actor source = new Actor(city, 0, 70, 0, UUID.randomUUID());
-        Listener near = new Listener(city, 0, 70, 0);
-        Listener boundary = new Listener(city, 32, 70, 0);
-        Listener far = new Listener(city, 32.001, 70, 0);
-        Listener otherWorld = new Listener(elsewhere, 0, 70, 0);
-        Listener offline = new Listener(city, 0, 70, 0);
+        Harness f = new Harness();
+        Viewer near = new Viewer(f.world, 0), boundary = new Viewer(f.world, 32), far = new Viewer(f.world, 32.001);
+        Viewer other = new Viewer(world("elsewhere"), 0), offline = new Viewer(f.world, 0);
         offline.online = false;
-        List<Player> audience = List.of(near.player, boundary.player, far.player, otherWorld.player, offline.player);
-        source.tracked.addAll(audience);
-        source.tracked.remove(near.player);
+        List<Player> audience = List.of(near.player, boundary.player, far.player, other.player, offline.player);
+        f.music.update(null, audience);
+        require(f.created.isEmpty(), "Inactive cashouts create no music emitters");
+        f.update(audience);
+        require(f.created.size() == 2 && near.plays.isEmpty() && boundary.plays.isEmpty(),
+                "Only eligible listeners within inclusive 32 blocks get emitters, and playback waits for tracking");
+        f.track(near); f.track(boundary); f.update(audience);
+        playback(near, f.emitter(near), PIGSTEP); playback(boundary, f.emitter(boundary), PIGSTEP);
+        for (int tick = 0; tick < 20; tick++) f.update(audience);
+        require(near.plays.size() == 1 && boundary.plays.size() == 1, "Ordinary ticks never restart the music");
+        Body original = f.emitter(near);
+        for (int visit = 0; visit < 3; visit++) {
+            near.at.setX(32.001); f.update(audience);
+            require(original.at.equals(near.eye().add(0, 24, 0)), "Outside 32 blocks the emitter moves beyond sound attenuation range");
+            near.at.setX(32); f.update(audience);
+            require(original.at.equals(near.eye()), "Re-entering the inclusive boundary brings the same emitter back to the listener");
+        }
+        require(near.plays.size() == 1 && near.stops.isEmpty() && original.removals == 0,
+                "Exiting and re-entering never stops, replays or replaces the current track");
+        f.source.at.setX(-40); f.update(audience);
+        require(original.at.equals(near.eye().add(0, 24, 0)), "Eligibility follows a cashout that moves or falls away");
+        f.source = new Body(near.at.clone()); f.update(audience);
+        require(f.emitter(near) == original && near.plays.size() == 1 && near.stops.isEmpty(),
+                "Replacing the cashout body keeps the existing emitter and track position");
 
-        music.update(null, audience);
-        music.clear();
-        require(near.plays.isEmpty() && near.stops.isEmpty(), "Inactive cashouts produce no sound or broad stop packets");
-        music.update(source.entity, audience);
-        require(near.plays.size() == 1, "Eligible listeners hear their own-player sound even before tracking the cashout body");
-        source.tracked.add(near.player);
-        music.update(source.entity, audience);
-        require(near.plays.size() == 1 && boundary.plays.size() == 1, "Online listeners within the inclusive thirty-two-block radius hear music");
-        require(far.plays.isEmpty() && otherWorld.plays.isEmpty() && offline.plays.isEmpty(),
-                "Distant, other-world and offline players receive no music");
-        playback(near.lastPlay(), near.player, PIGSTEP);
-        for (int tick = 0; tick < 30; tick++) music.update(source.entity, audience);
-        require(near.plays.size() == 1 && boundary.plays.size() == 1, "Repeated active updates do not restart the track");
+        original.valid = false; f.update(audience);
+        Body recovered = f.emitter(near);
+        require(recovered != original && near.plays.size() == 1, "A failed emitter is replaced and waits for client tracking");
+        f.track(near); f.update(audience);
+        require(near.plays.size() == 2 && boundary.plays.size() == 1 && boundary.stops.isEmpty(),
+                "Emitter recovery restarts only the affected listener's current track");
+        playback(near, recovered, PIGSTEP);
 
-        source.location = new Location(city, 1, 69, 0);
-        music.update(source.entity, List.of(near.player, boundary.player));
-        require(near.plays.size() == 1 && boundary.plays.size() == 1,
-                "Moving or falling the same cashout does not restart music for listeners still in range");
-        source.location = new Location(city, -40, 69, 0);
-        boundary.location = new Location(elsewhere, 1, 69, 0);
-        music.update(source.entity, List.of(near.player, boundary.player));
-        require(near.stops.size() == 1 && boundary.stops.size() == 1,
-                "A cashout moving out of range or a listener changing worlds stops the current track");
-        stopped(near.lastStop(), PIGSTEP);
-        stopped(boundary.lastStop(), PIGSTEP);
-
-        source.location = new Location(city, 1, 69, 0);
-        Listener late = new Listener(city, 1, 69, 0);
-        source.tracked.add(late.player);
-        music.update(source.entity, List.of(late.player));
-        require(late.plays.size() == 1, "A listener joining an ongoing cashout hears its current track");
-        playback(late.lastPlay(), late.player, PIGSTEP);
-        music.update(source.entity, List.of());
-        require(late.stops.size() == 1, "Leaving the allowed audience stops music even while standing nearby");
-        stopped(late.lastStop(), PIGSTEP);
-
-        near.location = source.location.clone();
-        music.update(source.entity, List.of(near.player));
-        int played = near.plays.size();
-        near.online = false;
-        music.update(source.entity, List.of(near.player));
-        require(near.plays.size() == played, "Offline audience members never receive new play packets");
-        near.online = true;
-        music.update(source.entity, List.of(near.player));
-        require(near.plays.size() == played + 1, "Reconnect starts the active track again after stale listener state is removed");
-        int stopped = near.stops.size();
-        music.remove(near.player);
-        require(near.stops.size() == stopped + 1, "Explicit participant removal stops that listener's music");
-        stopped(near.lastStop(), PIGSTEP);
-        music.remove(near.player);
-        require(near.stops.size() == stopped + 1, "Removing an already absent listener is idempotent");
-
-        music.update(source.entity, List.of(near.player));
-        playback(near.lastPlay(), near.player, PIGSTEP);
-        music.clear();
-        stopped(near.lastStop(), PIGSTEP);
-        stopped = near.stops.size();
-        music.clear();
-        music.update(null, List.of(near.player));
-        require(near.stops.size() == stopped, "Repeated cleanup does not send extra stop packets or consume another track");
-        music.update(source.entity, List.of(near.player));
-        playback(near.lastPlay(), near.player, LAVA);
-
-        Actor replacement = new Actor(city, 1, 69, 0, UUID.randomUUID());
-        played = near.plays.size(); stopped = near.stops.size();
-        music.update(replacement.entity, List.of(near.player));
-        require(near.plays.size() == played + 1 && near.stops.size() == stopped + 1,
-                "An untracked replacement immediately restarts listener-relative playback of the same track");
-        replacement.tracked.add(near.player);
-        music.update(replacement.entity, List.of(near.player));
-        require(near.plays.size() == played + 1 && near.stops.size() == stopped + 1,
-                "Beginning to track the replacement cashout does not restart listener-relative music");
-        stopped(near.lastStop(), LAVA);
-        playback(near.lastPlay(), near.player, LAVA);
-        Actor sameId = new Actor(city, 1, 69, 0, replacement.id);
-        sameId.tracked.add(near.player);
-        played = near.plays.size();
-        music.update(sameId.entity, List.of(near.player));
-        require(near.plays.size() == played, "Source identity uses its UUID instead of Java wrapper identity");
-
-        music.update(null, List.of(near.player));
-        stopped(near.lastStop(), LAVA);
-        stopped = near.stops.size();
-        music.update(null, List.of(near.player));
-        require(near.stops.size() == stopped, "An inactive cashout clears listeners once");
-        music.update(source.entity, List.of(near.player));
-        playback(near.lastPlay(), near.player, PIGSTEP);
-        music.clear();
+        f.update(List.of(near.player));
+        require(f.emitter(boundary).removals == 1 && boundary.stops.size() == 1,
+                "Leaving the allowed audience stops its exact track and removes its emitter");
+        near.online = false; f.update(List.of(near.player));
+        require(recovered.removals == 1, "Offline listeners release their emitter");
+        near.online = true; f.update(List.of(near.player)); f.track(near); f.update(List.of(near.player));
+        Body beforeWorldChange = f.emitter(near);
+        near.at.setWorld(other.at.getWorld()); f.update(List.of(near.player));
+        require(beforeWorldChange.removals == 1, "Changing worlds releases music even while the player stays in the audience");
+        near.at.setWorld(f.world); f.update(List.of(near.player)); f.track(near); f.update(List.of(near.player));
+        Body previousConnection = f.emitter(near);
+        Viewer replacement = new Viewer(near.id, f.world, 32);
+        int stopsBefore = near.stops.size();
+        f.update(List.of(replacement.player));
+        require(previousConnection.removals == 1 && near.stops.size() == stopsBefore + 1 && replacement.plays.isEmpty(),
+                "A replacement player connection cleans up the old transport and waits for its own emitter tracking");
+        f.track(replacement); f.update(List.of(replacement.player));
+        playback(replacement, f.emitter(replacement), PIGSTEP);
+        Body removed = f.emitter(replacement);
+        f.music.remove(replacement.player);
+        int explicitStops = replacement.stops.size(); f.music.remove(replacement.player);
+        require(removed.removals == 1 && replacement.stops.size() == explicitStops, "Explicit remove is complete and idempotent");
+        f.update(List.of(replacement.player)); f.track(replacement); f.update(List.of(replacement.player));
+        Body cleared = f.emitter(replacement);
+        f.music.clear(); int clearStops = replacement.stops.size();
+        f.music.clear(); f.music.update(null, List.of(replacement.player));
+        require(cleared.removals == 1 && replacement.stops.size() == clearStops, "Repeated clear/inactive updates do not repeat cleanup or consume tracks");
+        f.update(List.of(replacement.player)); f.track(replacement); f.update(List.of(replacement.player));
+        playback(replacement, f.emitter(replacement), LAVA);
+        f.music.clear();
         System.out.println("FinalsCashoutMusicCheck: " + checks + " checks passed");
     }
 
-    private record Played(Entity source, String sound, SoundCategory category, float volume, float pitch) {}
-    private record Stopped(String sound, SoundCategory category) {}
-
-    private static void playback(Played played, Entity source, String sound) {
-        require(played.source == source && played.sound.equals(sound) && played.category == SoundCategory.RECORDS
-                        && Math.abs(played.volume - .30f) < .00001f && played.pitch == 1f,
-                "Music uses the listener's own player, selected vanilla track, RECORDS category, 30% volume and normal pitch");
-    }
-
-    private static void stopped(Stopped stopped, String sound) {
-        require(stopped.sound.equals(sound) && stopped.category == SoundCategory.RECORDS,
-                "Cleanup stops only the exact cashout track in the RECORDS category");
-    }
-
-    private static final class Music {
-        final Object helper;
-        Music(Object helper) { this.helper = helper; }
-        void update(Entity source, Collection<Player> audience) throws Exception {
-            invoke("update", new Class<?>[] {Entity.class, Collection.class}, source, audience);
+    private static final class Harness {
+        final World world = world("city");
+        Body source = new Body(new Location(world, 0, 70, 0));
+        final Map<UUID, Body> latest = new HashMap<>();
+        final List<Body> created = new ArrayList<>();
+        final FinalsCashoutMusic music;
+        Harness() throws Exception {
+            var constructor = FinalsCashoutMusic.class.getDeclaredConstructor(BiFunction.class);
+            constructor.setAccessible(true);
+            BiFunction<Player, Location, Entity> factory = (player, at) -> {
+                Body body = new Body(at.clone()); latest.put(player.getUniqueId(), body); created.add(body); return body.entity;
+            };
+            music = (FinalsCashoutMusic) constructor.newInstance(factory);
         }
-        void remove(Player player) throws Exception { invoke("remove", new Class<?>[] {Player.class}, player); }
-        void clear() throws Exception { invoke("clear", new Class<?>[0]); }
-        void invoke(String name, Class<?>[] parameters, Object... arguments) throws Exception {
-            Method method = helper.getClass().getDeclaredMethod(name, parameters);
-            method.setAccessible(true);
-            try { method.invoke(helper, arguments); }
-            catch (InvocationTargetException failure) {
-                if (failure.getCause() instanceof Exception exception) throw exception;
-                throw (Error) failure.getCause();
-            }
-        }
+        void update(Collection<Player> audience) { music.update(source.entity, audience); }
+        Body emitter(Viewer player) { return latest.get(player.id); }
+        void track(Viewer player) { emitter(player).tracking.add(player.player); }
     }
 
-    private static final class Actor {
-        final UUID id;
+    private static final class Body {
+        final UUID id = UUID.randomUUID();
+        final Set<Player> tracking = new HashSet<>();
         final Entity entity;
-        final Set<Player> tracked = new HashSet<>();
-        Location location;
-        Actor(World world, double x, double y, double z, UUID id) {
-            this.id = id; location = new Location(world, x, y, z);
-            entity = proxy(Entity.class, (receiver, method, args) -> switch (method.getName()) {
-                case "getUniqueId" -> id;
-                case "getWorld" -> location.getWorld();
-                case "getLocation" -> location.clone();
-                case "getTrackedBy" -> tracked;
-                case "isValid" -> true;
-                case "isDead" -> false;
-                case "equals" -> receiver == args[0];
-                case "hashCode" -> System.identityHashCode(receiver);
-                default -> throw new AssertionError("Unexpected source operation " + method.getName());
+        Location at;
+        boolean valid = true;
+        int removals;
+        Body(Location at) {
+            this.at = at;
+            entity = proxy(Entity.class, (self, method, args) -> switch (method.getName()) {
+                case "getUniqueId" -> id; case "isValid" -> valid; case "isDead" -> !valid;
+                case "getWorld" -> this.at.getWorld(); case "getLocation" -> this.at.clone();
+                case "getTrackedBy" -> tracking;
+                case "teleport" -> { this.at = ((Location) args[0]).clone(); yield true; }
+                case "remove" -> { valid = false; removals++; yield null; }
+                case "equals" -> self == args[0]; case "hashCode" -> id.hashCode();
+                default -> throw new AssertionError("Unexpected emitter operation: " + method.getName());
             });
         }
     }
 
-    private static final class Listener {
-        final UUID id = UUID.randomUUID();
+    private record Played(Entity source, String sound, SoundCategory category, float volume, float pitch) {}
+    private static final class Viewer {
+        final UUID id;
         final Player player;
         final List<Played> plays = new ArrayList<>();
-        final List<Stopped> stops = new ArrayList<>();
-        Location location;
+        final List<String> stops = new ArrayList<>();
+        final Location at;
         boolean online = true;
-        Listener(World world, double x, double y, double z) {
-            location = new Location(world, x, y, z);
-            player = proxy(Player.class, (receiver, method, args) -> switch (method.getName()) {
-                case "getUniqueId" -> id;
-                case "getWorld" -> location.getWorld();
-                case "getLocation" -> location.clone();
-                case "isOnline" -> online;
-                case "equals" -> receiver == args[0];
-                case "hashCode" -> System.identityHashCode(receiver);
+        Viewer(World world, double x) { this(UUID.randomUUID(), world, x); }
+        Viewer(UUID id, World world, double x) {
+            this.id = id; at = new Location(world, x, 70, 0);
+            player = proxy(Player.class, (self, method, args) -> switch (method.getName()) {
+                case "getUniqueId" -> id; case "isOnline" -> online;
+                case "getWorld" -> at.getWorld(); case "getLocation" -> at.clone(); case "getEyeLocation" -> eye();
+                case "equals" -> self == args[0]; case "hashCode" -> id.hashCode();
                 case "playSound" -> {
                     require(args.length == 5 && args[0] instanceof Entity && args[1] instanceof String,
-                            "Playback uses Player.playSound(Entity,String,SoundCategory,float,float)");
-                    plays.add(new Played((Entity) args[0], (String) args[1], (SoundCategory) args[2], (float) args[3], (float) args[4]));
-                    yield null;
+                            "Playback uses the entity sound API");
+                    plays.add(new Played((Entity) args[0], (String) args[1], (SoundCategory) args[2], (float) args[3], (float) args[4])); yield null;
                 }
                 case "stopSound" -> {
-                    require(args.length == 2 && args[0] instanceof String && args[1] instanceof SoundCategory,
-                            "Stopping music never stops every sound or a whole category");
-                    stops.add(new Stopped((String) args[0], (SoundCategory) args[1]));
-                    yield null;
+                    require(args.length == 2 && args[1] == SoundCategory.RECORDS && (PIGSTEP.equals(args[0]) || LAVA.equals(args[0])),
+                            "Cleanup stops only the exact music disc in RECORDS");
+                    stops.add((String) args[0]); yield null;
                 }
-                default -> throw new AssertionError("Unexpected listener operation " + method.getName());
+                default -> throw new AssertionError("Unexpected listener operation: " + method.getName());
             });
         }
-        Played lastPlay() { return plays.getLast(); }
-        Stopped lastStop() { return stops.getLast(); }
+        Location eye() { return at.clone().add(0, 1.62, 0); }
     }
 
+    private static void playback(Viewer player, Body emitter, String track) {
+        Played last = player.plays.getLast();
+        require(last.source == emitter.entity && last.sound.equals(track) && last.category == SoundCategory.RECORDS
+                && Math.abs(last.volume - .30f) < 1e-6 && last.pitch == 1f,
+                "Private emitter plays the current disc at 30% volume and normal pitch");
+    }
     private static World world(String name) {
-        UUID id = UUID.randomUUID();
-        return proxy(World.class, (receiver, method, args) -> switch (method.getName()) {
-            case "getName" -> name;
-            case "getUID" -> id;
-            case "equals" -> receiver == args[0];
-            case "hashCode" -> System.identityHashCode(receiver);
-            case "toString" -> name;
-            default -> throw new AssertionError("Unexpected world operation " + method.getName());
+        return proxy(World.class, (self, method, args) -> switch (method.getName()) {
+            case "getName", "toString" -> name; case "equals" -> self == args[0]; case "hashCode" -> System.identityHashCode(self);
+            default -> throw new AssertionError("Unexpected world operation: " + method.getName());
         });
     }
-
     private static <T> T proxy(Class<T> type, java.lang.reflect.InvocationHandler handler) {
         return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, handler));
     }
-
-    private static void require(boolean condition, String label) {
-        checks++;
-        if (!condition) throw new AssertionError(label);
-    }
+    private static void require(boolean condition, String message) { checks++; if (!condition) throw new AssertionError(message); }
 }

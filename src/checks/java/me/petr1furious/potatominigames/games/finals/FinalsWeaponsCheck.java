@@ -3,6 +3,7 @@ package me.petr1furious.potatominigames.games.finals;
 import org.bukkit.util.Vector;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 /** Server-independent weapon roster and ammunition/cadence regressions. */
@@ -15,6 +16,7 @@ public final class FinalsWeaponsCheck {
         reloadDeadlineAndCancellation();
         heldFireExpires();
         damageProfiles();
+        gunDamageIncrease();
         shieldAndBackstabDirections();
         System.out.println("FinalsWeaponsCheck: " + checks + " checks passed");
     }
@@ -161,6 +163,35 @@ public final class FinalsWeaponsCheck {
                 facing.equals(new Vector(0, 0, 1)) && front.equals(new Vector(0, 1, 3)),
                 "direction checks do not mutate player vectors");
     }
+
+    private static void gunDamageIncrease() {
+        Map<FinalsWeapon, Double> previous = Map.of(
+                FinalsWeapon.M11, 1.15, FinalsWeapon.XP54, 1.75, FinalsWeapon.SR84, 10d,
+                FinalsWeapon.AKM, 2.1, FinalsWeapon.FCAR, 2.65, FinalsWeapon.MODEL_1887, 1.35,
+                FinalsWeapon.M60, 1.8, FinalsWeapon.LEWIS_GUN, 2.25, FinalsWeapon.SA1216, 1.05);
+        Map<FinalsWeapon, Double> headshots = Map.of(
+                FinalsWeapon.M11, 1.35, FinalsWeapon.XP54, 1.4, FinalsWeapon.SR84, 1.8,
+                FinalsWeapon.AKM, 1.4, FinalsWeapon.FCAR, 1.4, FinalsWeapon.MODEL_1887, 1d,
+                FinalsWeapon.M60, 1.35, FinalsWeapon.LEWIS_GUN, 1.35, FinalsWeapon.SA1216, 1d);
+        for (var entry : previous.entrySet()) {
+            FinalsWeapon weapon = entry.getKey();
+            double expected = entry.getValue() * 4d / 3d;
+            check(close(weapon.damage(), expected), weapon.id() + " gun damage increases by exactly one third");
+            check(close(weapon.damageAt(1, false), expected), weapon.id() + " close body hits use increased damage");
+            check(close(weapon.damageAt(weapon.range(), false), expected * .56),
+                    weapon.id() + " maximum-range hits preserve the existing falloff ratio");
+            check(close(weapon.damageAt(1, true), expected * headshots.get(weapon)),
+                    weapon.id() + " close headshots preserve their existing multiplier");
+            check(close(weapon.damageAt(weapon.range(), true), expected * .56 * headshots.get(weapon)),
+                    weapon.id() + " far headshots combine the unchanged ratios with increased base damage");
+        }
+        for (var entry : Map.of(FinalsWeapon.SWORD, 4.6, FinalsWeapon.DAGGER, 4d,
+                FinalsWeapon.RIOT_SHIELD, 4.3, FinalsWeapon.DUAL_BLADES, 3.8,
+                FinalsWeapon.SLEDGEHAMMER, 9d, FinalsWeapon.SPEAR, 5.8).entrySet())
+            check(close(entry.getKey().damage(), entry.getValue()), entry.getKey().id() + " melee damage remains unchanged");
+    }
+
+    private static boolean close(double actual, double expected) { return Math.abs(actual - expected) < 1e-9; }
 
     private static void check(boolean condition, String message) {
         checks++;

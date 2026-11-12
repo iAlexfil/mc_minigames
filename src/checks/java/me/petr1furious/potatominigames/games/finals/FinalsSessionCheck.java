@@ -65,6 +65,7 @@ public final class FinalsSessionCheck {
     private static int checks;
 
     public static void main(String[] args) throws Exception {
+        bulletClassification();
         friendlyAndAttributedDamage();
         protectionAndObjectiveGates();
         damageInterruptions();
@@ -87,6 +88,111 @@ public final class FinalsSessionCheck {
         cashoutStealSiren();
         System.out.println("FinalsSessionCheck: " + checks + " checks passed");
     }
+
+    private static void bulletClassification() throws Exception {
+        var bullet = FinalsCombatContext.class.getDeclaredMethod(
+                "damageBullet", Player.class, Player.class, double.class, Location.class);
+        bullet.setAccessible(true);
+        Fixture f = new Fixture();
+        FinalsCombatContext combat = context(f.session);
+        Location bulletOrigin = new Location(f.world.world, 3, 67, 4);
+        Location blastOrigin = new Location(f.world.world, 8, 65, 9);
+        Location reflectedOrigin = new Location(f.world.world, -2, 66, 1);
+
+        f.blue.damageAction = (amount, source) -> {
+            damageScope(f, false, f.red.location, "ordinary melee damage is combat damage, never bullet damage");
+            check(amount == 3 && source == f.red.player, "generic damage retains its amount and attacker");
+        };
+        combat.damage(f.blue.player, f.red.player, 3);
+        damageRestored(f, false, false, null, "generic damage restores the enclosing flags and origin");
+        f.blue.damageAction = (amount, source) -> {
+            damageScope(f, false, blastOrigin, "explosion-origin damage is not classified as a bullet");
+            check(field(f.session, "damageOrigin").get(f.session) != blastOrigin,
+                    "generic damage snapshots the caller's origin");
+        };
+        combat.damage(f.blue.player, f.red.player, 5, blastOrigin);
+        damageRestored(f, false, false, null, "explosion damage leaves no bullet or origin state behind");
+
+        DamageFailure nestedFailure = new DamageFailure();
+        f.red.damageAction = (amount, source) -> {
+            damageScope(f, false, reflectedOrigin, "nested reflected/gadget damage clears bullet classification");
+            check(source == f.blue.player && amount == 2, "nested generic damage attributes the defender as attacker");
+            throw nestedFailure;
+        };
+        f.blue.damageAction = (amount, source) -> {
+            damageScope(f, true, bulletOrigin, "only the explicit bullet callback is marked as bullet damage");
+            check(field(f.session, "damageOrigin").get(f.session) != bulletOrigin,
+                    "bullet damage snapshots the caller's origin");
+            Object outerOrigin = field(f.session, "damageOrigin").get(f.session);
+            try {
+                combat.damage(f.red.player, f.blue.player, 2, reflectedOrigin);
+                throw new AssertionError("Nested damage failure must reach its caller");
+            } catch (DamageFailure expected) {
+                check(expected == nestedFailure, "nested damage preserves the original exception");
+            }
+            damageRestored(f, true, true, outerOrigin,
+                    "nested generic failure restores the outer bullet scope and exact origin object");
+        };
+        invokeBullet(bullet, combat, f.blue.player, f.red.player, 7, bulletOrigin);
+        damageRestored(f, false, false, null, "completed bullet damage restores the idle session scope");
+
+        DamageFailure bulletFailure = new DamageFailure();
+        f.blue.damageAction = (amount, source) -> {
+            damageScope(f, true, bulletOrigin, "bullet classification remains active inside a failing damage callback");
+            throw bulletFailure;
+        };
+        try {
+            invokeBullet(bullet, combat, f.blue.player, f.red.player, 7, bulletOrigin);
+            throw new AssertionError("Bullet damage failure must reach its caller");
+        } catch (DamageFailure expected) {
+            check(expected == bulletFailure, "bullet damage preserves the original exception");
+        }
+        damageRestored(f, false, false, null, "failed bullet damage restores all flags and origin");
+
+        Location enclosingOrigin = new Location(f.world.world, 12, 68, -1);
+        set(f.session, "applyingCombatDamage", true);
+        set(f.session, "applyingBulletDamage", true);
+        set(f.session, "damageOrigin", enclosingOrigin);
+        f.blue.damageAction = (amount, source) -> {
+            damageScope(f, false, blastOrigin, "nested explosions clear an existing bullet marker");
+            throw nestedFailure;
+        };
+        try {
+            combat.damage(f.blue.player, f.red.player, 5, blastOrigin);
+            throw new AssertionError("Generic damage failure must reach its caller");
+        } catch (DamageFailure expected) {
+            check(expected == nestedFailure, "nested explosion preserves its failure");
+        }
+        damageRestored(f, true, true, enclosingOrigin,
+                "generic damage restores non-default enclosing bullet state after failure");
+    }
+
+    private static void invokeBullet(java.lang.reflect.Method method, FinalsCombatContext context,
+            Player target, Player source, double amount, Location origin) throws Exception {
+        try { method.invoke(context, target, source, amount, origin); }
+        catch (java.lang.reflect.InvocationTargetException failure) {
+            if (failure.getCause() instanceof Exception exception) throw exception;
+            throw (Error) failure.getCause();
+        }
+    }
+
+    private static void damageScope(Fixture f, boolean bullet, Location origin, String label) throws Exception {
+        check((boolean) field(f.session, "applyingCombatDamage").get(f.session)
+                        && (boolean) field(f.session, "applyingBulletDamage").get(f.session) == bullet
+                        && origin.equals(field(f.session, "damageOrigin").get(f.session)), label);
+    }
+
+    private static void damageRestored(Fixture f, boolean combat, boolean bullet, Object origin,
+            String label) throws Exception {
+        check((boolean) field(f.session, "applyingCombatDamage").get(f.session) == combat
+                        && (boolean) field(f.session, "applyingBulletDamage").get(f.session) == bullet
+                        && field(f.session, "damageOrigin").get(f.session) == origin, label);
+    }
+
+    @FunctionalInterface
+    private interface DamageAction { void accept(double amount, Entity source) throws Exception; }
+
+    private static final class DamageFailure extends RuntimeException {}
 
     private static void friendlyAndAttributedDamage() throws Exception {
         Fixture f = new Fixture();
@@ -673,6 +779,7 @@ public final class FinalsSessionCheck {
         ConfigRegistry configs = new ConfigRegistry(null);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("cashoutTimingVersion", 1);
+        yaml.set("matchTimingVersion", 1);
         map(configs, "files").put(FinalsConfig.FILE, yaml);
         FinalsConfig defaults = new FinalsConfig(configs);
         check(defaults.countdownSeconds.get() == 18, "fresh Finals configuration grants 18 seconds for loadout selection");
@@ -713,6 +820,7 @@ public final class FinalsSessionCheck {
         ConfigRegistry configs = new ConfigRegistry(null);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("cashoutTimingVersion", 1);
+        yaml.set("matchTimingVersion", 1);
         yaml.set("countdownSeconds", configured);
         map(configs, "files").put(FinalsConfig.FILE, yaml);
         FinalsConfig config = new FinalsConfig(configs);
@@ -992,7 +1100,7 @@ public final class FinalsSessionCheck {
 
     private static final class Fixture {
         // Explicit short cashouts keep the existing objective-rotation boundary fixtures stable.
-        final FinalsState.Rules rules = new FinalsState.Rules(100, 800, 100, 7_200, 10_000, 20_000);
+        final FinalsState.Rules rules = new FinalsState.Rules(100, 800, 100, 12_000, 10_000, 20_000);
         final FakeWorld world = new FakeWorld();
         final FinalsArena arena = new FinalsArena(world.world);
         final FinalsState state = new FinalsState(ROSTER, 0, rules);
@@ -1085,6 +1193,7 @@ public final class FinalsSessionCheck {
         final InventoryView view;
         float walkSpeed = .2f, flySpeed = .1f;
         Vector velocity = new Vector();
+        DamageAction damageAction;
 
         FakePlayer(UUID id, World world) {
             this.id = id;
@@ -1155,6 +1264,12 @@ public final class FinalsSessionCheck {
                                         case "isDead" -> dead;
                                         case "getKiller" -> killer;
                                         case "playSound" -> { sounds++; yield null; }
+                                        case "setNoDamageTicks" -> null;
+                                        case "damage" -> {
+                                            if (damageAction == null) throw new AssertionError("Unexpected native damage callback");
+                                            damageAction.accept((double) args[0], args.length > 1 ? (Entity) args[1] : null);
+                                            yield null;
+                                        }
                                         case "setGlowing", "removePotionEffect" -> null;
                                         case "isSneaking" -> true;
                                         case "sendMessage" -> null;

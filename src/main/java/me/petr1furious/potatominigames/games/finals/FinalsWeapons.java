@@ -76,8 +76,10 @@ final class FinalsWeapons {
             } else {
                 lore.add(I18n.tr("finals.weapon.melee_controls"));
                 if (weapon == FinalsWeapon.DAGGER) lore.add(I18n.tr("finals.weapon.dagger_hint"));
-                if (weapon == FinalsWeapon.RIOT_SHIELD || weapon == FinalsWeapon.DUAL_BLADES)
+                if (weapon == FinalsWeapon.RIOT_SHIELD)
                     lore.add(I18n.tr("finals.weapon.guard_hint"));
+                if (weapon == FinalsWeapon.DUAL_BLADES)
+                    lore.add(I18n.tr("finals.weapon.deflect_hint"));
                 if (weapon == FinalsWeapon.SLEDGEHAMMER)
                     lore.add(I18n.tr("finals.weapon.hammer_hint"));
                 if (weapon == FinalsWeapon.SPEAR) lore.add(I18n.tr("finals.weapon.spear_hint"));
@@ -224,7 +226,7 @@ final class FinalsWeapons {
         // artifacts.
         for (var hit : hits.entrySet()) {
             if (enemy(source, hit.getKey()))
-                context.damage(hit.getKey(), source, hit.getValue(), eye);
+                context.damageBullet(hit.getKey(), source, hit.getValue(), eye);
         }
         if (!hits.isEmpty())
             source.playSound(source.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .35f, 1.7f);
@@ -362,18 +364,42 @@ final class FinalsWeapons {
         context.world().playSound(center.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, .55f, .75f);
     }
 
+    boolean canReflectBullet(Player defender, Player shooter) {
+        Equipped held = equipped.get(defender.getUniqueId());
+        return held != null && held.weapon == FinalsWeapon.DUAL_BLADES
+                && guarding(defender, shooter, held) && enemy(defender, shooter);
+    }
+
+    /** Called after the session validates the guard and cancels the original gun hit. */
+    void reflectBullet(Player defender, Player shooter, double damage) {
+        Location origin = defender.getEyeLocation();
+        Vector direction = shooter.getEyeLocation().toVector().subtract(origin.toVector());
+        double distance = direction.length();
+        if (distance > 1e-6) tracer(origin, direction.multiply(1 / distance), distance);
+        context.world().playSound(origin, Sound.ITEM_SHIELD_BLOCK, .7f, 1.4f);
+        context.reveal(defender);
+        // The original ray already reached the defender. Return its aggregated damage once,
+        // credited to the defender, through normal protection/shield/kill handling. The return
+        // hit deliberately cannot bounce again between two guarding players.
+        context.damageReflectedBullet(shooter, defender, damage, origin);
+    }
+
+    private boolean guarding(Player target, Player source, Equipped held) {
+        if (!usable(target, held) || context.tick() >= held.guardUntil) return false;
+        Vector attacker = source.getLocation().toVector().subtract(target.getLocation().toVector());
+        return frontal(target.getLocation().getDirection(), attacker);
+    }
+
     /**
      * Applied by the session once, after team/protection validation, for every attributed enemy
      * hit.
      */
     double incomingMultiplier(Player target, Player source) {
         Equipped held = equipped.get(target.getUniqueId());
-        if (!usable(target, held)
-                || context.tick() >= held.guardUntil
+        if (held == null
                 || held.weapon != FinalsWeapon.RIOT_SHIELD
-                        && held.weapon != FinalsWeapon.DUAL_BLADES) return 1;
-        Vector attacker = source.getLocation().toVector().subtract(target.getLocation().toVector());
-        if (!frontal(target.getLocation().getDirection(), attacker)) return 1;
+                        && held.weapon != FinalsWeapon.DUAL_BLADES
+                || !guarding(target, source, held)) return 1;
         return held.weapon == FinalsWeapon.RIOT_SHIELD ? .35 : .7;
     }
 

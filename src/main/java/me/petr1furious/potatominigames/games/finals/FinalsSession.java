@@ -42,6 +42,9 @@ final class FinalsSession implements GameSession {
     private FinalsWeapons weapons;
     private FinalsGadgets gadgets;
     private boolean applyingCombatDamage;
+    private boolean applyingBulletDamage;
+    private final FinalsBulletKnockback bulletKnockback = new FinalsBulletKnockback();
+    private final FinalsRegeneration regeneration = new FinalsRegeneration(this::fighting, () -> this.tick);
     private Location damageOrigin;
 
     private record OriginalVitals(double maxHealth, float walkSpeed, float flySpeed) {}
@@ -50,7 +53,7 @@ final class FinalsSession implements GameSession {
     private final Map<UUID, FinalsClass> classes = new HashMap<>();
     private final Map<UUID, FinalsLoadouts.Choice> equippedLoadouts = new HashMap<>();
     private final FinalsKills kills = new FinalsKills();
-    private final FinalsCashoutMusic cashoutMusic = new FinalsCashoutMusic();
+    private final FinalsCashoutMusic cashoutMusic;
     private final FinalsTeamWipes teamWipes = new FinalsTeamWipes();
     private final Map<UUID, Location> teamRespawnPositions = new HashMap<>();
     private final Map<UUID, Long> gadgetSicknessUntil = new HashMap<>();
@@ -112,6 +115,7 @@ final class FinalsSession implements GameSession {
         this.config = config;
         this.maps = maps;
         this.loadouts = loadouts;
+        this.cashoutMusic = new FinalsCashoutMusic(services.plugin());
     }
 
     void loadoutChanged(Player player) {
@@ -148,14 +152,17 @@ final class FinalsSession implements GameSession {
             public void damage(Player target, double amount, Location origin) {
                 if (!gameEventsReady() || !active(target) || amount <= 0) return;
                 boolean previous = applyingCombatDamage;
+                boolean previousBullet = applyingBulletDamage;
                 Location previousOrigin = damageOrigin;
                 applyingCombatDamage = true;
+                applyingBulletDamage = false;
                 damageOrigin = origin == null ? target.getLocation() : origin.clone();
                 try {
                     target.setNoDamageTicks(0);
-                    target.damage(amount);
+                    bulletKnockback.damage(target, null, false, () -> target.damage(amount));
                 } finally {
                     applyingCombatDamage = previous;
+                    applyingBulletDamage = previousBullet;
                     damageOrigin = previousOrigin;
                 }
             }
@@ -277,6 +284,19 @@ final class FinalsSession implements GameSession {
             }
 
             public void damage(Player target, Player source, double amount, Location origin) {
+                applyDamage(target, source, amount, origin, false, false);
+            }
+
+            public void damageBullet(Player target, Player source, double amount, Location origin) {
+                applyDamage(target, source, amount, origin, true, true);
+            }
+
+            public void damageReflectedBullet(Player target, Player source, double amount, Location origin) {
+                applyDamage(target, source, amount, origin, false, true);
+            }
+
+            private void applyDamage(Player target, Player source, double amount, Location origin,
+                    boolean bullet, boolean suppressKnockback) {
                 if (amount <= 0
                         || !fighting(target)
                         || !fighting(source)
@@ -284,14 +304,18 @@ final class FinalsSession implements GameSession {
                         || protectedSpawn(source)
                         || (!target.equals(source) && arePlayersFriendly(source, target))) return;
                 boolean previous = applyingCombatDamage;
+                boolean previousBullet = applyingBulletDamage;
                 Location previousOrigin = damageOrigin;
                 applyingCombatDamage = true;
+                applyingBulletDamage = bullet;
                 damageOrigin = origin == null ? source.getLocation() : origin.clone();
                 try {
                     target.setNoDamageTicks(0);
-                    target.damage(amount, source);
+                    bulletKnockback.damage(target, source, suppressKnockback,
+                            () -> target.damage(amount, source));
                 } finally {
                     applyingCombatDamage = previous;
+                    applyingBulletDamage = previousBullet;
                     damageOrigin = previousOrigin;
                 }
             }
@@ -537,6 +561,8 @@ final class FinalsSession implements GameSession {
             if (dropInput != null) dropInput.clear();
             if (revives != null) revives.clear();
             if (respawnInput != null) respawnInput.clear();
+            bulletKnockback.close();
+            regeneration.close();
             if (gameEvents != null) gameEvents.clear();
             teamWipes.clear();
             teamRespawnPositions.clear();
@@ -608,9 +634,11 @@ final class FinalsSession implements GameSession {
         world.setGameRule(GameRules.IMMEDIATE_RESPAWN, false);
         world.setGameRule(GameRules.ADVANCE_TIME, false);
         world.setGameRule(GameRules.ADVANCE_WEATHER, false);
-        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, true);
+        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, false);
         world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         preparing = false;
+        bulletKnockback.start(services.plugin());
+        regeneration.start(services.plugin());
         FinalsCombatContext combat = combatContext();
         weapons = new FinalsWeapons(combat);
         gadgets = new FinalsGadgets(combat);
@@ -807,6 +835,7 @@ final class FinalsSession implements GameSession {
         player.setNoDamageTicks(0);
         player.setGlowing(false);
         player.setSaturation(20);
+        regeneration.reset(id, tick);
         respawnAt.remove(id);
         kills.spawn(id);
         deathLocations.remove(id);
@@ -1118,6 +1147,11 @@ final class FinalsSession implements GameSession {
         if (revives != null) revives.tick();
         if (gadgets != null) gadgets.tick();
         if (gameEvents != null) gameEvents.tick();
+        for (UUID id : connected) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null)
+                regeneration.tick(player, classes.getOrDefault(id, FinalsClass.MEDIUM));
+        }
         updateStealSiren();
         ensureCashbox();
         if (tick % 2 == 0) updateHighlights();
@@ -1287,6 +1321,8 @@ final class FinalsSession implements GameSession {
         if (dropInput != null) dropInput.clear();
         if (revives != null) revives.clear();
         if (respawnInput != null) respawnInput.clear();
+        bulletKnockback.close();
+        regeneration.close();
         if (gameEvents != null) gameEvents.clear();
         releaseAll();
         if (weapons != null) weapons.clear();
@@ -1638,6 +1674,12 @@ final class FinalsSession implements GameSession {
             event.setCancelled(true);
             return;
         }
+        if (applyingBulletDamage && event.getDamage() > 0 && weapons != null
+                && weapons.canReflectBullet(victim, source)) {
+            event.setCancelled(true);
+            weapons.reflectBullet(victim, source, event.getDamage());
+            return;
+        }
         if (weapons != null)
             event.setDamage(event.getDamage() * weapons.incomingMultiplier(victim, source));
         if (event.getFinalDamage() > 0) {
@@ -1687,6 +1729,7 @@ final class FinalsSession implements GameSession {
         if (state != null) state.death(id, tick);
         updateStealSiren();
         deathLocations.put(id, player.getLocation().clone());
+        regeneration.forget(id);
         if (weapons != null) weapons.forget(id);
         if (gadgets != null) gadgets.forget(id);
         clearOrdnance(id);
@@ -1919,6 +1962,7 @@ final class FinalsSession implements GameSession {
         if (!roster.containsKey(id)) return;
         dropCashbox(player);
         connected.remove(id);
+        regeneration.forget(id);
         if (revives != null) revives.disconnected(id, permanent);
         if (respawnInput != null) respawnInput.remove(id);
         if (dropInput != null) dropInput.remove(id);

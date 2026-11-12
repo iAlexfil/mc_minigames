@@ -75,7 +75,8 @@ enum FinalsWeapon {
         this.id = id;
         this.playerClass = playerClass;
         this.material = material;
-        this.damage = damage;
+        // Keep firing cadence unchanged; +1/3 gun damage targets 75% of the old TTK.
+        this.damage = magazine > 0 ? damage / .75 : damage;
         this.range = range;
         this.magazine = magazine;
         this.cadenceTicks = cadenceTicks;

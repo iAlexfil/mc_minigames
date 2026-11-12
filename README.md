@@ -18,7 +18,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
 | **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `one_shot`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
-| **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
+| **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after ten minutes. |
 
 ### The Finals
 
@@ -46,11 +46,15 @@ deposit/steal interactions and ongoing payout timers follow their current positi
 Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 30%
 volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
 within 32 blocks of the station. The background track follows each listener while
-they remain in range and stops when they leave, the payout completes, or the match
-ends. The old saved 40-second default is upgraded once; other custom timings remain.
+they remain in range. Leaving the radius makes the same track inaudible; returning
+continues its current playback position. Payout, disconnect, world changes, and
+match end stop it. Respawning/reconnecting starts a fresh stream because vanilla
+clients cannot seek within a disc. The old saved 40-second default is upgraded once;
+other custom timings remain.
 
-First to $20,000 wins; the richer team wins after six minutes, with equal cash
-a draw. Death normally has a five-second automatic respawn delay. Matches that
+First to $20,000 wins; the richer team wins after ten minutes, with equal cash
+a draw. Existing six-minute defaults upgrade once; custom match durations remain.
+Death normally has a five-second automatic respawn delay. Matches that
 start with exactly two teams of two or three use the downed/revival rules below.
 When all members of a two- or three-player team are dead together, their respawns
 switch to a shared 16-second
@@ -140,9 +144,24 @@ slot 5, demolition pickaxe in slot 8, and loadout menu in slot 9. Right-click to
 fire/use a gadget, left-click for melee, and **F to reload**. Guns have magazines,
 timed reloads and unlimited reserve ammunition. Gadget charges recharge and reset
 on respawn. Weapon values are balanced for Minecraft; team leather armor reduces
-the displayed base damage. The dagger rewards backstabs, the spear has longer
+the displayed base damage. Gun damage is increased by one third for roughly 25%
+shorter time to kill, with the same firing cadence. Gunshots, including reflected
+bullets, do not knock players back. The dagger rewards backstabs, the spear has longer
 reach, and the hammer's right-click destroys nearby cover. Hold right-click with
-the Riot Shield or Dual Blades to reduce frontal damage.
+the Riot Shield to reduce frontal damage. Hold right-click with Dual Blades to guard:
+frontal bullets are reflected back at the shooter, with damage credited to the
+defender. Melee attacks and explosions are not reflected.
+
+Passive health regeneration replaces Minecraft's food healing. After the last
+damage taken, Light waits 8 seconds, Medium 9, and Heavy 10, then heals 4 Minecraft
+health points (2 hearts) per second up to full health. Further damage restarts the
+delay; moving and firing do not. Reviving starts a fresh delay, and Healing Beam
+healing remains independent. Delays follow the current
+[Light patch notes](https://www.reachthefinals.com/patchnotes/12-00),
+[Medium patch notes](https://www.reachthefinals.com/patchnotes/300), and
+[Heavy build documentation](https://www.thefinals.wiki/wiki/Builds). The fixed rate
+uses the [community-reported 40 HP/s](https://www.reddit.com/r/TheFinalsAcademy/comments/1gvc91c/health_regen_stats/)
+at this mode's 1:10 health scale.
 
 Sonar reveals hidden enemies. Carrying a cashbox or attacking ends invisibility.
 The Healing Beam can heal allies (or the user more slowly); outside 2v2/3v3,

@@ -137,3 +137,28 @@ Playback uses 30% volume at each listener, with eligibility following the cashou
 within 32 blocks. Checks include the exact range boundary, leaving the radius,
 and restarting only the respawned listener's track. Native player transport is
 simulated; no client audio capture was performed.
+
+The Dual Blades reflection run on 2026-11-13 passed **48 native assertions** against
+JAR SHA-256 `70e9418ce11b650fda9814e92d1a56529bbd229025188bd32a11a41585530bbe`.
+`FinalsBulletReflectionSmoke` exercises native weapon items and damage events through
+the production gun/session paths, using simulated player transport and ray traces.
+It verifies frontal guards, expiration/rear hits, shotgun aggregation, reversed
+attacker attribution (including lethal damage), nonrecursive reflection, Riot Shield
+behavior, and melee/gadget/friendly/protected exclusions. The focused harness uses
+`-Dfinals.smoke.bulletReflectionOnly=true`. The full Gradle build passed, including
+216 session checks covering bullet classification and nested damage-state cleanup.
+
+The subsequent combat/regeneration update passed the full **57-task Gradle build**,
+including 145 weapon, 216 session, and 34 regeneration checks. Its focused native
+run passed **85 combat assertions** plus **18 configuration assertions** against
+JAR SHA-256 `111d0f29fefff4f3a124aa5930f8273b6ffeb644983f0e36b78ba980dc6308e6`.
+Coverage includes increased gun damage, both native knockback event APIs, preserved
+movement, reflected/generic damage scopes and cleanup, all three regeneration
+delays, accepted versus cancelled hits, and the ten-minute default migration.
+The player transport remains simulated. The test server shut down after the run.
+
+The following music-continuity change uses a private empty TextDisplay to move an
+already-playing disc outside hearing range without stopping it. Music fixture
+sources now cover tracking before first playback, radius exit/reentry without
+restarts, and emitter cleanup. These updated fixtures were not run after the
+user requested no further checks; the build/hash above predates this music change.

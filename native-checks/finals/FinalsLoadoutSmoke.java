@@ -323,6 +323,38 @@ public final class FinalsLoadoutSmoke {
             config=make("FinalsConfig",configs);
             require(call(get(config,"cashoutSeconds"),"get").equals(90),
                     "A missing cashout setting uses the new ninety-second code default");
+            java.nio.file.Files.writeString(target,"cashoutTimingVersion: 1\ncashoutSeconds: 63\ndurationSeconds: 360\n");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"durationSeconds"),"get").equals(600),
+                    "An existing six-minute default upgrades to ten minutes");
+            require(call(get(config,"cashoutSeconds"),"get").equals(63),
+                    "Match duration migration preserves a custom cashout duration");
+            persisted=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(target.toFile());
+            require(persisted.getInt("durationSeconds")==600&&persisted.getInt("matchTimingVersion")==1,
+                    "The ten-minute duration and one-time migration marker persist");
+            require(call(configs,"set","finals","durationSeconds","360").toString().equals("SUCCESS"),
+                    "Administrators can deliberately restore the former six-minute duration");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"durationSeconds"),"get").equals(360),
+                    "A deliberate six-minute setting made after migration survives restart");
+            call(configs,"reloadFile",file);
+            require(call(get(config,"durationSeconds"),"get").equals(360),
+                    "Configuration reload preserves an intentional six-minute match");
+            java.nio.file.Files.writeString(target,"durationSeconds: 777\n");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"durationSeconds"),"get").equals(777),
+                    "An existing custom match duration is not replaced");
+            persisted=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(target.toFile());
+            require(persisted.getInt("durationSeconds")==777&&persisted.getInt("matchTimingVersion")==1,
+                    "Preserved custom match durations receive the one-time migration marker");
+            java.nio.file.Files.writeString(target,"cashoutTimingVersion: 1\nmatchTimingVersion: 1\n");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"durationSeconds"),"get").equals(600),
+                    "A missing match duration uses the ten-minute code default");
         } finally {
             if(previous==null)java.nio.file.Files.deleteIfExists(target);
             else java.nio.file.Files.write(target,previous);
@@ -331,6 +363,37 @@ public final class FinalsLoadoutSmoke {
 
     private void cashoutMusicChecks(FakePlayer carrier,FakePlayer listener)throws Exception {
         Object state=get(session,"state"),physics=get(session,"cashouts");
+        Class<?> musicType=type("FinalsCashoutMusic");
+        Map<UUID,TextDisplay> emitters=new HashMap<>();
+        Map<UUID,Entity> transports=new HashMap<>();
+        List<TextDisplay> created=new ArrayList<>();
+        Set<UUID> tracked=new HashSet<>(players.keySet());
+        tracked.remove(listener.id);
+        BiFunction<Player,Location,Entity> factory=(viewer,location)->{
+            try {
+                TextDisplay emitter=(TextDisplay)nativeAccess(()->call(musicType,"createEmitter",main,viewer,location));
+                created.add(emitter);
+                emitters.put(viewer.getUniqueId(),emitter);
+                require(!emitter.isVisibleByDefault()&&!emitter.isPersistent()&&!emitter.hasGravity()
+                                &&emitter.isInvulnerable()&&!emitter.isSilent()
+                                &&emitter.getTeleportDuration()==0
+                                &&PlainTextComponentSerializer.plainText().serialize(emitter.text()).isEmpty(),
+                        "The actual music factory creates an empty, private, non-silent and immobile display");
+                require(players.values().stream().allMatch(player->
+                                player.shownEntities.contains(emitter.getUniqueId())==player.id.equals(viewer.getUniqueId())),
+                        "The private native emitter is shown only to its intended listener");
+                Entity transport=(Entity)Proxy.newProxyInstance(Entity.class.getClassLoader(),new Class<?>[]{Entity.class},
+                        (receiver,method,args)->{
+                            if(method.getName().equals("getTrackedBy"))
+                                return tracked.contains(viewer.getUniqueId())?Set.of(viewer):Set.of();
+                            return nativeAccess(()->invoke(method,emitter,args));
+                        });
+                transports.put(viewer.getUniqueId(),transport);
+                return transport;
+            }catch(Exception error){throw new IllegalStateException("Native music emitter transport failed",error);}
+        };
+        call(get(session,"cashoutMusic"),"clear");
+        set(session,"cashoutMusic",make("FinalsCashoutMusic",factory));
         Entity source=trackedCashout(physics,0);
         for(FakePlayer player:players.values())player.location=source.getLocation().add(40,0,0);
         carrier.location=source.getLocation().add(2,0,0);
@@ -347,11 +410,19 @@ public final class FinalsLoadoutSmoke {
                         &&(long)call(state,"phaseDeadline")==opened+1_800,
                 "The real station deposit starts a ninety-second cashout");
         require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep"))
+                        &&listener.musicStarted.isEmpty()&&emitters.get(listener.id).isValid(),
+                "A real deposit defers first playback until the listener has received its private emitter");
+        tracked.add(listener.id);
+        withPlayerLookup(session,"updateCashoutMusic");
+        require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep"))
                         &&listener.musicStarted.equals(carrier.musicStarted),
                 "A real deposit starts Pigstep for connected players, including listeners twenty-four blocks away");
-        require(carrier.musicSource==carrier.player&&listener.musicSource==listener.player
+        require(carrier.musicSource==transports.get(carrier.id)&&listener.musicSource==transports.get(listener.id)
                         &&carrier.musicCategory==SoundCategory.RECORDS,
-                "Background music follows each eligible listener in the record category");
+                "Background music binds once to each listener's private emitter in the record category");
+        require(emitters.get(carrier.id).getLocation().distanceSquared(carrier.player.getEyeLocation())<.000001
+                        &&emitters.get(listener.id).getLocation().distanceSquared(listener.player.getEyeLocation())<.000001,
+                "Audible native emitters follow their listeners' eye positions");
         close(carrier.musicVolume,.30,"Cashout music uses thirty-percent volume");
         require(players.values().stream().filter(player->player!=carrier&&player!=listener)
                         .allMatch(player->player.musicStarted.isEmpty()),
@@ -361,37 +432,45 @@ public final class FinalsLoadoutSmoke {
         withPlayerLookup(session,"updateCashoutMusic");
         require(boundary.musicStarted.equals(List.of("minecraft:music_disc.pigstep")),
                 "A contestant at the thirty-two-block boundary hears cashout music");
+        TextDisplay boundaryEmitter=emitters.get(boundary.id);
         boundary.location=source.getLocation().add(32.01,0,0);
         withPlayerLookup(session,"updateCashoutMusic");
-        require(boundary.musicStopped.equals(List.of("minecraft:music_disc.pigstep")),
-                "Moving just beyond thirty-two blocks stops the background track");
+        require(boundary.musicStopped.isEmpty()&&boundary.musicStarted.size()==1&&boundaryEmitter.isValid()
+                        &&boundaryEmitter.getLocation().distanceSquared(boundary.player.getEyeLocation().add(0,24,0))<.000001,
+                "Leaving thirty-two blocks moves the same live emitter beyond hearing without stopping or replaying the disc");
         boundary.location=source.getLocation().add(24,0,0);
         withPlayerLookup(session,"updateCashoutMusic");
-        require(boundary.musicStarted.size()==2,"Returning within range starts the current cashout track again");
+        require(boundary.musicStarted.size()==1&&boundary.musicStopped.isEmpty()&&emitters.get(boundary.id)==boundaryEmitter
+                        &&boundaryEmitter.getLocation().distanceSquared(boundary.player.getEyeLocation())<.000001,
+                "Returning within range restores the same emitter without restarting the current track");
         call(session,"onPlayerPostRespawn",new com.destroystokyo.paper.event.player.PlayerPostRespawnEvent(
                 boundary.player,boundary.location,false,false,false,PlayerRespawnEvent.RespawnReason.DEATH));
-        require(boundary.musicStopped.size()==2&&carrier.musicStopped.isEmpty()&&listener.musicStopped.isEmpty(),
-                "A real post-respawn event clears only that listener's old entity-bound playback");
+        require(boundary.musicStopped.size()==1&&!boundaryEmitter.isValid()
+                        &&carrier.musicStopped.isEmpty()&&listener.musicStopped.isEmpty(),
+                "A real post-respawn event removes only that listener's old emitter and playback");
         withPlayerLookup(session,"updateCashoutMusic");
-        require(boundary.musicStarted.size()==3&&boundary.musicStarted.getLast().equals("minecraft:music_disc.pigstep")
-                        &&boundary.musicSource==boundary.player&&carrier.musicStarted.size()==1&&listener.musicStarted.size()==1,
-                "The next update resumes the current track for the respawned listener without restarting anyone else");
+        require(boundary.musicStarted.size()==2&&boundary.musicStarted.getLast().equals("minecraft:music_disc.pigstep")
+                        &&boundary.musicSource==transports.get(boundary.id)&&emitters.get(boundary.id)!=boundaryEmitter
+                        &&carrier.musicStarted.size()==1&&listener.musicStarted.size()==1,
+                "The next update creates fresh playback for the respawned client without restarting anyone else");
         boundary.location=source.getLocation().add(40,0,0);
         withPlayerLookup(session,"updateCashoutMusic");
-        require(boundary.musicStopped.size()==3,"Leaving range after respawn clears the restarted background track");
+        require(boundary.musicStopped.size()==1&&boundary.musicStarted.size()==2&&emitters.get(boundary.id).isValid(),
+                "Leaving range after respawn keeps the replacement emitter and current playback alive");
         withPlayerLookup(session,"tick");
         require(carrier.musicStarted.size()==1&&listener.musicStarted.size()==1,
                 "The regular production tick does not restart a playing track");
         withPlayerLookup(session,"onParticipantQuit",listener.player);
-        require(listener.musicStopped.equals(List.of("minecraft:music_disc.pigstep")),
-                "Disconnect stops only the departing listener's cashout track");
+        require(listener.musicStopped.equals(List.of("minecraft:music_disc.pigstep"))&&!emitters.get(listener.id).isValid(),
+                "Disconnect stops only the departing listener's cashout track and removes its emitter");
         set(session,"tick",(long)call(state,"phaseDeadline")-1);
         // Payout replaces a native cashout entity, which requires the real CraftServer.
         // Playback cleanup retains its recipients and does not need fake player lookup.
         nativeAccess(()->{call(session,"tick");return null;});
         require(call(state,"phase").toString().equals("VAULT_CLOSED")
-                        &&carrier.musicStopped.equals(List.of("minecraft:music_disc.pigstep")),
-                "The exact production payout tick stops the old cashout music");
+                        &&carrier.musicStopped.equals(List.of("minecraft:music_disc.pigstep"))
+                        &&created.stream().noneMatch(Entity::isValid),
+                "The exact production payout tick stops the old cashout music and removes every private emitter");
         require(listener.musicStarted.size()==1,
                 "A disconnected participant does not receive music again while still in the registry");
 
@@ -406,8 +485,9 @@ public final class FinalsLoadoutSmoke {
         require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep","minecraft:music_disc.lava_chicken")),
                 "The next real cashout uses Lava Chicken instead of layering tracks");
         withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));
-        require(carrier.musicStopped.equals(List.of("minecraft:music_disc.pigstep","minecraft:music_disc.lava_chicken")),
-                "Aborting an active cashout explicitly stops Lava Chicken");
+        require(carrier.musicStopped.equals(List.of("minecraft:music_disc.pigstep","minecraft:music_disc.lava_chicken"))
+                        &&created.stream().noneMatch(Entity::isValid),
+                "Aborting an active cashout explicitly stops Lava Chicken and removes all private emitters");
     }
 
     /** Real body lifecycle with fake network tracking, matching these fixtures' player transport. */
@@ -977,6 +1057,7 @@ public final class FinalsLoadoutSmoke {
         final Inventory fallback=Bukkit.createInventory(null,9);
         final Map<PotionEffectType,PotionEffect> effects=new HashMap<>();
         final List<String> musicStarted=new ArrayList<>(),musicStopped=new ArrayList<>();
+        final Set<UUID> shownEntities=new HashSet<>();
         Entity musicSource;SoundCategory musicCategory;float musicVolume;
         final PlayerInventory inventory;
         final InventoryView view;
@@ -1038,6 +1119,7 @@ public final class FinalsLoadoutSmoke {
                     }
                     yield null;
                 }
+                case "showEntity"->{shownEntities.add(((Entity)a[1]).getUniqueId());yield null;}
                 default->zero(m.getReturnType());
             });
             view=(InventoryView)Proxy.newProxyInstance(InventoryView.class.getClassLoader(),new Class<?>[]{InventoryView.class},(o,m,a)->switch(m.getName()){

@@ -45,6 +45,16 @@ interface FinalsCombatContext {
         damage(target, source, amount);
     }
 
+    /** Gun hits only; generic damage (including a reflected hit) must not inherit this type. */
+    default void damageBullet(Player target, Player source, double amount, Location origin) {
+        damage(target, source, amount, origin);
+    }
+
+    /** Reflected bullets cannot reflect again, but still cause no gunshot knockback. */
+    default void damageReflectedBullet(Player target, Player source, double amount, Location origin) {
+        damage(target, source, amount, origin);
+    }
+
     default boolean weaponBlocked(Player player) {
         return false;
     }

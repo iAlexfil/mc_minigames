@@ -1,7 +1,8 @@
 # Changes apply to the next match. All timings are in seconds.
 # Loadout selection is clamped to 18–60 seconds, including older persisted values.
 countdownSeconds: 18
-durationSeconds: 360
+durationSeconds: 600
+matchTimingVersion: 1
 vaultOpenSeconds: 5
 cashoutSeconds: 90
 cashoutTimingVersion: 1

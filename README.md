@@ -43,9 +43,10 @@ is in progress, stopping when it succeeds or is interrupted. Stealing never rese
 that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
 destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
-Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 15%
+Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 30%
 volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
-within 16 blocks; it follows a falling station and stops when the payout or match
+within 32 blocks of the station. The background track follows each listener while
+they remain in range and stops when they leave, the payout completes, or the match
 ends. The old saved 40-second default is upgraded once; other custom timings remain.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash

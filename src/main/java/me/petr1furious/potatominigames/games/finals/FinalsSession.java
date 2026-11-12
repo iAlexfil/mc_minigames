@@ -1713,6 +1713,8 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
+        // Respawning replaces the client's entity used for listener-relative music.
+        cashoutMusic.remove(event.getPlayer());
         if (isGameMaster(event.getPlayer())) spawnGameMaster(event.getPlayer());
         else if (running() && respawnAt.containsKey(event.getPlayer().getUniqueId()))
             waitForRespawn(event.getPlayer());

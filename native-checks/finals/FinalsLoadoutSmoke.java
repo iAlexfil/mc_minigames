@@ -334,7 +334,7 @@ public final class FinalsLoadoutSmoke {
         Entity source=trackedCashout(physics,0);
         for(FakePlayer player:players.values())player.location=source.getLocation().add(40,0,0);
         carrier.location=source.getLocation().add(2,0,0);
-        listener.location=source.getLocation().add(3,0,0);
+        listener.location=source.getLocation().add(24,0,0);
         require(players.values().stream().allMatch(player->player.musicStarted.isEmpty()),
                 "The active match has no cashout music before a box is deposited");
         long start=(long)get(session,"tick");
@@ -348,13 +348,37 @@ public final class FinalsLoadoutSmoke {
                 "The real station deposit starts a ninety-second cashout");
         require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep"))
                         &&listener.musicStarted.equals(carrier.musicStarted),
-                "A real deposit starts Pigstep for connected nearby players");
-        require(carrier.musicSource==source&&carrier.musicCategory==SoundCategory.RECORDS,
-                "Music is attached to the actual cashout interaction body in the record category");
-        close(carrier.musicVolume,.15,"Cashout music is quiet");
+                "A real deposit starts Pigstep for connected players, including listeners twenty-four blocks away");
+        require(carrier.musicSource==carrier.player&&listener.musicSource==listener.player
+                        &&carrier.musicCategory==SoundCategory.RECORDS,
+                "Background music follows each eligible listener in the record category");
+        close(carrier.musicVolume,.30,"Cashout music uses thirty-percent volume");
         require(players.values().stream().filter(player->player!=carrier&&player!=listener)
                         .allMatch(player->player.musicStarted.isEmpty()),
                 "Far-away contestants do not receive the cashout's music");
+        FakePlayer boundary=players.values().stream().filter(player->player!=carrier&&player!=listener).findFirst().orElseThrow();
+        boundary.location=source.getLocation().add(32,0,0);
+        withPlayerLookup(session,"updateCashoutMusic");
+        require(boundary.musicStarted.equals(List.of("minecraft:music_disc.pigstep")),
+                "A contestant at the thirty-two-block boundary hears cashout music");
+        boundary.location=source.getLocation().add(32.01,0,0);
+        withPlayerLookup(session,"updateCashoutMusic");
+        require(boundary.musicStopped.equals(List.of("minecraft:music_disc.pigstep")),
+                "Moving just beyond thirty-two blocks stops the background track");
+        boundary.location=source.getLocation().add(24,0,0);
+        withPlayerLookup(session,"updateCashoutMusic");
+        require(boundary.musicStarted.size()==2,"Returning within range starts the current cashout track again");
+        call(session,"onPlayerPostRespawn",new com.destroystokyo.paper.event.player.PlayerPostRespawnEvent(
+                boundary.player,boundary.location,false,false,false,PlayerRespawnEvent.RespawnReason.DEATH));
+        require(boundary.musicStopped.size()==2&&carrier.musicStopped.isEmpty()&&listener.musicStopped.isEmpty(),
+                "A real post-respawn event clears only that listener's old entity-bound playback");
+        withPlayerLookup(session,"updateCashoutMusic");
+        require(boundary.musicStarted.size()==3&&boundary.musicStarted.getLast().equals("minecraft:music_disc.pigstep")
+                        &&boundary.musicSource==boundary.player&&carrier.musicStarted.size()==1&&listener.musicStarted.size()==1,
+                "The next update resumes the current track for the respawned listener without restarting anyone else");
+        boundary.location=source.getLocation().add(40,0,0);
+        withPlayerLookup(session,"updateCashoutMusic");
+        require(boundary.musicStopped.size()==3,"Leaving range after respawn clears the restarted background track");
         withPlayerLookup(session,"tick");
         require(carrier.musicStarted.size()==1&&listener.musicStarted.size()==1,
                 "The regular production tick does not restart a playing track");

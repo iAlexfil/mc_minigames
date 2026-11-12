@@ -12,13 +12,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Session-owned disc playback, attached to the moving cashout body. */
+/** Session-owned background music for players near the moving cashout body. */
 final class FinalsCashoutMusic {
     private static final String[] TRACKS = {
         "minecraft:music_disc.pigstep", "minecraft:music_disc.lava_chicken"
     };
-    private static final float VOLUME = .15f;
-    private static final double RANGE_SQUARED = 16 * 16;
+    private static final float VOLUME = .30f;
+    private static final double RANGE_SQUARED = 32 * 32;
     private final Map<UUID, Player> listeners = new HashMap<>();
     private UUID sourceId;
     private String track;
@@ -39,13 +39,9 @@ final class FinalsCashoutMusic {
             sourceId = source.getUniqueId();
         }
         Location origin = source.getLocation();
-        // Entity sound packets are discarded if the client has not received the body yet.
-        // Retry on later ticks, including after a reconnect or a recovered cashout body.
-        Set<Player> tracking = source.getTrackedBy();
         Set<UUID> nearby = new HashSet<>();
         for (Player player : audience) {
             if (!player.isOnline()
-                    || !tracking.contains(player)
                     || !origin.getWorld().equals(player.getWorld())
                     || player.getLocation().distanceSquared(origin) > RANGE_SQUARED) continue;
             UUID id = player.getUniqueId();
@@ -53,7 +49,9 @@ final class FinalsCashoutMusic {
             Player previous = listeners.get(id);
             if (previous == player) continue;
             if (previous != null) stop(previous);
-            player.playSound(source, track, SoundCategory.RECORDS, VOLUME, 1f);
+            // Listener-relative playback keeps the quiet track audible across the whole radius.
+            // Its range still follows the cashout; leaving the radius stops it below.
+            player.playSound(player, track, SoundCategory.RECORDS, VOLUME, 1f);
             listeners.put(id, player);
         }
         var iterator = listeners.entrySet().iterator();

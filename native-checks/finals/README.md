@@ -129,3 +129,11 @@ manual/defibrillator revives, Space respawns, and synchronized team-wipe respawn
 It uses native inventories/entities with fake player transport. The old JAR failed
 the manual-revival kit regression before the change; the full Gradle build and
 focused native checks pass with the new JAR. The test server shut down afterward.
+
+On 2026-11-13, the music update passed 49 music checks, 197 session checks and
+116 native configuration/lifecycle assertions against JAR SHA-256
+`85d43bb333ba620505c428cc2a4240b3e45c86615e517229d5cc5c431ac73ff2`.
+Playback uses 30% volume at each listener, with eligibility following the cashout
+within 32 blocks. Checks include the exact range boundary, leaving the radius,
+and restarting only the respawned listener's track. Native player transport is
+simulated; no client audio capture was performed.

@@ -34,6 +34,11 @@ public final class FinalsLoadoutSmoke {
     public static int run(JavaPlugin smoke, JavaPlugin main) throws Exception {
         return new FinalsLoadoutSmoke(smoke,main).check();
     }
+    public static int configOnly(JavaPlugin smoke, JavaPlugin main) throws Exception {
+        FinalsLoadoutSmoke fixture=new FinalsLoadoutSmoke(smoke,main);
+        fixture.cashoutConfigChecks();
+        return fixture.assertions;
+    }
     private Class<?> type(String name)throws Exception {
         return nativeAccess(() -> Class.forName(name.contains(".")?name:"me.petr1furious.potatominigames.games.finals."+name,true,loader));
     }
@@ -100,6 +105,7 @@ public final class FinalsLoadoutSmoke {
     private void close(double actual,double expected,String label){require(Math.abs(actual-expected)<.00001,label+": expected "+expected+", actual "+actual);}
 
     @SuppressWarnings("unchecked") private int check()throws Exception {
+        cashoutConfigChecks();
         World initial=Bukkit.getWorlds().getFirst();
         FakePlayer light=new FakePlayer("NativeLight",initial,28,.27f,.14f);
         FakePlayer medium=new FakePlayer("NativeMedium",initial,32,.31f,.16f);
@@ -129,6 +135,9 @@ public final class FinalsLoadoutSmoke {
             Object configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",main);
             Object config=make("FinalsConfig",configs);
             Object countdown=get(config,"countdownSeconds");
+            Object cashout=get(config,"cashoutSeconds");
+            call(cashout,"reset");
+            require(call(cashout,"get").equals(90),"Native Finals configuration defaults to a ninety-second cashout");
             call(countdown,"reset");
             require(call(countdown,"get").equals(18),"Native Finals configuration defaults to an eighteen-second loadout window");
             call(countdown,"set",5);
@@ -216,6 +225,8 @@ public final class FinalsLoadoutSmoke {
             withPlayerLookup(session,"tick");
             require((long)get(session,"tick")==360L&&get(session,"state")!=null,
                     "Tick360 creates the actual match state at the end of eighteen seconds");
+            require(call(get(session,"rules"),"cashoutTicks").equals(1_800L),
+                    "Production GO uses a complete ninety-second cashout timer");
             require(frozen.isEmpty(),"The actual GO transition releases every countdown freeze");
             for(FakePlayer player:players.values())
                 require(!(boolean)call(type("FinalsLoadouts"),"viewing",player.player),
@@ -225,6 +236,11 @@ public final class FinalsLoadoutSmoke {
             close(light.walkSpeed,.17,"Releasing countdown restores new class speed");
             close(medium.walkSpeed,.20,"Releasing countdown restores Medium speed");
             close(heavy.walkSpeed,.17,"Releasing countdown restores Heavy speed");
+            if(Boolean.getBoolean("finals.smoke.musicOnly")) {
+                cashoutMusicChecks(light,medium);
+                smoke.getLogger().info("FINALS_CASHOUT_MUSIC_SMOKE_PASS: "+assertions+" config and lifecycle assertions");
+                return assertions;
+            }
             withPlayerLookup(session,"onParticipantQuit",heavy.player);
             withPlayerLookup(session,"onParticipantRejoin",heavy.player);
             require(((Map<?,?>)get(session,"classes")).get(heavy.id).toString().equals("HEAVY")
@@ -262,6 +278,122 @@ public final class FinalsLoadoutSmoke {
             if(worlds!=null)call(worlds,"destroyVoid","finals");
             for(FakePlayer player:players.values())player.attribute.remove();
         }
+    }
+
+    private void cashoutConfigChecks()throws Exception {
+        String file="games/finals.yml";
+        java.nio.file.Path target=smoke.getDataFolder().toPath().resolve(file);
+        byte[] previous=java.nio.file.Files.exists(target)?java.nio.file.Files.readAllBytes(target):null;
+        java.nio.file.Files.createDirectories(target.getParent());
+        try {
+            java.nio.file.Files.writeString(target,"cashoutSeconds: 40\ndurationSeconds: 777\n");
+            Object configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            Object config=make("FinalsConfig",configs);
+            require(call(get(config,"cashoutSeconds"),"get").equals(90),
+                    "An existing unversioned forty-second default upgrades to ninety seconds");
+            require(call(get(config,"durationSeconds"),"get").equals(777),
+                    "Cashout migration preserves other intentional game settings");
+            var persisted=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(target.toFile());
+            require(persisted.getInt("cashoutSeconds")==90&&persisted.getInt("cashoutTimingVersion")==1,
+                    "The migrated duration and one-time marker survive restart");
+            require(call(configs,"set","finals","cashoutSeconds","40").toString().equals("SUCCESS"),
+                    "Administrators can still intentionally choose the former duration");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"cashoutSeconds"),"get").equals(40),
+                    "A forty-second choice made after migration survives restart");
+            call(configs,"reloadFile",file);
+            require(call(get(config,"cashoutSeconds"),"get").equals(40),
+                    "Configuration reload preserves an intentional forty-second choice");
+            java.nio.file.Files.writeString(target,"cashoutSeconds: 63\n");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"cashoutSeconds"),"get").equals(63),
+                    "An existing custom duration is not replaced by the new default");
+            persisted=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(target.toFile());
+            require(persisted.getInt("cashoutSeconds")==63&&persisted.getInt("cashoutTimingVersion")==1,
+                    "Preserved custom durations also receive the one-time migration marker");
+            java.nio.file.Files.writeString(target,"durationSeconds: 777\n");
+            configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",smoke);
+            config=make("FinalsConfig",configs);
+            require(call(get(config,"cashoutSeconds"),"get").equals(90),
+                    "A missing cashout setting uses the new ninety-second code default");
+        } finally {
+            if(previous==null)java.nio.file.Files.deleteIfExists(target);
+            else java.nio.file.Files.write(target,previous);
+        }
+    }
+
+    private void cashoutMusicChecks(FakePlayer carrier,FakePlayer listener)throws Exception {
+        Object state=get(session,"state"),physics=get(session,"cashouts");
+        Entity source=trackedCashout(physics,0);
+        for(FakePlayer player:players.values())player.location=source.getLocation().add(40,0,0);
+        carrier.location=source.getLocation().add(2,0,0);
+        listener.location=source.getLocation().add(3,0,0);
+        require(players.values().stream().allMatch(player->player.musicStarted.isEmpty()),
+                "The active match has no cashout music before a box is deposited");
+        long start=(long)get(session,"tick");
+        require((boolean)call(state,"activateVault",carrier.id,start),"Music fixture opens a real vault");
+        long opened=start+(long)call(get(session,"rules"),"vaultOpenTicks");
+        set(session,"tick",opened);
+        require((boolean)call(state,"pickUp",carrier.id,opened),"Music fixture picks up the unlocked box");
+        withPlayerLookup(session,"interactStation",carrier.player,0);
+        require(call(state,"phase").toString().equals("CASHOUT")
+                        &&(long)call(state,"phaseDeadline")==opened+1_800,
+                "The real station deposit starts a ninety-second cashout");
+        require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep"))
+                        &&listener.musicStarted.equals(carrier.musicStarted),
+                "A real deposit starts Pigstep for connected nearby players");
+        require(carrier.musicSource==source&&carrier.musicCategory==SoundCategory.RECORDS,
+                "Music is attached to the actual cashout interaction body in the record category");
+        close(carrier.musicVolume,.15,"Cashout music is quiet");
+        require(players.values().stream().filter(player->player!=carrier&&player!=listener)
+                        .allMatch(player->player.musicStarted.isEmpty()),
+                "Far-away contestants do not receive the cashout's music");
+        withPlayerLookup(session,"tick");
+        require(carrier.musicStarted.size()==1&&listener.musicStarted.size()==1,
+                "The regular production tick does not restart a playing track");
+        withPlayerLookup(session,"onParticipantQuit",listener.player);
+        require(listener.musicStopped.equals(List.of("minecraft:music_disc.pigstep")),
+                "Disconnect stops only the departing listener's cashout track");
+        set(session,"tick",(long)call(state,"phaseDeadline")-1);
+        // Payout replaces a native cashout entity, which requires the real CraftServer.
+        // Playback cleanup retains its recipients and does not need fake player lookup.
+        nativeAccess(()->{call(session,"tick");return null;});
+        require(call(state,"phase").toString().equals("VAULT_CLOSED")
+                        &&carrier.musicStopped.equals(List.of("minecraft:music_disc.pigstep")),
+                "The exact production payout tick stops the old cashout music");
+        require(listener.musicStarted.size()==1,
+                "A disconnected participant does not receive music again while still in the registry");
+
+        source=trackedCashout(physics,1);
+        carrier.location=source.getLocation().add(2,0,0);
+        start=(long)get(session,"tick");
+        require((boolean)call(state,"activateVault",carrier.id,start),"The next objective can unlock normally");
+        opened=start+(long)call(get(session,"rules"),"vaultOpenTicks");
+        set(session,"tick",opened);
+        require((boolean)call(state,"pickUp",carrier.id,opened),"The next objective's cashbox can be picked up");
+        withPlayerLookup(session,"interactStation",carrier.player,1);
+        require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep","minecraft:music_disc.lava_chicken")),
+                "The next real cashout uses Lava Chicken instead of layering tracks");
+        withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));
+        require(carrier.musicStopped.equals(List.of("minecraft:music_disc.pigstep","minecraft:music_disc.lava_chicken")),
+                "Aborting an active cashout explicitly stops Lava Chicken");
+    }
+
+    /** Real body lifecycle with fake network tracking, matching these fixtures' player transport. */
+    private Entity trackedCashout(Object physics,int slot)throws Exception {
+        Object body=((Object[])get(physics,"bodies"))[slot];
+        Interaction nativeBody=(Interaction)get(body,"interaction");
+        Interaction transport=(Interaction)Proxy.newProxyInstance(Interaction.class.getClassLoader(),
+                new Class<?>[]{Interaction.class},(receiver,method,args)->{
+                    if(method.getName().equals("getTrackedBy"))
+                        return players.values().stream().map(player->player.player).collect(java.util.stream.Collectors.toSet());
+                    try{return method.invoke(nativeBody,args);}
+                    catch(InvocationTargetException failure){throw failure.getCause();}
+                });
+        set(body,"interaction",transport);
+        return transport;
     }
 
     @SuppressWarnings("unchecked") private void hostedMatchChecks(Object services,Object config,Object registry,Object loadouts)throws Exception {
@@ -672,6 +804,8 @@ public final class FinalsLoadoutSmoke {
         final Inventory storage=Bukkit.createInventory(null,54);
         final Inventory fallback=Bukkit.createInventory(null,9);
         final Map<PotionEffectType,PotionEffect> effects=new HashMap<>();
+        final List<String> musicStarted=new ArrayList<>(),musicStopped=new ArrayList<>();
+        Entity musicSource;SoundCategory musicCategory;float musicVolume;
         final PlayerInventory inventory;
         final InventoryView view;
         final Player player;
@@ -718,6 +852,20 @@ public final class FinalsLoadoutSmoke {
                 case "getScoreboard"->scoreboard;case "setScoreboard"->{scoreboard=(Scoreboard)a[0];yield null;}
                 case "openInventory"->{top=(Inventory)a[0];menuOpens++;yield view();}
                 case "getOpenInventory"->view();case "closeInventory"->{top=fallback;yield null;}
+                case "playSound"->{
+                    if(a.length>=5&&a[0] instanceof Entity source&&a[1] instanceof String track
+                            &&track.startsWith("minecraft:music_disc.")) {
+                        musicSource=source;musicCategory=(SoundCategory)a[2];musicVolume=(float)a[3];musicStarted.add(track);
+                    }
+                    yield null;
+                }
+                case "stopSound"->{
+                    if(a.length==2&&a[0] instanceof String track&&track.startsWith("minecraft:music_disc.")) {
+                        require(a[1]==SoundCategory.RECORDS,"Cleanup stops the exact record category");
+                        musicStopped.add(track);
+                    }
+                    yield null;
+                }
                 default->zero(m.getReturnType());
             });
             view=(InventoryView)Proxy.newProxyInstance(InventoryView.class.getClassLoader(),new Class<?>[]{InventoryView.class},(o,m,a)->switch(m.getName()){

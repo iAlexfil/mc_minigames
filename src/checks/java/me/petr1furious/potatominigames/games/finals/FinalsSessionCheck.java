@@ -671,7 +671,9 @@ public final class FinalsSessionCheck {
 
     private static void countdownLoadoutWindow() throws Exception {
         ConfigRegistry configs = new ConfigRegistry(null);
-        map(configs, "files").put(FinalsConfig.FILE, new YamlConfiguration());
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("cashoutTimingVersion", 1);
+        map(configs, "files").put(FinalsConfig.FILE, yaml);
         FinalsConfig defaults = new FinalsConfig(configs);
         check(defaults.countdownSeconds.get() == 18, "fresh Finals configuration grants 18 seconds for loadout selection");
         check(countdownFromStart(5) == 360L, "persisted five-second defaults cannot shorten the loadout window");
@@ -710,6 +712,7 @@ public final class FinalsSessionCheck {
     private static FinalsSession sessionFromStart(int configured, int participantCount) throws Exception {
         ConfigRegistry configs = new ConfigRegistry(null);
         YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("cashoutTimingVersion", 1);
         yaml.set("countdownSeconds", configured);
         map(configs, "files").put(FinalsConfig.FILE, yaml);
         FinalsConfig config = new FinalsConfig(configs);
@@ -988,9 +991,11 @@ public final class FinalsSessionCheck {
     }
 
     private static final class Fixture {
+        // Explicit short cashouts keep the existing objective-rotation boundary fixtures stable.
+        final FinalsState.Rules rules = new FinalsState.Rules(100, 800, 100, 7_200, 10_000, 20_000);
         final FakeWorld world = new FakeWorld();
         final FinalsArena arena = new FinalsArena(world.world);
-        final FinalsState state = new FinalsState(ROSTER, 0);
+        final FinalsState state = new FinalsState(ROSTER, 0, rules);
         final FakePlayer red = new FakePlayer(RED, world.world);
         final FakePlayer blue = new FakePlayer(BLUE, world.world);
         final FakePlayer blueMate = new FakePlayer(BLUE_MATE, world.world);
@@ -1013,7 +1018,7 @@ public final class FinalsSessionCheck {
             set(session, "world", world.world);
             set(session, "arena", arena);
             set(session, "state", state);
-            set(session, "rules", FinalsState.Rules.defaults());
+            set(session, "rules", rules);
             set(session, "tick", 100L);
             set(session, "respawnTicks", 60);
             map(session, "roster").putAll(ROSTER);

@@ -34,7 +34,7 @@ a gravity-driven arc; death still drops it normally.
 Throw the cashbox into either cashout to deposit it automatically for the thrower's
 team. Fast throws are checked along their full path, and walls block insertion.
 Right-click gold cashout A or B
-to deposit it. After 40 seconds the current owner banks $10,000. To steal an
+to deposit it. After 90 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
 blocks for five seconds**. Damage, death, leaving the area or releasing sneak
 interrupts the steal. The action bar shows progress, and the boss bar shows the
@@ -43,6 +43,10 @@ is in progress, stopping when it succeeds or is interrupted. Stealing never rese
 that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
 destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
+Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 15%
+volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
+within 16 blocks; it follows a falling station and stops when the payout or match
+ends. The old saved 40-second default is upgraded once; other custom timings remain.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
 a draw. Death normally has a five-second automatic respawn delay. Matches that
@@ -181,6 +185,23 @@ copy of a saved snapshot.
 5. `/finals map save rooftop`, wait for the saved message, then `/finals map use rooftop`.
    Use `/finals map info rooftop` or `/finals map list` to inspect setup.
    Select `generated` to return to the fallback arena.
+
+To make several playable areas from one city, import the city once, then create
+additional maps in its editor world:
+
+```text
+/finals map create city_north city
+/finals map create city_south city
+/finals map goto city_north
+```
+
+Here `city` is the existing imported map name. Each new map starts with empty
+setup: select its own `pos1`/`pos2`, add its own spawns, vaults and cashouts, then
+save it. `/finals map create <name>` while standing in the city also reuses that
+world. Both forms retain the imported-world information across server restarts.
+Terrain edits are shared in the editor; each area's saved snapshot and playable
+bounds stay independent until that map is saved again. No second world import or
+city copy is needed. `/finals map use city_north` selects the saved northern area.
 
 Remove one draft point by its preview number with `/finals map vaultremove rooftop 2`,
 `/finals map cashoutremove rooftop 3`, or `/finals map spawnremove rooftop red 1`.

@@ -379,6 +379,11 @@ final class FinalsCashoutPhysics {
                 && Math.abs(point.getY() - other.position.getY()) < 1;
     }
 
+    Entity soundSource(int slot) {
+        Body body = bodies[slot];
+        return body == null ? null : body.interaction;
+    }
+
     int station(Entity entity) {
         for (int slot = 0; slot < bodies.length; slot++) {
             Body body = bodies[slot];

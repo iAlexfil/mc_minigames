@@ -49,6 +49,7 @@ final class FinalsSession implements GameSession {
     private final Map<UUID, OriginalVitals> originalVitals = new HashMap<>();
     private final Map<UUID, FinalsClass> classes = new HashMap<>();
     private final FinalsKills kills = new FinalsKills();
+    private final FinalsCashoutMusic cashoutMusic = new FinalsCashoutMusic();
     private final FinalsTeamWipes teamWipes = new FinalsTeamWipes();
     private final Map<UUID, Location> teamRespawnPositions = new HashMap<>();
     private final Map<UUID, Long> gadgetSicknessUntil = new HashMap<>();
@@ -940,6 +941,7 @@ final class FinalsSession implements GameSession {
     }
 
     private void announceDeposit(UUID player, int station) {
+        updateCashoutMusic();
         services.messages().broadcast(text("deposited", teamName(roster.get(player)), station == 0 ? "A" : "B"));
         var title = net.kyori.adventure.title.Title.title(
                 text("cashout.started.title", teamName(roster.get(player))),
@@ -956,6 +958,17 @@ final class FinalsSession implements GameSession {
         return services.participants() == null ? List.of()
                 : services.participants().onlinePlayers().stream()
                         .filter(player -> connected.contains(player.getUniqueId())).toList();
+    }
+
+    private void updateCashoutMusic() {
+        if (done || cashouts == null || state == null || state.phase() != FinalsState.Phase.CASHOUT) {
+            cashoutMusic.clear();
+            return;
+        }
+        cashoutMusic.update(cashouts.soundSource(state.station()),
+                services.participants().onlinePlayers().stream()
+                        .filter(player -> connected.contains(player.getUniqueId()) || isGameMaster(player))
+                        .toList());
     }
 
     private void objectiveSound(Location location, String sound, float pitch) {
@@ -1047,6 +1060,7 @@ final class FinalsSession implements GameSession {
             return;
         }
         advanceObjective();
+        updateCashoutMusic();
         if (state.isFinished()) {
             finish();
             return;
@@ -1243,6 +1257,7 @@ final class FinalsSession implements GameSession {
     public void onEnd(EndReason reason) {
         if (done) return;
         done = true;
+        cashoutMusic.clear();
         updateStealSiren();
         if (arena != null) arena.cancelBuild();
         if (ticker != null) ticker.cancel();
@@ -1868,6 +1883,7 @@ final class FinalsSession implements GameSession {
     private void disconnect(Player player, boolean permanent) {
         UUID id = player.getUniqueId();
         if (done) return;
+        cashoutMusic.remove(player);
         if (id.equals(gameMaster)) {
             gameMasterOnline = false;
             if (permanent) withdrawn.add(id);

@@ -15,6 +15,7 @@ public final class FinalsStateCheck {
     private static int checks;
 
     public static void main(String[] args) {
+        defaultCashoutTiming();
         thrownCashoutLifecycle();
         thrownCashoutEligibilityAndDeadlines();
         vaultAndCashboxLifecycle();
@@ -29,8 +30,36 @@ public final class FinalsStateCheck {
         System.out.println("FinalsStateCheck: " + checks + " checks passed");
     }
 
+    private static void defaultCashoutTiming() {
+        FinalsState state = new FinalsState(ROSTER, 1_000);
+        state.activateVault(RED, 1_000);
+        state.pickUp(RED, 1_100);
+        check(state.deposit(RED, 0, 1_100), "default cashout starts after deposit");
+        state.tick(1_900);
+        check(state.phase() == FinalsState.Phase.CASHOUT && state.score(0) == 0,
+                "default cashouts remain active after the old forty-second payout boundary");
+        check(state.beginSteal(BLUE, 2_700) && state.completeSteal(BLUE, 2_800),
+                "a late steal can complete within the default ninety-second cashout");
+        check(state.ownerTeam() == 1 && state.phaseDeadline() == 2_900,
+                "stealing preserves the original ninety-second payout deadline");
+        state.tick(2_899);
+        check(state.score(0) == 0 && state.score(1) == 0,
+                "a default cashout never pays before its final tick");
+        state.tick(2_900);
+        check(state.score(0) == 0 && state.score(1) == 10_000
+                        && state.phase() == FinalsState.Phase.VAULT_CLOSED,
+                "a default cashout pays its final owner exactly ninety seconds after deposit");
+
+        FinalsState thrown = launched(RED, FinalsState.Rules.defaults());
+        check(depositThrown(thrown, RED, 0, 100) && thrown.phaseDeadline() == 1_900,
+                "thrown deposits use the same default ninety-second duration");
+        check(thrown.beginSteal(BLUE, 1_800) && !thrown.completeSteal(BLUE, 1_900)
+                        && thrown.score(0) == 10_000 && thrown.score(1) == 0,
+                "payout wins a steal completing exactly at the ninety-second deadline");
+    }
+
     private static void thrownCashoutLifecycle() {
-        FinalsState state = new FinalsState(ROSTER, 0);
+        FinalsState state = new FinalsState(ROSTER, 0, rules(7_200));
         check(!depositThrown(state, RED, 0, 0), "a thrown deposit cannot bypass a closed vault");
         state.activateVault(RED, 0);
         check(!depositThrown(state, RED, 0, 99), "a thrown deposit cannot bypass vault opening");
@@ -65,7 +94,7 @@ public final class FinalsStateCheck {
         state.tick(902);
         check(state.score(1) == 10_000, "a completed thrown cashout cannot pay twice");
 
-        FinalsState simultaneous = launched(RED, FinalsState.Rules.defaults());
+        FinalsState simultaneous = launched(RED, rules(7_200));
         check(depositThrown(simultaneous, RED, 0, 100), "fixture deposits a thrown cashbox");
         simultaneous.beginSteal(BLUE, 800);
         check(!simultaneous.completeSteal(BLUE, 900) && simultaneous.score(0) == 10_000,
@@ -145,7 +174,7 @@ public final class FinalsStateCheck {
         check(
                 state.ownerTeam() == 1 && state.station() == 1 && state.carrier() == null,
                 "deposit records team and station and consumes carried box");
-        check(state.phaseDeadline() == 1_902, "cashout lasts full forty seconds");
+        check(state.phaseDeadline() == 2_902, "cashout lasts full ninety seconds");
         check(
                 !state.deposit(BLUE, 0, 1_102) && !state.pickUp(RED, 1_102),
                 "deposited box cannot be duplicated");
@@ -411,7 +440,7 @@ public final class FinalsStateCheck {
     }
 
     private static FinalsState deposited(long start, UUID player, int station) {
-        FinalsState state = new FinalsState(ROSTER, start);
+        FinalsState state = new FinalsState(ROSTER, start, rules(7_200));
         check(state.activateVault(player, start), "fixture activates vault");
         check(state.pickUp(player, start + 100), "fixture picks up box");
         check(state.deposit(player, station, start + 100), "fixture deposits box");

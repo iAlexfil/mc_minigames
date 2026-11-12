@@ -112,16 +112,39 @@ public final class FinalsMaps {
     public void create(String name, Location location) {
         requireNewName(name);
         World world = location.getWorld();
-        if (world == null
-                || world.getName()
-                        .startsWith(
-                                me.petr1furious.potatominigames.core.world.ThrowawayWorldService
-                                        .PREFIX)) throw failure("persistent_world");
+        if (world == null) throw failure("persistent_world");
+        createInWorld(name, world.getName());
+    }
+
+    /** A separate playable area in the same editor, without copying terrain or setup points. */
+    public void create(String name, String sourceMap) {
+        requireNewName(name);
+        createInWorld(name, entry(sourceMap).draft.world);
+    }
+
+    private void createInWorld(String name, String worldName) {
+        if (worldName.startsWith(
+                        me.petr1furious.potatominigames.core.world.ThrowawayWorldService.PREFIX)
+                || worldName.startsWith("finals_match_")) throw failure("persistent_world");
         Draft draft = new Draft();
-        draft.world = world.getName();
+        draft.world = worldName;
+        inheritEditor(draft);
         Map<String, Entry> next = new LinkedHashMap<>(entries);
         next.put(name, new Entry(draft, null));
         commit(next, selected);
+    }
+
+    /** Recover the shared imported world's reload information while keeping this area's setup. */
+    private void inheritEditor(Draft draft) {
+        if (draft.imported) return;
+        for (Entry entry : entries.values()) {
+            Draft source = entry.draft;
+            if (source.imported && source.world.equals(draft.world)) {
+                draft.imported = true;
+                draft.folder = source.folder;
+                return;
+            }
+        }
     }
 
     public void importWorld(String name, String source) {
@@ -790,6 +813,9 @@ public final class FinalsMaps {
                                             + invalid.getMessage());
                 }
             }
+        // Earlier /create aliases retained only the world name. Repair them after all potential
+        // imported-world owners have been read, independently of their order in the registry.
+        entries.values().forEach(entry -> inheritEditor(entry.draft));
         String requested = yaml.getString("selected", "generated");
         selected = names().contains(requested) ? requested : "generated";
     }

@@ -55,16 +55,11 @@ public final class FinalsMapCommands {
                         .then(
                                 Commands.argument("name", StringArgumentType.word())
                                         .executes(ctx ->
-                                                run(
-                                                        ctx,
-                                                        c -> {
-                                                            maps.create(
-                                                                    name(c),
-                                                                    GameCommands.requirePlayer(c)
-                                                                            .getLocation());
-                                                            send(c, "created", name(c));
-                                                            showPreview(c);
-                                                        }))));
+                                                run(ctx, this::createHere))
+                                        .then(
+                                                mapArgument("sourceMap")
+                                                        .executes(ctx ->
+                                                                run(ctx, this::createShared)))));
         map.then(
                 Commands.literal("import")
                         .then(
@@ -337,13 +332,33 @@ public final class FinalsMapCommands {
     }
 
     private RequiredArgumentBuilder<CommandSourceStack, String> nameArgument() {
-        return Commands.argument("name", StringArgumentType.word())
+        return mapArgument("name");
+    }
+
+    private RequiredArgumentBuilder<CommandSourceStack, String> mapArgument(String argument) {
+        return Commands.argument(argument, StringArgumentType.word())
                 .suggests((ctx, builder) -> {
                     maps.drafts().stream()
                             .filter(value -> value.startsWith(builder.getRemainingLowerCase()))
                             .forEach(builder::suggest);
                     return builder.buildFuture();
                 });
+    }
+
+    private void createHere(CommandContext<CommandSourceStack> ctx) throws CommandFailure {
+        maps.create(name(ctx), GameCommands.requirePlayer(ctx).getLocation());
+        send(ctx, "created", name(ctx));
+        showPreview(ctx);
+    }
+
+    private void createShared(CommandContext<CommandSourceStack> ctx) throws CommandFailure {
+        String sourceMap = StringArgumentType.getString(ctx, "sourceMap");
+        maps.create(name(ctx), sourceMap);
+        send(ctx, "created_shared", name(ctx), sourceMap);
+        if (ctx.getSource().getExecutor() instanceof Player player
+                && player.hasPermission(GameCommands.ADMIN_PERMISSION)
+                && player.getWorld().getName().equals(maps.previewDraft(name(ctx)).world))
+            showPreview(ctx);
     }
 
     private void importMap(CommandContext<CommandSourceStack> ctx) {

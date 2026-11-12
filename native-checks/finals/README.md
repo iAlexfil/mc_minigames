@@ -35,6 +35,18 @@ uses a loopback HTTP fixture for streaming ZIP bodies, interrupted/truncated res
 HTML rejection and URL/address validation. These fixtures do not depend on an external
 download host; URL imports still need a direct public download link in normal use.
 
+`FinalsSharedWorldSmoke.run(smokePlugin, mainPlugin, done, failed)` runs after the
+default map fixture, reusing its imported `folderimport` editor (override with
+`-Dfinals.smoke.sharedSource=<map>` in an isolated server). It checks standing and
+console-command area creation, reopening the shared editor, repair of older aliases,
+empty setup for new areas, disjoint saved bounds, independent templates/resaves, and
+rejection of disposable match worlds. Results go to `shared-world-result.txt`.
+On 2026-11-12, all 28 shared-world assertions passed against main JAR SHA-256
+`c39d27e712898920b8d0d6c17a0a3903317a727178fa81afa38faa50be54223f`.
+The original standing-alias reopen failure was reproduced against the preceding
+build before the fix. The full Gradle build and English/Russian catalog checks
+also passed; the disposable server shut down after the native run.
+
 ## Evidence
 
 Successful runs log `FINALS_MAPS_SMOKE_PASS`, `FINALS_PREVIEW_SMOKE_PASS` and/or `FINALS_LOADOUT_SMOKE_PASS`. Results are also written beneath `plugins/FinalsMapsSmoke/` as `result.txt`, `preview-result.txt` and `loadout-result.txt`. Retain the console log and the tested main JAR's SHA-256 with those results.
@@ -99,3 +111,12 @@ and **0.230 seconds** to load another clone. The selection included all 384 worl
 height levels. Preparation included generating uncached source chunks. These times
 exclude the loadout countdown and client rendering; they are not measurements of
 the user's remote map or server. The disposable server shut down after the checks.
+
+The cashout music run on 2026-11-12 passed **107 configuration and session assertions**
+against JAR SHA-256 `a67cfba2150716f63a0642b43e1d88f869db530ebe852d4ec6ef7f46516d062a`.
+It covered the one-time 40-to-90-second migration, preserved custom settings,
+production deposit/payout/disconnect/abort handling, and alternating Pigstep and
+Lava Chicken at 15% volume. Entity bodies were native; player transport and entity
+tracking were simulated. The focused runner uses `-Dfinals.smoke.musicOnly=true`
+and `--noconsole`. The full Gradle build passed, including 49 music listener checks,
+139 state checks and 197 session checks. No client audio capture was performed.

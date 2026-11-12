@@ -10,11 +10,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
-/** Six shared, non-repeating native tasks sampled once from the full obstacle pool. */
+/** Seven or eight shared, non-repeating native tasks sampled once from the full obstacle pool. */
 final class ParkourCourse {
-    static final int LENGTH = 6;
+    static final int MIN_LENGTH = 7, MAX_LENGTH = 8;
     static final int WIDTH = 27, PITCH = 28, BOTTOM = 0, TOP = 256;
     static final int BUILD_BOTTOM = 8, BUILD_TOP = 248;
+    static final int CLUTCH_SUPPORT_HEIGHT = 3;
+    // White quartz and gold/emerald are reserved for actual checkpoint islands.
+    static final Material OBSTACLE_BLOCK = Material.DEEPSLATE_TILES;
 
     record Pos(int x, int y, int z) {}
 
@@ -36,7 +39,21 @@ final class ParkourCourse {
         }
     }
 
-    record Supply(Material material, int count) {}
+    record Supply(Material material, int count, String potion, String enchantment, int level) {
+        Supply(Material material, int count) {
+            this(material, count, null, null, 0);
+        }
+    }
+
+    enum Family {
+        BUILD,
+        CLIMB,
+        DROP,
+        LAUNCH,
+        PARKOUR,
+        RIDE,
+        WATER
+    }
 
     enum Kind {
         BRIDGE("bridge", 18, 0, kit(Material.CYAN_WOOL, 22, Material.SHEARS, 1)),
@@ -53,7 +70,22 @@ final class ParkourCourse {
         FLIGHT("flight", 50, 64, kit(Material.ELYTRA, 1, Material.FIREWORK_ROCKET, 6)),
         LADDER_TRAVERSE("ladder_traverse", 0, 0, kit(Material.CYAN_WOOL, 12, Material.LADDER, 12)),
         BLOCK_ASCENT("block_ascent", 14, 14, kit(Material.CYAN_WOOL, 32, Material.SHEARS, 1)),
-        POT_ASCENT("pot_ascent", 14, 14, kit(Material.CYAN_WOOL, 16, Material.FLOWER_POT, 18));
+        POT_ASCENT("pot_ascent", 14, 14, kit(Material.CYAN_WOOL, 16, Material.FLOWER_POT, 18)),
+        PARKOUR_JUMPS("parkour_jumps", 20, 2, List.of()),
+        LOW_CEILING("low_ceiling", 20, 0, List.of()),
+        LEAPING_PILLARS("leaping_pillars", 20, 4, potion("STRONG_LEAPING")),
+        SLOW_FALLING("slow_falling", 20, -32, potion("SLOW_FALLING")),
+        RIPTIDE_LAUNCH("riptide_launch", 14, 0, enchanted(Material.TRIDENT, "riptide", 3)),
+        WATER_ELEVATOR("water_elevator", 2, 20, kit(Material.WATER_BUCKET, 1)),
+        POWDER_SNOW_DROP("powder_snow_drop", 3, -40, kit(Material.POWDER_SNOW_BUCKET, 1)),
+        WIND_CHARGE_DROP("wind_charge_drop", 3, -44, kit(Material.WIND_CHARGE, 3)),
+        HONEY_TRAVERSE("honey_traverse", 14, -24, List.of()),
+        BOAT_WATER("boat_water", 32, 0, kit(Material.OAK_BOAT, 1)),
+        BOAT_ICE("boat_ice", 38, 0, kit(Material.OAK_BOAT, 1)),
+        MINECART_RIDE("minecart_ride", 32, 0, kit(Material.MINECART, 1)),
+        FROST_WALKER("frost_walker", 26, 0, enchanted(Material.LEATHER_BOOTS, "frost_walker", 2)),
+        SOUL_SPEED("soul_speed", 26, 0, enchanted(Material.LEATHER_BOOTS, "soul_speed", 3)),
+        WIND_HOPS("wind_hops", 14, 6, kit(Material.WIND_CHARGE, 4));
 
         final String id;
         final int gap, rise;
@@ -64,6 +96,37 @@ final class ParkourCourse {
             this.gap = gap;
             this.rise = rise;
             this.supplies = supplies;
+        }
+
+        Family family() {
+            return switch (this) {
+                case BRIDGE, BLOCK_ASCENT, POT_ASCENT -> Family.BUILD;
+                case WIND_WALL, SCAFFOLD, LADDER_CLIMB, LADDER_TRAVERSE -> Family.CLIMB;
+                case WATER_DROP,
+                        LADDER_DROP,
+                        WEB_DROP,
+                        HONEY_DROP,
+                        POWDER_SNOW_DROP,
+                        WIND_CHARGE_DROP,
+                        SLOW_FALLING ->
+                        Family.DROP;
+                case SLIME_BOUNCE, PEARL, FLIGHT, RIPTIDE_LAUNCH, WIND_HOPS -> Family.LAUNCH;
+                case BOAT_WATER, BOAT_ICE, MINECART_RIDE -> Family.RIDE;
+                case SWIM, WATER_ELEVATOR, FROST_WALKER -> Family.WATER;
+                default -> Family.PARKOUR;
+            };
+        }
+
+        boolean vehicle() {
+            return this == BOAT_WATER || this == BOAT_ICE || this == MINECART_RIDE;
+        }
+
+        private static List<Supply> potion(String type) {
+            return List.of(new Supply(Material.POTION, 1, type, null, 0));
+        }
+
+        private static List<Supply> enchanted(Material material, String key, int level) {
+            return List.of(new Supply(material, 1, null, key, level));
         }
 
         String key() {
@@ -82,6 +145,7 @@ final class ParkourCourse {
     private final List<Kind> sequence;
     private final List<Island> islands;
     private final Map<Pos, Material> blocks;
+    private final Map<Pos, String> states;
 
     ParkourCourse(Random random) {
         this(generate(random));
@@ -91,6 +155,7 @@ final class ParkourCourse {
         sequence = valid.sequence;
         islands = valid.islands;
         blocks = valid.blocks;
+        states = valid.states;
     }
 
     private static final class InvalidLayout extends IllegalStateException {
@@ -100,36 +165,56 @@ final class ParkourCourse {
     }
 
     private static ParkourCourse generate(Random random) {
+        int length = MIN_LENGTH + random.nextInt(MAX_LENGTH - MIN_LENGTH + 1);
         for (int attempt = 0; attempt < 32; attempt++) {
             try {
-                return new ParkourCourse(sample(random), random.nextBoolean());
+                return new ParkourCourse(sample(random, length), random.nextBoolean());
             } catch (InvalidLayout invalid) {
                 /* Reject blocked compositions before building a world. */
             }
         }
         return new ParkourCourse(
                 List.of(
-                        Kind.BRIDGE,
-                        Kind.WIND_WALL,
-                        Kind.WATER_DROP,
-                        Kind.SCAFFOLD,
-                        Kind.LADDER_CLIMB,
-                        Kind.PEARL),
+                                Kind.BRIDGE,
+                                Kind.WIND_WALL,
+                                Kind.WATER_DROP,
+                                Kind.SWIM,
+                                Kind.BLOCK_ASCENT,
+                                Kind.PEARL,
+                                Kind.PARKOUR_JUMPS,
+                                Kind.BOAT_ICE)
+                        .subList(0, length),
                 false);
     }
 
-    private static List<Kind> sample(Random random) {
+    private static List<Kind> sample(Random random, int length) {
         List<Kind> pool = new ArrayList<>(List.of(Kind.values()));
         Collections.shuffle(pool, random);
-        return List.copyOf(pool.subList(0, LENGTH));
+        List<Kind> result = new ArrayList<>();
+        var families = new java.util.EnumMap<Family, Integer>(Family.class);
+        for (Kind kind : pool)
+            if (families.size() < 4 && !families.containsKey(kind.family())) {
+                result.add(kind);
+                families.put(kind.family(), 1);
+            }
+        for (Kind kind : pool)
+            if (result.size() < length
+                    && !result.contains(kind)
+                    && families.getOrDefault(kind.family(), 0) < 2) {
+                result.add(kind);
+                families.merge(kind.family(), 1, Integer::sum);
+            }
+        Collections.shuffle(result, random);
+        return List.copyOf(result);
     }
 
     ParkourCourse(List<Kind> selected, boolean mirror) {
         if (selected == null
-                || selected.size() != LENGTH
-                || new HashSet<>(selected).size() != LENGTH
+                || selected.size() < MIN_LENGTH
+                || selected.size() > MAX_LENGTH
+                || new HashSet<>(selected).size() != selected.size()
                 || selected.stream().anyMatch(java.util.Objects::isNull))
-            throw new IllegalArgumentException("Six distinct tasks required");
+            throw new IllegalArgumentException("Seven or eight distinct tasks required");
         sequence = List.copyOf(selected);
         List<Island> relative = new ArrayList<>();
         int anchor = mirror ? 20 : 0;
@@ -155,6 +240,7 @@ final class ParkourCourse {
                         .map(i -> new Island(i.x(), i.z(), i.y() + offset, i.width()))
                         .toList();
         Map<Pos, Material> plan = new LinkedHashMap<>();
+        Map<Pos, String> data = new LinkedHashMap<>();
         for (int i = 0; i < islands.size(); i++) {
             Island island = islands.get(i);
             for (int x = island.x(); x < island.x() + island.width(); x++)
@@ -171,17 +257,17 @@ final class ParkourCourse {
             Kind kind = stage(i);
             Island from = island(i), to = island(i + 1);
             switch (kind) {
-                case WIND_WALL, SCAFFOLD, LADDER_CLIMB -> {
+                case WIND_WALL, SCAFFOLD, LADDER_CLIMB, WATER_ELEVATOR -> {
                     for (int x = 0; x < WIDTH; x++)
                         for (int y = BUILD_BOTTOM; y <= to.y(); y++)
-                            plan.put(new Pos(x, y, to.z() - 1), Material.SMOOTH_QUARTZ);
+                            plan.put(new Pos(x, y, to.z() - 1), OBSTACLE_BLOCK);
                 }
                 case SLIME_BOUNCE -> {
                     int center = (int) from.centerX();
                     for (int x = center - 2; x <= center + 2; x++)
                         for (int z = from.z() + 15; z <= from.z() + 20; z++) {
-                            plan.put(new Pos(x, from.y() - 37, z), Material.SMOOTH_QUARTZ);
-                            plan.put(new Pos(x, from.y() - 36, z), Material.LIME_CONCRETE);
+                            plan.put(new Pos(x, from.y() - 37, z), OBSTACLE_BLOCK);
+                            plan.put(new Pos(x, from.y() - 36, z), Material.LIGHT_BLUE_CONCRETE);
                         }
                 }
                 case SWIM -> swimTunnel(plan, from, to);
@@ -197,7 +283,7 @@ final class ParkourCourse {
                 }
                 case LADDER_DROP, HONEY_DROP ->
                         clutchWall(plan, from, to, from.centerX() < WIDTH / 2.0 ? 0 : WIDTH - 1);
-                default -> {}
+                default -> ParkourTasks.build(kind, from, to, plan, data);
             }
         }
         for (Pos pos : plan.keySet())
@@ -205,6 +291,7 @@ final class ParkourCourse {
                 throw new InvalidLayout("Sampled course exceeds the sealed arena bounds");
         validateClearance(plan);
         blocks = Collections.unmodifiableMap(plan);
+        states = Collections.unmodifiableMap(data);
     }
 
     private void swimTunnel(Map<Pos, Material> plan, Island from, Island to) {
@@ -215,23 +302,33 @@ final class ParkourCourse {
                     plan.put(new Pos(x, y, z), Material.WATER);
         for (int z = from.z() + 7; z < to.z(); z++)
             for (int x = 0; x < WIDTH; x++) {
-                plan.put(new Pos(x, from.y(), z), Material.SMOOTH_QUARTZ);
+                plan.put(new Pos(x, from.y(), z), OBSTACLE_BLOCK);
                 for (int y = from.y() + 1; y <= from.y() + 10; y++)
                     plan.put(
                             new Pos(x, y, z),
                             Math.abs(x - center) <= 1 && y == from.y() + 1
                                     ? Material.WATER
-                                    : Material.SMOOTH_QUARTZ);
+                                    : OBSTACLE_BLOCK);
             }
+        // Alternating one-block openings force lateral swimming; three clear rows between
+        // baffles leave enough room to turn with the vanilla swimming hitbox.
+        for (int gate = 0; gate < 4; gate++) {
+            int z = from.z() + 10 + gate * 4;
+            int opening = center + (gate % 2 == 0 ? -1 : 1);
+            for (int x = center - 1; x <= center + 1; x++)
+                if (x != opening)
+                    plan.put(new Pos(x, from.y() + 1, z), Material.LIGHT_BLUE_CONCRETE);
+        }
     }
 
     private void clutchWall(Map<Pos, Material> plan, Island from, Island to, int side) {
+        // Only the final catch has an anchor; no staircase of catches down the whole fall.
         // Keep the whole destination island free, including the next sideways route.
         for (int z = from.z() + 4; z < to.z(); z++)
-            for (int y = to.y(); y <= from.y() + 4; y++)
+            for (int y = to.y(); y < to.y() + CLUTCH_SUPPORT_HEIGHT; y++)
                 plan.put(
                         new Pos(side, y, z),
-                        z == to.z() - 1 ? Material.LIGHT_BLUE_CONCRETE : Material.SMOOTH_QUARTZ);
+                        z == to.z() - 1 ? Material.LIGHT_BLUE_CONCRETE : OBSTACLE_BLOCK);
     }
 
     private void validateClearance(Map<Pos, Material> plan) {
@@ -282,6 +379,10 @@ final class ParkourCourse {
         return blocks;
     }
 
+    Map<Pos, String> states() {
+        return states;
+    }
+
     boolean attempt(int checkpoint, double x, double y, double z) {
         if (checkpoint < 0
                 || checkpoint >= stages()
@@ -316,6 +417,11 @@ final class ParkourCourse {
     }
 
     boolean buildPosition(int checkpoint, Pos pos) {
+        if (stage(checkpoint) == Kind.LADDER_DROP || stage(checkpoint) == Kind.HONEY_DROP) {
+            // The full-height invisible lane shell must not substitute for the removed wall.
+            int bottom = island(checkpoint + 1).y();
+            return pos.y() >= bottom && pos.y() < bottom + CLUTCH_SUPPORT_HEIGHT;
+        }
         if (stage(checkpoint) != Kind.POT_ASCENT) return true;
         // Keep the staircase away from free anchors on barriers and neighbouring task walls.
         int center = (int) island(checkpoint).centerX();

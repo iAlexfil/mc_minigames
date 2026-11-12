@@ -14,20 +14,26 @@ import org.bukkit.GameMode;
 import org.bukkit.GameRules;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Boat;
 import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Firework;
+import org.bukkit.entity.Minecart;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.Vehicle;
 import org.bukkit.entity.WindCharge;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.EntityBlockFormEvent;
 import org.bukkit.event.block.FluidLevelChangeEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityKnockbackByEntityEvent;
@@ -42,8 +48,13 @@ import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.vehicle.VehicleCreateEvent;
+import org.bukkit.event.vehicle.VehicleEnterEvent;
+import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.PotionMeta;
+import org.bukkit.potion.PotionType;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
@@ -144,7 +155,8 @@ final class ParkourRaceSession extends PartySurvivalSession {
 
     @Override
     Component instructions() {
-        return I18n.tr("party.rounds.parkour_race.instructions");
+        return I18n.tr(
+                "party.rounds.parkour_race.instructions", course.stages(), course.stages() + 1);
     }
 
     @Override
@@ -172,6 +184,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
     private void kit(Player p) {
         // Clear the cursor before closing: a full old inventory could drop its cursor stack.
         p.setItemOnCursor(null);
+        p.clearActiveItem();
         p.closeInventory();
         p.getInventory().clear();
         p.getInventory().setArmorContents(null);
@@ -179,8 +192,9 @@ final class ParkourRaceSession extends PartySurvivalSession {
         List<ParkourCourse.Supply> supplies = course.supplies(race.checkpoint(p.getUniqueId()));
         int slot = 0;
         for (var supply : supplies) {
-            ItemStack item = new ItemStack(supply.material(), supply.count());
+            ItemStack item = supplyItem(supply);
             if (supply.material() == Material.ELYTRA) p.getInventory().setChestplate(item);
+            else if (supply.material() == Material.LEATHER_BOOTS) p.getInventory().setBoots(item);
             else p.getInventory().setItem(slot++, item);
         }
         ItemStack clock = new ItemStack(Material.CLOCK);
@@ -199,6 +213,9 @@ final class ParkourRaceSession extends PartySurvivalSession {
         p.setCooldown(Material.ENDER_PEARL, 0);
         p.setCooldown(Material.WIND_CHARGE, 0);
         p.setCooldown(Material.FIREWORK_ROCKET, 0);
+        p.setCooldown(Material.TRIDENT, 0);
+        p.getActivePotionEffects().forEach(effect -> p.removePotionEffect(effect.getType()));
+        p.setFreezeTicks(0);
         p.setGliding(false);
         p.setFallDistance(0);
         p.setNoDamageTicks(0);
@@ -208,6 +225,22 @@ final class ParkourRaceSession extends PartySurvivalSession {
         p.setRemainingAir(p.getMaximumAir());
         p.setFoodLevel(20);
         p.setSaturation(20);
+    }
+
+    static ItemStack supplyItem(ParkourCourse.Supply supply) {
+        ItemStack item = new ItemStack(supply.material(), supply.count());
+        if (supply.potion() != null)
+            item.editMeta(
+                    PotionMeta.class,
+                    meta -> meta.setBasePotionType(PotionType.valueOf(supply.potion())));
+        if (supply.enchantment() != null) {
+            var enchantment =
+                    java.util.Objects.requireNonNull(
+                            Registry.ENCHANTMENT.get(
+                                    NamespacedKey.minecraft(supply.enchantment())));
+            item.addEnchantment(enchantment, supply.level());
+        }
+        return item;
     }
 
     private void stageInfo(Player p) {
@@ -225,7 +258,10 @@ final class ParkourRaceSession extends PartySurvivalSession {
 
     private void clearEntities(UUID id) {
         for (Entity entity : entities.getOrDefault(id, Set.of()))
-            if (entity.isValid()) entity.remove();
+            if (entity.isValid()) {
+                if (entity instanceof Vehicle) entity.eject();
+                entity.remove();
+            }
         entities.remove(id);
     }
 
@@ -299,11 +335,15 @@ final class ParkourRaceSession extends PartySurvivalSession {
         // Native pearls and wind charges may never outlive their lane/attempt or cross a wall.
         for (var entry : entities.entrySet())
             for (Entity entity : List.copyOf(entry.getValue()))
-                if (entity instanceof Projectile
+                if ((entity instanceof Projectile || entity instanceof Vehicle)
                         && !arena.attempt(
                                 entry.getKey(),
                                 race.checkpoint(entry.getKey()),
                                 entity.getLocation())) {
+                    if (entity instanceof Vehicle) {
+                        entity.eject();
+                        failed.add(entry.getKey());
+                    }
                     entity.remove();
                     entry.getValue().remove(entity);
                 }
@@ -363,6 +403,21 @@ final class ParkourRaceSession extends PartySurvivalSession {
     }
 
     @Override
+    public void onPlayerInteractEntity(org.bukkit.event.player.PlayerInteractEntityEvent event) {
+        Player p = event.getPlayer();
+        var item =
+                event.getHand() == EquipmentSlot.HAND
+                        ? p.getInventory().getItemInMainHand()
+                        : p.getInventory().getItemInOffHand();
+        if (item.getType() == Material.CLOCK) {
+            event.setCancelled(true);
+            if (event.getHand() == EquipmentSlot.HAND
+                    && racing(p)
+                    && gameTick() >= resetReady.getOrDefault(p.getUniqueId(), 0L)) reset(p);
+        }
+    }
+
+    @Override
     protected void handleBlockPlace(BlockPlaceEvent event) {
         Player p = event.getPlayer();
         if (!editable(p, event.getBlock())
@@ -396,7 +451,8 @@ final class ParkourRaceSession extends PartySurvivalSession {
         boolean environment =
                 event.getCause() == EntityDamageEvent.DamageCause.FALL
                         || event.getCause() == EntityDamageEvent.DamageCause.FLY_INTO_WALL
-                        || event.getCause() == EntityDamageEvent.DamageCause.DROWNING;
+                        || event.getCause() == EntityDamageEvent.DamageCause.DROWNING
+                        || event.getCause() == EntityDamageEvent.DamageCause.FREEZE;
         if (!environment) {
             event.setCancelled(true);
             return;
@@ -499,7 +555,13 @@ final class ParkourRaceSession extends PartySurvivalSession {
     public void emptyBucket(PlayerBucketEmptyEvent event) {
         if (!event.getPlayer().getWorld().equals(world)) return;
         Player p = event.getPlayer();
-        if (event.getBucket() != Material.WATER_BUCKET
+        boolean allowed =
+                event.getBucket() == Material.WATER_BUCKET
+                        || event.getBucket() == Material.POWDER_SNOW_BUCKET
+                                && race.checkpoint(p.getUniqueId()) >= 0
+                                && course.stage(race.checkpoint(p.getUniqueId()))
+                                        == ParkourCourse.Kind.POWDER_SNOW_DROP;
+        if (!allowed
                 || !editable(p, event.getBlock())
                 || !arena.remember(
                         p.getUniqueId(),
@@ -518,6 +580,70 @@ final class ParkourRaceSession extends PartySurvivalSession {
                         race.checkpoint(p.getUniqueId()),
                         event.getBlock(),
                         event.getBlock().getBlockData())) event.setCancelled(true);
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
+    public void frost(EntityBlockFormEvent event) {
+        if (!event.getBlock().getWorld().equals(world)
+                || event.getNewState().getType() != Material.FROSTED_ICE) return;
+        if (!(event.getEntity() instanceof Player p)
+                || !racing(p)
+                || !arena.rememberFrost(
+                        p.getUniqueId(), race.checkpoint(p.getUniqueId()), event.getBlock()))
+            event.setCancelled(true);
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
+    public void vehicleCreate(VehicleCreateEvent event) {
+        Vehicle vehicle = event.getVehicle();
+        if (!vehicle.getWorld().equals(world)) return;
+        UUID id = arena.owner(vehicle.getLocation());
+        Player p = id == null ? null : Bukkit.getPlayer(id);
+        if (p == null
+                || !racing(p)
+                || !arena.attempt(id, race.checkpoint(id), vehicle.getLocation())) {
+            event.setCancelled(true);
+            return;
+        }
+        var kind = course.stage(race.checkpoint(id));
+        if (!kind.vehicle()
+                || (kind == ParkourCourse.Kind.MINECART_RIDE
+                        ? !(vehicle instanceof Minecart)
+                        : !(vehicle instanceof Boat))) {
+            event.setCancelled(true);
+            return;
+        }
+        vehicle.setPersistent(false);
+        entities.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).add(vehicle);
+    }
+
+    private UUID vehicleOwner(Entity vehicle) {
+        return entities.entrySet().stream()
+                .filter(e -> e.getValue().contains(vehicle))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
+    public void vehicleEnter(VehicleEnterEvent event) {
+        if (!event.getVehicle().getWorld().equals(world)) return;
+        UUID owner = vehicleOwner(event.getVehicle());
+        if (!(event.getEntered() instanceof Player p)
+                || !racing(p)
+                || !p.getUniqueId().equals(owner)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void vehicleMove(VehicleMoveEvent event) {
+        if (!event.getVehicle().getWorld().equals(world)) return;
+        UUID owner = vehicleOwner(event.getVehicle());
+        if (owner != null
+                && !race.finished(owner)
+                && !arena.attempt(owner, race.checkpoint(owner), event.getTo())) {
+            failed.add(owner);
+            event.getVehicle().setVelocity(new Vector());
+        }
     }
 
     private boolean journal(Block block) {

@@ -182,7 +182,7 @@ These games are also independently available:
 | Наковальни | `/play party anvils` | Dodge staggered rain on a 42×42 platform or shelter under slabs. Waves last six seconds. Rain-free relocation starts at ten seconds and shortens by one second per wave to a six-second minimum: old anvils disappear and shelters move randomly. Start with four shelters; remove one every two waves, minimum one. Roofs shrink from 2×2 to 1×1 from wave six. From wave three, punches push without health damage. Anvil contact eliminates. Ten waves. Rain keeps full density within a horizontal radius of eight blocks around living players and falls four times less densely elsewhere; overlapping zones do not stack. Distant cells rotate evenly over four sweeps instead of guaranteeing every cell is hit each wave. At most 2560 airborne anvils, with rate-limited impact sounds; slabs intercept anvils above shelters. |
 | Повтори постройку | `/play party build_memory` | Private platforms form a circle around an elder guardian jury. The first two stages pick distinct small models of 6–8 blocks; later stages draw from fourteen larger recognizable models without repeats. Material palettes, rotations and small changes to existing structural pieces vary the builds; random filler is one third of the former budget. Memorization drops from 12 to 5 seconds; construction starts at 30 seconds and adds five seconds per stage, up to 65. After the deadline, the guardian beams at each platform for three seconds. Red outlines mark missing, wrong and extra cells; chat reports errors and similarity (correct expected blocks / total expected blocks). One player with the most errors is eliminated; ties eliminate the later finisher, measured by the last change to the final build. If everyone is perfect, nobody leaves in stages 1–5; from stage 6 the slowest builder leaves. Edits in the same server tick use roster order as a final tie-break. Facing and upper/lower placement matter; sign text and automatic connections do not. Screens prevent copying during construction. The invisible beam target is parked above the central jury between reviews, outside every build footprint. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. Unbreakable glass walls reveal other racers. The personal scoreboard shows current place, blocks mined and blocks remaining. Finishers fall onto a shared landing and remain in survival mode; the last finisher gets three seconds to land. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
-| Паркур-спидран | `/play party parkour_race` | Six random vanilla tasks, sampled without repeats from a fifteen-task pool, on identical parallel lanes with invisible barrier walls. Every checkpoint replaces the entire old inventory with a focused task kit; earlier supplies and construction cannot carry forward. Slot 9 returns to the last checkpoint and restores that section’s kit while rolling back its blocks, water and pending projectiles; the race timer keeps running. |
+| Паркур-спидран | `/play party parkour_race` | Seven or eight random vanilla tasks, sampled without repeats from a thirty-task pool, on identical parallel lanes with invisible barrier walls. Every checkpoint replaces the entire old inventory with a focused task kit; earlier supplies and construction cannot carry forward. Slot 9 returns to the last checkpoint and restores that section’s kit while rolling back its blocks, water and pending projectiles; the race timer keeps running. |
 | Дырка в стене | `/play party hole_in_the_wall` | Each round randomly selects Plus, Snake or Donut. Plus has four permanent 2×2 corner islands; its arms narrow from five to three blocks at the first shrink. Snake is a connected S-shaped track; Donut is a rounded ring with a permanent central pit. All layouts shrink by removing floor at one third and two thirds, with three-second red warnings; paths never teleport or grow. Plus uses twenty silhouettes, Snake and Donut twelve each, with map-specific side-lane routes and localized introductions. Every wall offers walk/jump/crouch alternatives; precision routes appear only after ten arrivals. First five walls teach walking and jumping. Types shuffle without repeats within their map catalog. Symmetric outlines and grounded frames replace scattered floating blocks; the hurdle uses a full-block sill instead of an automatically climbed slab. Concurrent perpendicular walls require compatible passages above the final floor, never just above the center pit. Real walls step one block at a time, can be ridden, and strongly push on side contact. All four directions stay in rotation. PvP is off; falling eliminates. Configure `holeInTheWall.durationSeconds` (45–300, default 120). Survival awards 3/2/1. |
 
 Tool Race, Anvils, Color Floor and Build Memory use fixed daytime and clear weather.
@@ -193,9 +193,10 @@ The new standalone modes award the same podium points to `/party points`.
 sets the time limit (60–600 s, default 240). Existing customized `partyGames.modes`
 lists need `parkour_race` added to include it in mixed matches.
 
-Each lane is twenty-seven blocks wide and has the same seven checkpoint islands.
-A shared six-task order is sampled without replacement from fifteen obstacle types
-once per race; resets do not reroll it. Ordinary islands are seven blocks wide;
+Each lane is twenty-seven blocks wide and has the same eight or nine checkpoint islands.
+A shared seven- or eight-task order is sampled without replacement from thirty obstacle
+types once per race, with either length equally likely; resets do not reroll it. At least four movement families appear in
+each random course, and at most two tasks share one family. Ordinary islands are seven blocks wide;
 the sideways ladder traverse uses two narrow three-block-wide ledges whose
 centres are twenty blocks apart. Absolute heights are translated together so any
 sampled sequence of climbs and drops fits safely inside the arena.
@@ -204,20 +205,32 @@ visible but cannot interact. Construction is sliced at 4096 blocks per tick; the
 full countdown starts after the course is ready. The HUD names the active task,
 and the player receives a localized hint on entering each section.
 
+Checkpoint islands use white quartz with a gold stripe (emerald at the finish).
+Intermediate walls, tunnel shells and support bases use dark deepslate tiles;
+intermediate pads and obstacle markers use light-blue concrete. Functional honey,
+ice, soul blocks and rails retain their native materials.
+
 Parkour Sprint highlights only the current runner's next checkpoint with a private,
 non-colliding green outline and a numbered label visible through walls. A view-relative
 arrow, distance and height difference stay on the action bar; the clock's left-click
 repeats the task hint, and right-click still restores the current attempt. Spawn and
-clock return face the next island, including sideways tasks. Clutch walls stop before
-the destination island and stay on the outer side of the lane, leaving the next lateral
-passage open; blue stripes mark their ends. Course generation validates checkpoint
+clock return face the next island, including sideways tasks. Ladder/honey clutch supports
+are only three blocks high at the bottom of the fall. Placement on these tasks is
+limited to those bottom three rows, preventing gradual descent via the invisible lane
+shell. Supports stop before the destination island and stay on the outer side of the
+lane, leaving the next lateral passage open; blue stripes mark their ends. Course generation validates checkpoint
 headroom and lateral passages before construction, retries blocked compositions and
-has a bounded safe fallback with six distinct tasks. Regression checks
+has a bounded safe fallback with the same chosen count of seven or eight distinct tasks. Regression checks
 cover all ordered neighbouring task pairs in both mirrored layouts.
 
-All kits use ordinary, unenchanted Minecraft items and native physics/cooldowns.
+All kits use vanilla Minecraft items, potion types and enchantments with native physics/cooldowns.
 A checkpoint removes the old inventory, cursor, armour and offhand before granting
-only the next task's kit. Elytra are equipped automatically on the flight task.
+only the next task's kit. Elytra are equipped automatically on the flight task; Frost Walker and Soul Speed
+boots are also equipped automatically on their tasks. Potion effects and freezing
+are cleared on reset/checkpoint changes. Boats and minecarts belong to their lane,
+reject foreign passengers and cannot activate a checkpoint while being ridden.
+Dismount onto the island; clock return removes the vehicle and restores the kit.
+Frost Walker ice is journaled and restored to the original water.
 The clock remains in slot 9; the other items can be rearranged.
 
 | Task | Gap between islands | Height change | Exclusive kit |
@@ -229,16 +242,31 @@ The clock remains in slot 9; the other items can be rearranged.
 | Ladder wall | 1 | +20 | 24 ladders |
 | Slime rebound | 15 | -20 | 4 slime blocks; place slime on a bare landing pad 36 blocks below the starting island |
 | Pearl throw | 32 | 0 | 3 ender pearls |
-| Swim tunnel | 20 | 0 | One water bucket; entry pool and a flooded, one-block-high passage |
-| Ladder clutch | 3 | -36 | 8 ladders; permanent side wall supports placement during the fall |
+| Swim tunnel | 20 | 0 | One water bucket; entry pool and a flooded, one-block-high passage with four blue barriers and alternating left/right openings |
+| Ladder clutch | 3 | -36 | 8 ladders; a three-block-high bottom support for a last-moment catch |
 | Cobweb clutch | 3 | -28 | 3 cobwebs and shears |
-| Honey clutch | 3 | -24 | 4 honey blocks and a side wall |
+| Honey clutch | 3 | -24 | 4 honey blocks and a three-block-high bottom support |
 | Elytra flight | 50 | +64 | Elytra and 6 rockets |
 | Ladder traverse | 20 sideways between checkpoint centres | 0 | 12 wool and 12 ladders; alternate blocks and side-mounted ladders |
 | Block staircase | 14 | +14 | 32 wool and shears; build forward and up |
 | Flower-pot staircase | 14 | +14 | 16 wool and 18 small flower pots; use each pot to place the next wool block diagonally forward and up |
+| Island jumps | 20 | +2 | No items; staggered blue ledges |
+| Low-ceiling hops | 20 | 0 | No items; short holes beneath a two-block-high passage |
+| Leaping pillars | 20 | +4 | Leaping II potion; two-block rises |
+| Slow-falling crossing | 20 | -32 | Slow Falling potion |
+| Riptide launch | 14 | 0 | Riptide III trident and a starting pool |
+| Water ascent | 2 | +20 | Water bucket and a climbing wall |
+| Powder-snow clutch | 3 | -40 | Powder snow bucket |
+| Wind-charge clutch | 3 | -44 | 3 wind charges; burst one into the floor just before landing, then land back on the checkpoint |
+| Honey-wall slide | 14 | -24 | No items; a honey wall at the outer edge |
+| Boat slalom | 32 | 0 | Oak boat, water and three offset gates |
+| Ice-boat chicane | 38 | 0 | Oak boat and a curved five-block-wide blue-ice road |
+| Rail sprint | 32 | 0 | Minecart; powered north–south rails with redstone support |
+| Frost-walker lake | 26 | 0 | Frost Walker II leather boots |
+| Soul-speed bends | 26 | 0 | Soul Speed III leather boots and a winding three-block-wide path |
+| Wind-charge hops | 14 | +6 | 4 wind charges and a raised middle ledge |
 
-The table lists the full pool; only six tasks appear in a given race.
+The table lists the full pool; only seven or eight tasks appear in a given race.
 
 The flower-pot staircase uses ordinary small flower pots as placement anchors:
 put a pot on the current wool block, then place the next wool block against the
@@ -260,7 +288,7 @@ velocity and gliding, so flight cannot carry over into the next kit.
 
 Fall, drowning and flight-collision damage use native rules. Lethal damage is
 cancelled and queues an attempt reset before checkpoint detection; a failed
-water/slime/ladder/web/honey clutch cannot claim the destination checkpoint.
+water/slime/ladder/web/honey/wind-charge clutch cannot claim the destination checkpoint.
 Nonlethal damage remains meaningful within the attempt; a fresh kit restores
 health and air. Falling out of the section also returns to the checkpoint.
 Every movement packet is checked against the current task bounds, including
@@ -965,14 +993,18 @@ dig through them. Mining them gives the usual capped cobblestone supply, without
 ore loot. Continue mining, dig tunnels, build with cobblestone and use the tracking
 compass to locate
 the nearest surviving opponent. PvP has a **three-minute** phase followed by a
-**one-minute** shrinking border with glowing players. Nametags are hidden before the finale; opponents remain visible when encountered
+**one-minute** shrinking zone with glowing players, stopping at **4×4**. The light-blue
+translucent walls mark the safe area without collision or mining restrictions;
+blocks on both sides remain mineable within the arena. Zone damage applies only
+when the player's position is outside these walls, starting at 2 damage per second
+and increasing after the shrinking minute. Players inside the final area never
+take zone damage. Nametags are hidden before the finale; opponents remain visible when encountered
 in tunnels. Spectral arrows keep their native temporary glowing effect. Detection
 Potions can be drunk after the partitions open to make all other surviving players
 glow for five seconds, visible to everyone. They are finite loot (one bottle),
 and repeated uses refresh rather than stack the duration. In the finale, persistent
 entity outlines reveal survivors even while sneaking or after drinking milk. The
-outline is released on elimination, leaving and round cleanup. Increasing damage after
-the final minute prevents indefinite camping/healing. One life: the last survivor
+outline is released on elimination, leaving and round cleanup. One life: the last survivor
 wins three Party points; simultaneous final deaths draw. Disconnecting withdraws
 a player and reconnecting only spectates. Solo training and aborted matches award
 no points. Deaths show the killer and a three-second death-screen pause.
@@ -1416,8 +1448,8 @@ source entities, player records and executable world data are excluded.
 
 ### Rules and economy
 
-- Classic CS:GO MR15: first to 16 rounds, up to 30 rounds; 15:15 is a draw.
-  Sides swap after round 15, with an equipment and $800 economy reset.
+- CS2-style MR12: first to 13 rounds, up to 24 rounds; 12:12 is a draw.
+  Sides swap after round 12, with an equipment and $800 economy reset.
 - Each round has 15 seconds of frozen preparation and 115 seconds of play.
   Buy at your side's spawn during preparation and the first 20 seconds of play.
   Players have 100 logical HP, no regeneration and no respawns until next round.
@@ -1428,9 +1460,19 @@ source entities, player records and executable world data are excluded.
 - Cash starts at $800 and is capped at $16,000. Kill rewards depend on weapon,
   wins pay $3,250 or $3,500 for C4 outcomes, and loss payouts grow from $1,900
   toward $3,400. Winning reduces the loss counter by one. Planting/defusing has
-  individual rewards; a planted losing T team gets an extra $800. T who survive
+  individual rewards; a planted losing T team gets an extra $600. T who survive
   a timeout receive no loss payout. Team damage is reduced, and teamkills cost
   money and a kill. Assists and round MVPs are recorded.
+- The payout values above are the 5v5 baseline. Earned money (kills, round wins,
+  losses, plant/defuse and the planted-loss bonus) scales by `largerTeam / 5`.
+  The smaller side additionally receives `largerTeam / ownTeam` per player, giving
+  both sides the same team budget for the same base reward. Thus 2v2 pays 40% of
+  baseline; in 2v3, the two-person side gets 90% per person and the three-person
+  side 60%. Pistol-round cash stays $800 on equal sides and receives only the
+  smaller-team compensation ($1,200 vs $800 in 2v3). Shop prices, the $16,000 cap
+  and $300 misconduct penalties stay fixed. Counts are snapshotted from online
+  participants at round start, never from survivors or mid-round disconnects.
+  Practice retains its $16,000 allowance.
 - Survivors keep guns, remaining armor, kits and unused grenades; gun ammunition
   restocks at round start. Death drops guns with their actual remaining ammo,
   utility, kit and C4. Rejoining never grants a mid-round respawn. A team absent
@@ -1453,18 +1495,46 @@ The arsenal contains **27 guns**, plus the knife:
 | Machine gun | Negev |
 
 Faction restrictions apply to purchases, not captured weapons. The buy menu has
-45 slots with a separate equipment row; weapon entries show price, ammunition,
+54 slots on one screen. Colored columns group pistols, SMGs, rifles, snipers,
+shotguns and machine guns under category headers; pistols, rifles and shotguns
+use pairs of columns. Weapons are ordered by ascending price within each group,
+left to right and then down. The bottom row holds armor and grenades. All legal
+weapons stay visible together. Weapon entries show price, ammunition,
 category, damage per bullet/pellet, armor penetration and rate of fire. Every gun
 has its own price, magazine/reserve, fire/reload timing, mobility and spread.
-Values are adapted to Minecraft ticks and the classic CS:GO economy, rather than
-a claim of exact parity with the latest CS2 balance.
+Purchase prices and the planted-loss award follow the verified CS2 economy updates:
+M4A4 $2,900, FAMAS $1,950, MP7 $1,400, CT incendiary $500, and $600 for a
+planted losing T team. Armor refill costs $650 when the helmet is already owned;
+a helmet-only upgrade with full armor costs $350. Shop quotes and debits use the
+same equipment price calculation. Sources: Valve's
+[May 2024 update](https://store.steampowered.com/news/posts/?appids=730&enddate=1716500781&feed=steam_community_announcements),
+[January 2025 update](https://store.steampowered.com/news/posts/?appids=730&enddate=1738107723&feed=steam_community_announcements), and
+[January 2026 update](https://store.steampowered.com/news/posts/?appids=730&enddate=1769472539&feed=steam_community_announcements).
+Fire timing, accuracy and movement remain Minecraft adaptations; this is not exact
+parity with every current CS2 weapon statistic. The default match format is MR12.
 
 There are finite magazines/reserves, draw times, held automatic fire,
 burst recoil/recovery, movement/jump spread, crouch accuracy, head/body/leg
 damage, armor/helmet penetration, hit tagging and aim punch. AWP and SSG 08
-have 160-block range and scoped accuracy; SSG is cheaper and faster to move with,
+have scoped accuracy; SSG is cheaper and faster to move with,
 but an armored body hit is survivable. AUG and SG 553 trade mobility for scoped
-accuracy at the normal rifle range. Their scope toggles with left-click.
+accuracy at range. Their scope toggles with left-click, while right-click keeps
+firing. Zoom uses a transient movement-attribute modifier and compensated walk
+speed: approximately 0.60× normal FOV for snipers and 0.70× for scoped rifles,
+with the intended 45% scoped walking speed. Vanilla client FOV Effects must be
+enabled for visible zoom; their strength scales the result. No spyglass use is
+forced: a vanilla client releases it as soon as the use button is not held, and
+holding a spyglass consumes attack input. Non-usable gun icons prevent that
+native interaction. One click's overlapping interact/attack/swing events are
+debounced; reload, slot switch, gun drop, death, menus, leaving and round/match
+cleanup remove both scope state and the temporary modifier. All guns trace up to 256 blocks, covering Dust II; distance
+falloff and spread determine effectiveness instead of a 100-block rifle cutoff.
+Damage falloff is continuous and compressed to 64% of the original distance
+scale: `rangeFalloff ^ (distance / 10.24)`. A shot at 64 blocks now retains the
+same damage as an original shot at 100 blocks. At 100 blocks, ordinary
+pistols/rifles retain about 82% damage, M4A1-S 55%, most SMGs 26%, UMP-45 6%,
+shotguns 3% and snipers 91%. Point-blank base damage is unaffected.
+Visible trails cover the actual path and stop at cover or the hit target.
 USP-S and M4A1-S are quieter and omit visible bullet trails; M4A1-S trades magazine
 size and fire rate for accuracy. CZ75-Auto fires automatically, but has only one
 reserve magazine, a longer draw time and a $100 kill reward. P90 has 50 rounds
@@ -1477,9 +1547,22 @@ idle gap. Limited wallbangs lose damage; breakable glass is restored each round.
 FAMAS currently uses automatic fire only; Glock burst mode and removable
 suppressors are not implemented.
 
-HE, flash, smoke and Molotov/incendiary grenades bounce and detonate with fuses;
+HE, flash, smoke and Molotov/incendiary grenades use snowball-like air trajectories:
+1.5 blocks/tick initial speed, 0.03 gravity and 0.99 drag, with no artificial upward
+kick. The throw inherits horizontal motion and airborne vertical motion, starts
+0.1 blocks below the eye without skipping cover, and retains collision bounces
+and the utility fuse;
 HE respects cover, flash duration depends on distance and facing, smoke hides
-players while allowing bullets through, and smoke extinguishes fire. Carry at
+players while allowing bullets through, and smoke extinguishes fire. Molotov
+zones render animated fire blocks over supported floor cells within the existing
+radius and line of sight. These are batched client-only block changes, also shown
+to spectators: the server terrain, native ignition and combat calculations are
+untouched. Overlapping zones share their visual cells; extinguishing, expiry,
+leaving and round/end cleanup restore the current real block data. Active visuals
+refresh after chunk loads. Smoke's dense
+large-particle cloud also applies Darkness while the player’s eyes are inside.
+Leaving clears smoke Darkness without cancelling a longer flash effect. Flash
+particles include the color data required by Paper 26.2/26.3. Carry at
 most four grenades, with at most two flashes and one of each other kind.
 
 | Input / slot | Action |
@@ -1494,17 +1577,35 @@ most four grenades, with at most two flashes and one of each other kind.
 | Slot 8, hold right-click | Plant or defuse; look at C4 within three blocks to defuse |
 | Slot 9 | Native map radar; right-click at spawn for buy menu |
 | `/cs buy`, `/cs help` | Buy menu / controls |
+| `/cs score` / sneak + right-click with radar | Live roster, alive/dead/disconnected status, K/D/A and MVPs |
+| `!message` | Private chat to current teammates, including dead teammates |
 
 Drop your occupied gun slot before walking over a replacement. The radar uses the
 actual imported map: teammates are always shown, enemies only when a living
 teammate sees them, with a brief stationary last-seen marker. Smoke and flashes
 prevent spotting; CT learn the bomb location after seeing it. Ordinary Minecraft
-nameplates are hidden; tan T and blue CT cosmetic uniforms identify factions
-without adding native armor protection. Controls, gun visuals, movement and flash rendering are
+nameplates are visible only for teammates, including after halftime; enemy names
+remain hidden. Native player outlines are sent only to allies, refreshed
+every 0.5 seconds and suppressed across smoke or while flashed; enemies and
+outsiders never receive the override. Outlines are cleared on leaving, round reset
+and match end. The sidebar shows T/CT alive counts; `/cs score` lists each
+player's status, with cash visible only to their own team. Team chat uses the stable
+team assignment across halftime, accepts literal text and leaves ordinary global
+chat unchanged. Players wear a full red or blue leather uniform matching their
+stable team, including after halftime. Purchased kevlar shows an iron chestplate;
+a purchased helmet shows an iron helmet. Leggings and boots retain the team
+color. A depleted vest returns to the leather appearance; the owned helmet stays
+visible until equipment resets. All uniform pieces have explicit empty native
+attribute modifiers and are unbreakable: they add no native armor protection.
+Protection, penetration, durability and fire damage remain exclusively in the
+existing CS rule model. Controls, gun visuals, movement and flash rendering are
 Minecraft adaptations; this does not reproduce the Source client, its netcode,
 resource-pack weapon models or every CS game mode/weapon.
 
 Round timings and half length are configurable in `games/cs.yml` and `/cs config`.
+On upgrade, the old unversioned `roundsPerHalf: 15` default migrates once to 12;
+other customized half lengths remain intact. `formatVersion: 2` records that
+migration, so later admin edits are preserved across restarts.
 The imported architecture is protected from building/destruction except bullet
 breakable glass. `checkCounterStrike` covers the rule model, ammunition, economy,
 objective deadlines, rounds, reconnects, smoke geometry and imported spawn/site
@@ -1616,7 +1717,7 @@ geometry, seven eligible perks, the 50/40/10 lucky distribution, finite personal
 perk budgets, the 10% totem roll, 80/20 gold hearts and equipment replacement plans
 that preserve a drill even when the inventory is full.
 
-`checkParkourRace` checks six distinct tasks sampled from the full fifteen-task
+`checkParkourRace` checks seven or eight distinct tasks sampled from the full thirty-task
 pool, identical sealed lanes, build budgets, sequential grounded checkpoints,
 elytra bypass rejection, finite task kits, both orientations of the flower-pot
 staircase, lethal-clutch resets, construction rollback and Party Games/queue

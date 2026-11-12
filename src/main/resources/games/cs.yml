@@ -1,5 +1,6 @@
-# Classic CS:GO Competitive (MR15), not a Party Games round.
-roundsPerHalf: 15
+# CS2-style MR12: first to 13, a 12:12 draw; not a Party Games round.
+formatVersion: 2
+roundsPerHalf: 12
 freezeSeconds: 15
 roundSeconds: 115
 bombSeconds: 40

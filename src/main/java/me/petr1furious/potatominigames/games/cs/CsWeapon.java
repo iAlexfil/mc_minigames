@@ -2,7 +2,10 @@ package me.petr1furious.potatominigames.games.cs;
 
 import org.bukkit.Material;
 
-/** CS:GO-inspired economy and roles, with firing/accuracy values adapted to Minecraft ticks. */
+/**
+ * CS2 purchase prices and CS-inspired weapon roles, with firing/accuracy values adapted to
+ * Minecraft ticks.
+ */
 enum CsWeapon {
     GLOCK(
             "glock",
@@ -142,7 +145,7 @@ enum CsWeapon {
             .014,
             1,
             Material.NETHERITE_SCRAP),
-    MP7("mp7", Category.SMG, -1, 1500, 29, .625, 30, 120, 1.6, 62, .88, .012, 1, Material.IRON_HOE),
+    MP7("mp7", Category.SMG, -1, 1400, 29, .625, 30, 120, 1.6, 62, .88, .012, 1, Material.IRON_HOE),
     P90(
             "p90",
             Category.SMG,
@@ -178,7 +181,7 @@ enum CsWeapon {
             "famas",
             Category.RIFLE,
             1,
-            2050,
+            1950,
             30,
             .70,
             25,
@@ -223,7 +226,7 @@ enum CsWeapon {
             "m4a4",
             Category.RIFLE,
             1,
-            3100,
+            2900,
             33,
             .70,
             30,
@@ -234,7 +237,7 @@ enum CsWeapon {
             .006,
             1,
             Material.GOLDEN_HORSE_ARMOR),
-    AUG("aug", Category.RIFLE, 1, 3300, 28, .90, 30, 90, 2, 76, .88, .009, 1, Material.SPYGLASS),
+    AUG("aug", Category.RIFLE, 1, 3300, 28, .90, 30, 90, 2, 76, .88, .009, 1, Material.IRON_AXE),
     SG553(
             "sg553",
             Category.RIFLE,
@@ -249,7 +252,7 @@ enum CsWeapon {
             .84,
             .010,
             1,
-            Material.SPYGLASS),
+            Material.DIAMOND_AXE),
 
     SSG08(
             "ssg08",
@@ -265,7 +268,7 @@ enum CsWeapon {
             .92,
             .060,
             1,
-            Material.SPYGLASS),
+            Material.DIAMOND_SHOVEL),
     AWP(
             "awp",
             Category.SNIPER,
@@ -280,7 +283,7 @@ enum CsWeapon {
             .80,
             .10,
             1,
-            Material.SPYGLASS),
+            Material.NETHERITE_HOE),
 
     NOVA(
             "nova",
@@ -422,7 +425,9 @@ enum CsWeapon {
     }
 
     double range() {
-        return category == Category.SNIPER ? 160 : 100;
+        // Dust II spans over 200 blocks diagonally. Damage falloff, not a short cutoff,
+        // differentiates weapon roles at range.
+        return 256;
     }
 
     double rangeFalloff() {
@@ -433,6 +438,11 @@ enum CsWeapon {
                         : category == Category.SHOTGUN
                                 ? .70
                                 : category == Category.SNIPER ? .99 : this == M4A1S ? .94 : .98;
+    }
+
+    double damageScale(double distance) {
+        // Compress the former distance curve to 64%: new 64 blocks = old 100 blocks.
+        return Math.pow(rangeFalloff(), distance / (16 * .64));
     }
 
     double shotSpread(boolean scoped, int burst) {

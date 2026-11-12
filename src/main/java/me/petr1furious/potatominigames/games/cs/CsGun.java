@@ -6,6 +6,7 @@ final class CsGun {
     int magazine, reserve, burst;
     double nextShot;
     long reloadAt = -1, lastShot = -1000, heldUntil = -1, deployUntil;
+    private long scopeClickAt = -1000;
     boolean scoped;
 
     CsGun(CsWeapon weapon) {
@@ -22,6 +23,7 @@ final class CsGun {
         scoped = false;
         nextShot = 0;
         deployUntil = 0;
+        scopeClickAt = -1000;
     }
 
     void tick(long now) {
@@ -62,6 +64,16 @@ final class CsGun {
         if (reloadAt >= 0 || magazine == weapon.magazine || reserve == 0) return false;
         reloadAt = now + (weapon.shellReload() ? 20 : weapon.reload);
         heldUntil = -1;
+        scoped = false;
+        return true;
+    }
+
+    boolean toggleScope(long now) {
+        tick(now);
+        if (!weapon.scope() || reloadAt >= 0 || now < deployUntil || now - scopeClickAt < 4)
+            return false;
+        scopeClickAt = now;
+        scoped = !scoped;
         return true;
     }
 

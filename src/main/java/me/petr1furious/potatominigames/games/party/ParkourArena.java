@@ -19,7 +19,7 @@ import java.util.UUID;
 final class ParkourArena {
     static final int MAX_CHANGES = 4096;
 
-    private record Cell(ParkourCourse.Pos pos, Material material) {}
+    private record Cell(ParkourCourse.Pos pos, Material material, String state) {}
 
     private final World world;
     private final ParkourCourse course;
@@ -27,6 +27,7 @@ final class ParkourArena {
     private final Map<UUID, Integer> indices = new HashMap<>();
     private final Map<UUID, Map<ParkourCourse.Pos, BlockData>> changes = new HashMap<>();
     private final List<Cell> build = new ArrayList<>();
+    private final Map<String, BlockData> states = new HashMap<>();
     private int cursor;
 
     ParkourArena(World world, Collection<UUID> roster, ParkourCourse course) {
@@ -39,7 +40,12 @@ final class ParkourArena {
             changes.put(id, new LinkedHashMap<>());
             for (var entry : course.blocks().entrySet()) {
                 var p = entry.getKey();
-                add(i * ParkourCourse.PITCH + p.x(), p.y(), p.z(), entry.getValue());
+                build.add(
+                        new Cell(
+                                new ParkourCourse.Pos(
+                                        i * ParkourCourse.PITCH + p.x(), p.y(), p.z()),
+                                entry.getValue(),
+                                course.states().get(p)));
             }
             // Spawn islands are ready before countdown players are teleported into the void world.
             var start = course.island(0);
@@ -68,14 +74,19 @@ final class ParkourArena {
     }
 
     private void add(int x, int y, int z, Material material) {
-        build.add(new Cell(new ParkourCourse.Pos(x, y, z), material));
+        build.add(new Cell(new ParkourCourse.Pos(x, y, z), material, null));
     }
 
     boolean buildSlice(int budget) {
         for (int i = 0; i < budget && cursor < build.size(); i++, cursor++) {
             Cell cell = build.get(cursor);
             var p = cell.pos();
-            world.getBlockAt(p.x(), p.y(), p.z()).setType(cell.material(), false);
+            Block block = world.getBlockAt(p.x(), p.y(), p.z());
+            if (cell.state() == null) block.setType(cell.material(), false);
+            else
+                block.setBlockData(
+                        states.computeIfAbsent(cell.state(), org.bukkit.Bukkit::createBlockData),
+                        false);
         }
         boolean ready = cursor == build.size();
         if (ready) {
@@ -136,6 +147,9 @@ final class ParkourArena {
     boolean landed(Player player, int checkpoint) {
         Location at = player.getLocation();
         return player.isOnGround()
+                && (checkpoint == 0
+                        || !course.stage(checkpoint - 1).vehicle()
+                        || !player.isInsideVehicle())
                 && !player.isGliding()
                 && landed(player.getUniqueId(), checkpoint, at)
                 && !at.clone().subtract(0, .05, 0).getBlock().isPassable();
@@ -165,6 +179,28 @@ final class ParkourArena {
 
     boolean remember(UUID id, int checkpoint, Block block, BlockData before) {
         if (!mutable(id, checkpoint, block)) return false;
+        return rememberBaseline(id, block, before);
+    }
+
+    boolean rememberFrost(UUID id, int checkpoint, Block block) {
+        Integer index = indices.get(id);
+        if (index == null
+                || checkpoint < 0
+                || checkpoint >= course.stages()
+                || course.stage(checkpoint) != ParkourCourse.Kind.FROST_WALKER
+                || block.getType() != Material.WATER
+                || !attempt(id, checkpoint, block.getLocation())
+                || course.blocks()
+                                .get(
+                                        new ParkourCourse.Pos(
+                                                block.getX() - index * ParkourCourse.PITCH,
+                                                block.getY(),
+                                                block.getZ()))
+                        != Material.WATER) return false;
+        return rememberBaseline(id, block, block.getBlockData());
+    }
+
+    private boolean rememberBaseline(UUID id, Block block, BlockData before) {
         var journal = changes.get(id);
         var pos = new ParkourCourse.Pos(block.getX(), block.getY(), block.getZ());
         if (journal.containsKey(pos)) return true;

@@ -2,10 +2,15 @@ package me.petr1furious.potatominigames.games.cs;
 
 import me.petr1furious.potatominigames.core.config.*;
 
+import org.bukkit.configuration.ConfigurationSection;
+
 final class CsConfig {
+    static final int DEFAULT_HALF = 12;
+    private static final String FILE = "games/cs.yml";
     private final PropertyBag bag = new PropertyBag("cs");
     final Property<Integer> half =
-            bag.define("roundsPerHalf", PropertyCodec.INT, 15).validate(n -> n >= 1 && n <= 15);
+            bag.define("roundsPerHalf", PropertyCodec.INT, DEFAULT_HALF)
+                    .validate(n -> n >= 1 && n <= 15);
     final Property<Integer> freeze =
             bag.define("freezeSeconds", PropertyCodec.INT, 15).validate(n -> n >= 3 && n <= 30);
     final Property<Integer> round =
@@ -16,6 +21,16 @@ final class CsConfig {
             bag.define("buySeconds", PropertyCodec.INT, 20).validate(n -> n >= 5 && n <= 60);
 
     CsConfig(ConfigRegistry registry) {
-        registry.register(bag, "games/cs.yml", "");
+        if (migrateFormat(registry.file(FILE))) registry.saveFile(FILE);
+        registry.hide(FILE, "formatVersion");
+        registry.register(bag, FILE, "");
+    }
+
+    /** Upgrade the previous MR15 default once; retain deliberately customized half lengths. */
+    static boolean migrateFormat(ConfigurationSection config) {
+        if (config.getInt("formatVersion", 1) >= 2) return false;
+        if (config.getInt("roundsPerHalf", 15) == 15) config.set("roundsPerHalf", DEFAULT_HALF);
+        config.set("formatVersion", 2);
+        return true;
     }
 }

@@ -103,6 +103,7 @@ final class MinersSession implements PartyRoundSession {
     private final MinersGold gold = new MinersGold();
     private final MinersVisibility visibility = new MinersVisibility();
     private final MinersPerks perks = new MinersPerks();
+    private MinersZone zone;
     private SurvivalStandings standings;
     private MinersRound round;
     private MinersArena arena;
@@ -355,8 +356,8 @@ final class MinersSession implements PartyRoundSession {
                 // Do not capture a temporary arrow/potion outline as a permanent prior flag.
                 for (Player p : survivors()) p.removePotionEffect(PotionEffectType.GLOWING);
                 visibility.reveal(survivors());
-                services.arena()
-                        .applyBorder(world, arena.center(), arena.borderSize(), 3, finaleSeconds);
+                // Leave the native border around the full arena so players can mine across the storm.
+                zone = new MinersZone(arena.center(), arena.borderSize(), tick, finaleSeconds * 20L);
                 announce(I18n.tr("party.rounds.miners.finale"),
                         I18n.tr("party.rounds.miners.finale.subtitle"));
             }
@@ -381,14 +382,18 @@ final class MinersSession implements PartyRoundSession {
             result(standings.survivors());
             return;
         }
-        if (round.phase() == MinersRound.Phase.FINALE) visibility.reveal(survivors());
+        if (round.phase() == MinersRound.Phase.FINALE) {
+            visibility.reveal(survivors());
+            zone.update(tick);
+        }
         if (tick % 20 == 0) {
             shots.expire(tick);
             drops.prune();
             for (Player p : survivors()) {
                 updateCompass(p);
                 double pressure = round.pressure(tick);
-                if (pressure > 0 && fighting(p)) p.damage(pressure);
+                if (pressure > 0 && fighting(p) && zone != null && zone.outside(p.getLocation(), tick))
+                    p.damage(pressure);
             }
             hud();
         }
@@ -449,7 +454,7 @@ final class MinersSession implements PartyRoundSession {
             case COUNTDOWN -> I18n.tr("party.rounds.starts_in", round.secondsLeft(tick));
             case MINING -> I18n.tr("party.rounds.miners.status.mining", round.secondsLeft(tick));
             case FIGHT -> I18n.tr("party.rounds.miners.status.fight", round.secondsLeft(tick));
-            case FINALE -> round.pressure(tick) > 0
+            case FINALE -> round.secondsLeft(tick) == 0
                     ? I18n.tr("party.rounds.miners.status.last_fight")
                     : I18n.tr("party.rounds.miners.status.finale", round.secondsLeft(tick));
             case RESULT -> I18n.tr("party.rounds.miners.status.result", round.secondsLeft(tick));
@@ -758,6 +763,7 @@ final class MinersSession implements PartyRoundSession {
 
     private void result(List<UUID> winners) {
         visibility.clear();
+        if (zone != null) zone.clear();
         for (Player p : survivors()) {
             p.removePotionEffect(PotionEffectType.GLOWING);
         }
@@ -1096,6 +1102,7 @@ final class MinersSession implements PartyRoundSession {
 
     private void cleanup() {
         visibility.clear();
+        if (zone != null) zone.clear();
         if (ticker != null) {
             ticker.cancel();
             ticker = null;

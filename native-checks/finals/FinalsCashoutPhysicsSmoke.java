@@ -20,7 +20,7 @@ public final class FinalsCashoutPhysicsSmoke {
         World world = Bukkit.getWorlds().getFirst();
         Arena arena = new Arena(world);
         List<BlockState> originals = new ArrayList<>();
-        for (int x : new int[]{700, 705, 710, 715}) {
+        for (int x : new int[]{700, 705, 710, 715, 740}) {
             for (int y = 94; y <= 105; y++) {
                 Block block = world.getBlockAt(x, y, 700);
                 originals.add(block.getState());
@@ -28,6 +28,9 @@ public final class FinalsCashoutPhysicsSmoke {
             }
             world.getBlockAt(x, 100, 700).setType(Material.STONE, false);
         }
+        // Reproduce a configured anchor already inside its solid support. The very
+        // first display packet must use the corrected surface height.
+        arena.moveStation(0, new Location(world, 700.5, 100.75, 700.5));
         world.getBlockAt(700, 96, 700).setBlockData(Bukkit.createBlockData("minecraft:stone_slab[type=bottom]"), false);
         Set<UUID> before = new HashSet<>();
         world.getEntities().forEach(entity -> before.add(entity.getUniqueId()));
@@ -41,6 +44,11 @@ public final class FinalsCashoutPhysicsSmoke {
         Method aimed = method(type, "aimedStation", Player.class, double.class);
         try {
             List<Entity> initial = created(world, before);
+            require(arena.station(0).getY() == 101,
+                    "An initially buried cashout is lifted onto solid terrain before spawning");
+            require(initial.stream().filter(entity -> entity.getLocation().getBlockX() == 700)
+                            .allMatch(entity -> entity.getLocation().getY() == 101),
+                    "The initial display and click interaction are both outside the ground before the first tick");
             require(initial.stream().filter(BlockDisplay.class::isInstance).count() == 2
                     && initial.stream().filter(Interaction.class::isInstance).count() == 2,
                     "Exactly two native display bodies and two click interactions are created");
@@ -75,6 +83,20 @@ public final class FinalsCashoutPhysicsSmoke {
                     require(Math.abs(entity.getLocation().getY() - 96.5) < 1e-7,
                             "The clickable interaction follows the falling display exactly");
             }
+            for (String surface : new String[]{"minecraft:stone", "minecraft:oak_fence",
+                    "minecraft:stone_slab[type=bottom]"}) {
+                world.getBlockAt(700, 96, 700).setBlockData(Bukkit.createBlockData(surface), false);
+                arena.moveStation(0, new Location(world, 700.5, 104, 700.5));
+                invoke(replace, physics, 0);
+                for (int index = 0; index < 100; index++) invoke(tick, physics);
+                double expectedY = surface.contains("fence") ? 97.5 : surface.contains("slab") ? 96.5 : 97;
+                require(Math.abs(arena.station(0).getY() - expectedY) < 1e-7,
+                        "A long fall settles on the exact surface and remains there: " + surface);
+                var bodyBox = new org.bukkit.util.BoundingBox(700, expectedY, 700, 701, expectedY + 1, 701);
+                for (var shape : world.getBlockAt(700, 96, 700).getCollisionShape().getBoundingBoxes())
+                    require(!bodyBox.overlaps(shape.clone().shift(700, 96, 700)),
+                            "The settled body does not intersect its landing surface: " + surface);
+            }
             Location eye = new Location(world, 700.5, 97, 697);
             Player viewer = viewer(eye, new Vector(0, 0, 1));
             require(((Integer) invoke(aimed, physics, viewer, 4.5)) == 0,
@@ -100,6 +122,34 @@ public final class FinalsCashoutPhysicsSmoke {
                     && created(world, before).stream().filter(entity -> slotOne.contains(entity.getUniqueId())).count() == 2,
                     "Rotation replaces only the completed body and interaction");
             require(created(world, before).size() == 4, "Rotation leaves exactly two cashout bodies");
+            world.getBlockAt(700, 96, 700).setBlockData(Bukkit.createBlockData("minecraft:stone_slab[type=bottom]"), false);
+            arena.moveStation(0, new Location(world, 700.5, 96.25, 700.5));
+            invoke(replace, physics, 0);
+            require(arena.station(0).getY() == 96.5,
+                    "Fractional slab penetration is corrected before a replacement body is spawned");
+            world.getBlockAt(700, 97, 700).setType(Material.STONE, false);
+            invoke(tick, physics);
+            require(arena.station(0).getY() == 98,
+                    "Terrain rising into the upper half of a live body lifts it clear");
+            world.getBlockAt(700, 97, 700).setType(Material.OAK_FENCE, false);
+            invoke(tick, physics);
+            require(arena.station(0).getY() == 98.5,
+                    "The native one-and-a-half-block fence shape supports the complete body");
+            world.getBlockAt(700, 99, 700).setType(Material.STONE, false);
+            invoke(tick, physics);
+            require(arena.station(0).getY() == 100,
+                    "Clearance resolution includes terrain intersecting the top of the body");
+            world.getBlockAt(740, 96, 700).setBlockData(Bukkit.createBlockData("minecraft:stone_slab[type=bottom]"), false);
+            arena.moveStation(0, new Location(world, 740.5, 96.25, 700.5));
+            invoke(replace, physics, 0);
+            require(arena.station(0).getY() == 96.5,
+                    "A different candidate's fractional slab anchor is normalized before spawning");
+            arena.moveStation(0, new Location(world, 740.5, 109.5, 700.5));
+            invoke(replace, physics, 0);
+            require(arena.station(0).getY() == 101 && arena.station(0).getX() == 710.5,
+                    "An anchor whose body protrudes beyond the map is replaced by a supported in-bounds candidate");
+            require(created(world, before).size() == 4,
+                    "Penetration repairs and candidate changes retain exactly two body pairs");
             Class<?> sessionType = Class.forName("me.petr1furious.potatominigames.games.finals.FinalsSession");
             Constructor<?> sessionConstructor = Arrays.stream(sessionType.getDeclaredConstructors())
                     .filter(candidate -> candidate.getParameterCount() == 2).findFirst().orElseThrow();

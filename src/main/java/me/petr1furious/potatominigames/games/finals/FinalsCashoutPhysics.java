@@ -20,7 +20,9 @@ import java.util.List;
 
 /** Two session-owned cashout bodies. Terrain collision never places or drops a block. */
 final class FinalsCashoutPhysics {
-    private static final double HALF = .49;
+    private static final double HALF = .5;
+    private static final double HEIGHT = 1;
+    private static final double MAX_RISE = 4;
     private static final double MAX_SPEED = 1.5;
     private static final double EPSILON = 1e-7;
     private final FinalsMapArena arena;
@@ -32,11 +34,10 @@ final class FinalsCashoutPhysics {
         final Interaction interaction;
         Location position;
         double velocity;
-        boolean recoveryAnchor;
 
-        Body(Location origin, BlockDisplay display, Interaction interaction) {
+        Body(Location origin, Location position, BlockDisplay display, Interaction interaction) {
             this.origin = origin.clone();
-            this.position = origin.clone();
+            this.position = position.clone();
             this.display = display;
             this.interaction = interaction;
         }
@@ -61,6 +62,10 @@ final class FinalsCashoutPhysics {
     }
 
     void replace(int slot) {
+        replace(slot, null);
+    }
+
+    private void replace(int slot, Location recoveryOrigin) {
         if (bodies[slot] != null) {
             bodies[slot].remove();
             bodies[slot] = null;
@@ -73,6 +78,14 @@ final class FinalsCashoutPhysics {
                     break;
                 }
             }
+        }
+        Location configuredOrigin = recoveryOrigin == null ? origin.clone() : recoveryOrigin.clone();
+        Fall initial = collisionStep(origin, 0);
+        if (initial != null && initial.y() > origin.getY()) origin.setY(initial.y());
+        if (initial == null || !fits(origin) || overlapsOther(origin, slot)) {
+            origin = recoveryLocation(configuredOrigin, slot);
+            if (origin == null)
+                throw new IllegalStateException("No collision-free cashout spawn is available");
         }
         BlockDisplay display =
                 arena.world()
@@ -98,11 +111,11 @@ final class FinalsCashoutPhysics {
                                         entity.setPersistent(false);
                                         entity.setGravity(false);
                                         entity.setInvulnerable(true);
-                                        entity.setInteractionWidth(.98f);
+                                        entity.setInteractionWidth(1f);
                                         entity.setInteractionHeight(1f);
                                         entity.setResponsive(true);
                                     });
-            bodies[slot] = new Body(origin, display, interaction);
+            bodies[slot] = new Body(configuredOrigin, origin, display, interaction);
             arena.moveStation(slot, origin);
         } catch (RuntimeException error) {
             display.remove();
@@ -116,23 +129,15 @@ final class FinalsCashoutPhysics {
             if (body == null) continue;
             if (!body.display.isValid() || !body.interaction.isValid()) {
                 // Preserve the live position if an entity was removed or its chunk unloaded.
-                replace(slot);
+                replace(slot, body.origin);
                 body = bodies[slot];
             }
-            if (body.recoveryAnchor) continue;
             Location point = body.position;
-            double velocity = Math.max(-MAX_SPEED, body.velocity - .08);
-            Fall next =
-                    fall(
-                            point.getX(),
-                            point.getY(),
-                            point.getZ(),
-                            body.velocity,
-                            collisionBoxes(point, velocity));
-            body.velocity = next.velocity();
+            Fall next = collisionStep(point, body.velocity);
+            body.velocity = next == null ? 0 : next.velocity();
             Location destination = point.clone();
-            destination.setY(next.y());
-            if (!arena.contains(destination)) {
+            if (next != null) destination.setY(next.y());
+            if (next == null || !fits(destination)) {
                 destination = recover(body, slot);
                 body.velocity = 0;
             }
@@ -149,13 +154,25 @@ final class FinalsCashoutPhysics {
     static Fall fall(
             double x, double y, double z, double velocity, Collection<BoundingBox> terrain) {
         double speed = Math.max(-MAX_SPEED, Math.min(0, velocity) - .08);
+        double clearY = y;
+        // A saved anchor can be inside a slab or fence, and terrain can be placed
+        // into a body after spawning. Resolve full-body penetration before falling.
+        for (int pass = 0; pass < terrain.size(); pass++) {
+            double raised = clearY;
+            for (BoundingBox box : terrain) {
+                if (horizontalOverlap(x, z, box)
+                        && box.getMaxY() > clearY + EPSILON
+                        && box.getMinY() < clearY + HEIGHT - EPSILON)
+                    raised = Math.max(raised, box.getMaxY());
+            }
+            if (raised == clearY) break;
+            clearY = raised;
+        }
+        if (clearY > y + EPSILON) return new Fall(clearY, 0);
         double destination = y + speed;
         boolean landed = false;
         for (BoundingBox box : terrain) {
-            if (box.getMaxX() <= x - HALF
-                    || box.getMinX() >= x + HALF
-                    || box.getMaxZ() <= z - HALF
-                    || box.getMinZ() >= z + HALF) continue;
+            if (!horizontalOverlap(x, z, box)) continue;
             double top = box.getMaxY();
             if (top <= y + EPSILON && top >= destination - EPSILON) {
                 destination = Math.max(destination, Math.min(y, top));
@@ -165,46 +182,84 @@ final class FinalsCashoutPhysics {
         return new Fall(destination, landed ? 0 : speed);
     }
 
+    private static boolean horizontalOverlap(double x, double z, BoundingBox box) {
+        return box.getMaxX() > x - HALF + EPSILON
+                && box.getMinX() < x + HALF - EPSILON
+                && box.getMaxZ() > z - HALF + EPSILON
+                && box.getMinZ() < z + HALF - EPSILON;
+    }
+
+    private static Fall collisionStep(Location point, double velocity) {
+        double speed = Math.max(-MAX_SPEED, Math.min(0, velocity) - .08);
+        List<BoundingBox> terrain = collisionBoxes(point, speed);
+        if (terrain == null) return null;
+        Fall next = fall(point.getX(), point.getY(), point.getZ(), velocity, terrain);
+        if (next.y() > point.getY() + MAX_RISE) return null;
+        Location destination = point.clone();
+        destination.setY(next.y());
+        List<BoundingBox> clearance = collisionBoxes(destination, 0);
+        if (clearance == null) return null;
+        for (BoundingBox box : clearance) {
+            if (horizontalOverlap(point.getX(), point.getZ(), box)
+                    && box.getMaxY() > next.y() + EPSILON
+                    && box.getMinY() < next.y() + HEIGHT - EPSILON) return null;
+        }
+        return next;
+    }
+
     private static List<BoundingBox> collisionBoxes(Location point, double velocity) {
         World world = point.getWorld();
         List<BoundingBox> result = new ArrayList<>();
         int low = Math.max(world.getMinHeight(), (int) Math.floor(point.getY() + velocity) - 1);
-        int high = Math.min(world.getMaxHeight() - 1, (int) Math.floor(point.getY()));
+        int high = Math.min(world.getMaxHeight() - 1,
+                (int) Math.floor(point.getY() + HEIGHT + MAX_RISE));
         for (int x = (int) Math.floor(point.getX() - HALF);
                 x <= Math.floor(point.getX() + HALF);
                 x++)
             for (int z = (int) Math.floor(point.getZ() - HALF);
                     z <= Math.floor(point.getZ() + HALF);
-                    z++)
+                    z++) {
+                int chunkX = x >> 4, chunkZ = z >> 4;
+                if (!world.isChunkLoaded(chunkX, chunkZ)
+                        && !world.getChunkAt(chunkX, chunkZ).load()) return null;
                 for (int y = low; y <= high; y++) {
                     Block block = world.getBlockAt(x, y, z);
                     // Bukkit voxel boxes use local block coordinates.
                     for (BoundingBox box : block.getCollisionShape().getBoundingBoxes())
                         result.add(box.clone().shift(x, y, z));
                 }
+            }
         return result;
     }
 
     private Location recover(Body body, int slot) {
+        Location recovered = recoveryLocation(body.origin, slot);
+        if (recovered != null) return recovered;
+        // Never teleport to an unchecked, unsupported or obstructed anchor. If all
+        // protected supports are gone, retain the last published position and retry.
+        return body.position.clone();
+    }
+
+    private Location recoveryLocation(Location configuredOrigin, int slot) {
         List<Location> candidates = new ArrayList<>();
-        candidates.add(body.origin);
+        candidates.add(configuredOrigin);
         candidates.addAll(arena.cashoutLocations());
         candidates.add(arena.spawn(slot, 0));
         for (Location candidate : candidates) {
-            if (!arena.contains(candidate) || overlapsOther(candidate, slot)) continue;
-            Fall supported =
-                    fall(
-                            candidate.getX(),
-                            candidate.getY(),
-                            candidate.getZ(),
-                            0,
-                            collisionBoxes(candidate, -.08));
-            if (supported.velocity() == 0) return candidate.clone();
+            if (!arena.contains(candidate)) continue;
+            Fall supported = collisionStep(candidate, 0);
+            if (supported == null || supported.velocity() != 0) continue;
+            Location corrected = candidate.clone();
+            corrected.setY(supported.y());
+            if (fits(corrected) && !overlapsOther(corrected, slot)) return corrected;
         }
-        // A map may have no surviving terrain below any candidate. Keep the original
-        // clickable objective reachable rather than repeatedly losing it to the void.
-        body.recoveryAnchor = true;
-        return body.origin.clone();
+        return null;
+    }
+
+    private boolean fits(Location point) {
+        return arena.contains(point)
+                && arena.contains(point.clone().add(-HALF + EPSILON, 0, -HALF + EPSILON))
+                && arena.contains(point.clone().add(HALF - EPSILON, HEIGHT - EPSILON, HALF - EPSILON));
     }
 
     private boolean overlapsOther(Location point, int slot) {

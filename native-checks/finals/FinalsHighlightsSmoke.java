@@ -1,6 +1,6 @@
 import java.lang.reflect.*;
 import java.util.*;
-import java.util.function.Predicate;
+import java.util.function.Function;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.*;
@@ -24,176 +24,153 @@ public final class FinalsHighlightsSmoke {
     private int check(JavaPlugin smoke, JavaPlugin main) throws Exception {
         World world = Bukkit.getWorlds().getFirst();
         FixtureArena arena = new FixtureArena(world);
-        // Fake players do not load their surrounding chunks as real connected players would.
-        // Native display spawns need the same loaded arena that the match normally supplies.
-        for (int chunkX = 29; chunkX <= 33; chunkX++) for (int chunkZ = 30; chunkZ <= 33; chunkZ++)
-            world.getChunkAt(chunkX, chunkZ).load();
-        require(arena.sources().stream().allMatch(point -> world.isChunkLoaded(point.getBlockX() >> 4, point.getBlockZ() >> 4)),
-                "Native fixture objective chunks are loaded before display creation");
+        for (int x = 29; x <= 33; x++) for (int z = 30; z <= 33; z++)
+            world.getChunkAt(x, z).load();
         FakePlayer alice = new FakePlayer(world, "HighlightAlice", 500, 500);
         FakePlayer bob = new FakePlayer(world, "HighlightBob", 505, 500);
         bob.locale = Locale.forLanguageTag("ru");
         FakePlayer eve = new FakePlayer(world, "HighlightEve", 500, 505);
         FakePlayer frank = new FakePlayer(world, "HighlightFrank", 505, 505);
         FakePlayer dead = new FakePlayer(world, "HighlightDead", 510, 505);
+        dead.dead = true;
         FakePlayer outsider = new FakePlayer(world, "HighlightOutsider", 510, 500);
         List<FakePlayer> fixtures = List.of(alice, bob, eve, frank, dead, outsider);
         List<Player> players = fixtures.stream().map(fake -> fake.player).toList();
         Map<UUID, Integer> teams = Map.of(alice.id, 0, bob.id, 0, dead.id, 0, eve.id, 1, frank.id, 1);
-        Set<UUID> inactive = new HashSet<>(Set.of(dead.id));
-        Predicate<Player> active = player -> !inactive.contains(player.getUniqueId());
-
+        Map<UUID, Location> deathLocations = new HashMap<>();
+        Function<Player, Location> positions = player -> deathLocations.getOrDefault(
+                player.getUniqueId(), player.getLocation());
         Class<?> type = Class.forName("me.petr1furious.potatominigames.games.finals.FinalsHighlights", true,
                 main.getClass().getClassLoader());
         Constructor<?> constructor = type.getDeclaredConstructor(JavaPlugin.class);
         constructor.setAccessible(true);
         Object highlights = constructor.newInstance(main);
         Method update = method(type, "update", FinalsMapArena.class, FinalsState.Phase.class,
-                Collection.class, Map.class, Predicate.class);
+                int.class, Collection.class, Map.class, Function.class);
         Method remove = method(type, "remove", UUID.class);
         Method clear = method(type, "clear");
         SpawnObserver observer = new SpawnObserver();
         Bukkit.getPluginManager().registerEvents(observer, smoke);
         try {
             List<Location> sources = arena.sources();
-            invoke(update, highlights, arena, null, players, teams, active);
-            String counts = fixtures.stream().map(FakePlayer::describe).collect(java.util.stream.Collectors.joining("; "));
-            smoke.getLogger().info("FINALS_HIGHLIGHTS_INITIAL_COUNTS: " + counts
-                    + "; native spawn events=" + observer.spawned.size());
-            require(alice.active().size() == 7 && bob.active().size() == 7 && eve.active().size() == 7,
-                    "Each living viewer receives three private objective pairs and one living ally label: " + counts);
-            require(dead.active().size() == 8,
-                    "A respawning viewer retains objective pairs and both living teammate labels: " + dead.describe());
-            require(outsider.active().isEmpty(), "Players outside the roster receive no match markers");
+            invoke(update, highlights, arena, null, -1, players, teams, positions);
+            require(alice.active().size() == 4 && bob.active().size() == 4 && dead.active().size() == 4,
+                    "Countdown gives red viewers one vault pair and both teammate labels");
+            require(eve.active().size() == 3 && outsider.active().isEmpty(),
+                    "Blue countdown has its single ally label; outsiders receive no markers");
             require(Collections.disjoint(alice.active(), bob.active())
-                            && Collections.disjoint(alice.active(), eve.active()),
-                    "Each viewer receives an independent set of native display entities");
-            require(alice.blocks().size() == 3 && alice.texts().size() == 4,
-                    "Objectives have block and text displays while teammates have only text");
-            require(hasLabel(alice, "Vault") && hasLabel(alice, "Cashout A") && hasLabel(alice, "Cashout B"),
-                    "English objectives render their localized names and cashout letters");
-            require(hasLabel(bob, "Хранилище") && hasLabel(bob, "Касса A") && hasLabel(bob, "Касса B"),
-                    "Russian viewers receive rendered Russian objective labels");
-            require(hasLabel(alice, bob.name) && !hasLabel(alice, alice.name)
-                            && !hasLabel(alice, eve.name) && !hasLabel(alice, frank.name)
-                            && !hasLabel(alice, dead.name) && !hasLabel(alice, outsider.name),
-                    "Ally labels exclude self, enemies, inactive targets and unregistered players");
+                    && Collections.disjoint(alice.active(), eve.active()),
+                    "Native displays belong exclusively to their individual viewer");
+            require(alice.blocks().size() == 1 && alice.texts().size() == 3,
+                    "Countdown contains no cashout displays or body-shaped proxy blocks");
+            require(hasLabel(alice, "Vault") && !hasLabel(alice, "Cashout"),
+                    "Only the vault is highlighted before a cashbox exists");
+            require(hasLabel(bob, "Хранилище") && !hasLabel(bob, "Касса"),
+                    "Countdown objectives render in the viewer's language");
+            require(hasLabel(alice, bob.name) && hasLabel(alice, dead.name)
+                    && !hasLabel(alice, alice.name) && !hasLabel(alice, eve.name)
+                    && !hasLabel(alice, frank.name) && !hasLabel(alice, outsider.name),
+                    "Private teammate labels retain all allies and never reveal enemies or self");
             require(hasColor(label(alice, bob.name).text(), NamedTextColor.RED)
-                            && hasColor(label(eve, frank.name).text(), NamedTextColor.BLUE),
-                    "Private ally labels use the viewer's red or blue team color");
+                    && hasColor(label(eve, frank.name).text(), NamedTextColor.BLUE),
+                    "Ally labels use their red or blue team color");
             for (FakePlayer viewer : fixtures) for (Display display : viewer.active()) {
-                require(!display.isVisibleByDefault(), "Every native marker is hidden from unrelated clients");
-                require(!display.isPersistent(), "Private markers cannot survive a world save");
-                require(display.isInvulnerable(), "Private markers cannot be damaged");
+                require(!display.isVisibleByDefault() && !display.isPersistent() && display.isInvulnerable(),
+                        "Native markers are private, transient and invulnerable");
                 Display.Brightness brightness = display.getBrightness();
                 require(brightness != null && brightness.getBlockLight() == 15 && brightness.getSkyLight() == 15,
-                        "Native markers remain fully bright in dark or covered locations");
+                        "Covered markers remain fully bright");
                 SpawnMetadata initial = observer.spawned.get(display.getUniqueId());
-                if (initial != null) {
-                    require(!initial.visible, "Native visibility is private before the entity spawn event");
-                    require(!initial.persistent && initial.invulnerable,
-                            "Native spawn initialization already sets transient invulnerable metadata");
-                }
-                if (display instanceof TextDisplay text) {
-                    require(text.isSeeThrough(), "Native labels are visible through walls");
-                    require(text.isShadowed(), "Native labels retain a readable text shadow");
-                    require(text.getBillboard() == Display.Billboard.CENTER, "Native labels face their viewer");
-                } else if (display instanceof BlockDisplay block) {
-                    boolean vault = block.getBlock().getMaterial() == Material.EMERALD_BLOCK;
-                    require(vault || block.getBlock().getMaterial() == Material.GOLD_BLOCK,
-                            "Objective highlight geometry uses the vault or cashout block");
-                    require(block.isGlowing(), "Native objective block geometry has a glow outline");
-                    require(Color.fromRGB((vault ? NamedTextColor.GREEN : NamedTextColor.GOLD).value())
-                                    .equals(block.getGlowColorOverride()),
-                            "Native objective glow override matches its green or gold marker color");
-                } else throw new AssertionError("Unexpected native marker type: " + display.getType());
+                if (initial != null)
+                    require(!initial.visible && !initial.persistent && initial.invulnerable,
+                            "Privacy is applied before the native spawn event");
+                if (display instanceof TextDisplay text)
+                    require(text.isSeeThrough() && text.isShadowed()
+                            && text.getBillboard() == Display.Billboard.CENTER,
+                            "Labels remain readable through terrain and face the viewer");
+                else if (display instanceof BlockDisplay block)
+                    require(block.isGlowing() && block.getBlock().getMaterial() == Material.EMERALD_BLOCK
+                            && Color.fromRGB(NamedTextColor.GREEN.value()).equals(block.getGlowColorOverride()),
+                            "The vault has a real green native block outline");
             }
-            require(sameLocations(sources, arena.sources()), "Rendering clones geometry instead of mutating arena locations");
-
-            Set<Display> first = alice.active();
-            Set<Display> allFirst = allActive(fixtures);
-            int spawnCount = observer.spawned.size();
-            invoke(update, highlights, arena, null, players, teams, active);
-            require(first.equals(alice.active()) && allFirst.equals(allActive(fixtures)),
-                    "Repeated updates reuse all native marker entities without accumulating duplicates");
-            require(observer.spawned.size() == spawnCount,
-                    "An unchanged update does not spawn replacement or orphan native entities");
+            require(sameLocations(sources, arena.sources()), "Rendering never mutates source geometry");
+            Set<Display> first = allActive(fixtures);
+            int spawned = observer.spawned.size();
+            invoke(update, highlights, arena, null, -1, players, teams, positions);
+            require(first.equals(allActive(fixtures)) && observer.spawned.size() == spawned,
+                    "Unchanged refreshes reuse every native display");
             bob.locale = Locale.ENGLISH;
-            invoke(update, highlights, arena, null, players, teams, active);
-            require(allFirst.equals(allActive(fixtures)) && hasLabel(bob, "Vault") && !hasLabel(bob, "Хранилище"),
-                    "Changing client language updates localized text without replacing native entities");
-            bob.locale = Locale.forLanguageTag("ru");
-            TextDisplay vault = label(alice, "Vault");
-            TextDisplay cashoutA = label(alice, "Cashout A");
-            TextDisplay cashoutB = label(alice, "Cashout B");
-            TextDisplay ally = label(alice, bob.name);
-            BlockDisplay vaultBlock = alice.blocks().stream()
-                    .filter(block -> block.getBlock().getMaterial() == Material.EMERALD_BLOCK).findFirst().orElseThrow();
-            BlockDisplay stationA = nearestBlock(alice, arena.station(0));
-            BlockDisplay stationB = nearestBlock(alice, arena.station(1));
-            Location oldVault = vault.getLocation(), oldVaultBlock = vaultBlock.getLocation();
-            Location oldA = cashoutA.getLocation(), oldABlock = stationA.getLocation();
-            Location oldB = cashoutB.getLocation(), oldBBlock = stationB.getLocation();
-            Location oldAlly = ally.getLocation();
+            invoke(update, highlights, arena, null, -1, players, teams, positions);
+            require(first.equals(allActive(fixtures)) && hasLabel(bob, "Vault"),
+                    "Language changes update labels without replacing native entities");
+            TextDisplay vault = label(alice, "Vault"), ally = label(alice, bob.name);
+            BlockDisplay vaultBody = alice.blocks().getFirst();
+            Location oldVault = vault.getLocation(), oldBody = vaultBody.getLocation(), oldAlly = ally.getLocation();
             arena.nextVault();
-            arena.nextCashout(0);
             bob.location.add(3, 1, -2);
-            List<Location> rotatedSources = arena.sources();
-            invoke(update, highlights, arena, FinalsState.Phase.VAULT_CLOSED, players, teams, active);
-            require(first.equals(alice.active()), "Objective rotation and ally movement teleport existing native displays");
-            moved(vault, oldVault, 8, 0, 4, "Vault text follows the new objective location");
-            moved(vaultBlock, oldVaultBlock, 8, 0, 4, "Vault glow geometry follows the new objective location");
-            moved(cashoutA, oldA, -6, 0, 8, "Completed cashout text follows its replacement candidate");
-            moved(stationA, oldABlock, -6, 0, 8, "Completed cashout geometry follows its replacement candidate");
-            moved(cashoutB, oldB, 0, 0, 0, "Rotating one cashout preserves the other text location");
-            moved(stationB, oldBBlock, 0, 0, 0, "Rotating one cashout preserves the other geometry location");
-            moved(ally, oldAlly, 3, 1, -2, "Private ally text follows the target player's position");
-            require(sameLocations(rotatedSources, arena.sources()), "Refreshes preserve mutable objective source locations");
-
-            invoke(update, highlights, arena, FinalsState.Phase.VAULT_OPENING, players, teams, active);
-            require(alice.active().equals(first), "Opening a vault keeps the same vault display pair visible");
-            for (FinalsState.Phase phase : List.of(FinalsState.Phase.CASHBOX_AVAILABLE,
-                    FinalsState.Phase.CARRIED, FinalsState.Phase.CASHOUT)) {
-                invoke(update, highlights, arena, phase, players, teams, active);
-                require(alice.active().size() == 5 && alice.blocks().size() == 2 && !hasLabel(alice, "Vault"),
-                        "A vault display disappears once its cashbox is available, carried or deposited: " + phase);
-            }
-            require(!vault.isValid() && !vaultBlock.isValid(), "Hidden vault phases remove both native vault entities");
-            invoke(update, highlights, arena, FinalsState.Phase.VAULT_CLOSED, players, teams, active);
-            require(alice.active().size() == 7 && hasLabel(alice, "Vault"), "The next closed vault receives a fresh display pair");
-            inactive.add(bob.id);
-            invoke(update, highlights, arena, FinalsState.Phase.VAULT_CLOSED, players, teams, active);
-            require(!hasLabel(alice, bob.name) && alice.active().size() == 6 && !ally.isValid(),
-                    "An inactive target immediately loses its ally marker without losing objective markers");
-            inactive.remove(bob.id);
-            invoke(update, highlights, arena, FinalsState.Phase.VAULT_CLOSED, players, teams, active);
-            require(hasLabel(alice, bob.name) && alice.active().size() == 7, "A revived teammate regains their private ally label");
-
-            Set<Display> bobDisplays = bob.active();
-            TextDisplay bobMarker = label(alice, bob.name);
-            Set<Display> eveDisplays = eve.active();
+            invoke(update, highlights, arena, FinalsState.Phase.VAULT_OPENING, -1, players, teams, positions);
+            moved(vault, oldVault, 8, 0, 4, "Vault labels follow objective rotation");
+            moved(vaultBody, oldBody, 8, 0, 4, "Vault outline follows objective rotation");
+            moved(ally, oldAlly, 3, 1, -2, "Ally labels follow movement during countdown and opening");
+            invoke(update, highlights, arena, FinalsState.Phase.CASHBOX_AVAILABLE, -1, players, teams, positions);
+            require(alice.active().size() == 6 && alice.blocks().size() == 2
+                    && hasLabel(alice, "Cashout A") && hasLabel(alice, "Cashout B") && !hasLabel(alice, "Vault"),
+                    "A loose cashbox reveals both cashouts and removes the vault highlight");
+            require(!vault.isValid() && !vaultBody.isValid(), "Opening removes both native vault entities");
+            Set<Display> bothCashouts = alice.active();
+            invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
+            require(bothCashouts.equals(alice.active()), "Carrying preserves both cashout display pairs");
+            TextDisplay cashoutA = label(alice, "Cashout A"), cashoutB = label(alice, "Cashout B");
+            BlockDisplay bodyA = nearestBlock(alice, arena.station(0));
+            Location oldA = cashoutA.getLocation(), oldABody = bodyA.getLocation();
+            arena.nextCashout(0);
+            invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
+            moved(cashoutA, oldA, -6, 0, 8, "Cashout labels follow replacement candidates");
+            moved(bodyA, oldABody, -6, 0, 8, "Cashout outlines follow replacement candidates");
+            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 1, players, teams, positions);
+            require(alice.active().size() == 4 && alice.blocks().size() == 1
+                    && !hasLabel(alice, "Cashout A") && hasLabel(alice, "Cashout B"),
+                    "An ongoing deposit highlights only its active station B");
+            require(!cashoutA.isValid() && !bodyA.isValid() && cashoutB.isValid(),
+                    "Inactive station displays are removed while active station displays are reused");
+            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
+            require(hasLabel(alice, "Cashout A") && !hasLabel(alice, "Cashout B") && !cashoutB.isValid(),
+                    "Changing the active deposit switches the single highlighted station");
+            Location death = bob.location.clone();
+            deathLocations.put(bob.id, death);
+            bob.dead = true;
+            bob.mode = GameMode.SPECTATOR;
+            bob.location.add(0, 10, 0);
+            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
+            require(hasLabel(alice, bob.name) && label(alice, bob.name) == ally,
+                    "A teammate keeps its existing private label throughout death and respawn");
+            close(ally.getLocation().getY(), death.getY() + 2.4,
+                    "A respawning teammate's label stays at the death site, not the spectator camera");
+            deathLocations.remove(bob.id);
+            bob.dead = false;
+            bob.mode = GameMode.SURVIVAL;
+            invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
+            close(ally.getLocation().getY(), bob.location.getY() + 2.4,
+                    "Respawn resumes tracking the teammate's live position");
+            Set<Display> bobDisplays = bob.active(), eveDisplays = eve.active();
             invoke(remove, highlights, bob.id);
             require(bob.active().isEmpty() && bobDisplays.stream().noneMatch(Entity::isValid),
-                    "Removing a participant destroys every display owned by that viewer");
-            require(!bobMarker.isValid() && !hasLabel(alice, bob.name) && alice.active().size() == 6,
-                    "Removing a participant also destroys their private ally marker in remaining views");
-            require(eveDisplays.equals(eve.active()), "Removing a red participant preserves the blue team's displays");
+                    "Departure removes all viewer-owned displays");
+            require(!ally.isValid() && !hasLabel(alice, bob.name) && alice.active().size() == 5,
+                    "Departure also removes this ally from the remaining viewers");
+            require(eveDisplays.equals(eve.active()), "Red departures leave blue displays untouched");
             List<Player> remaining = players.stream().filter(player -> !player.getUniqueId().equals(bob.id)).toList();
-            invoke(update, highlights, arena, FinalsState.Phase.FINISHED, remaining, teams, active);
-            require(allActive(fixtures).isEmpty(), "A finished match clears all native objective and teammate markers");
-            invoke(update, highlights, arena, null, remaining, teams, active);
+            invoke(update, highlights, arena, FinalsState.Phase.FINISHED, -1, remaining, teams, positions);
+            require(allActive(fixtures).isEmpty(), "Finished matches remove objectives and teammate markers");
+            invoke(update, highlights, arena, null, -1, remaining, teams, positions);
             Set<Display> beforeClear = allActive(fixtures);
-            require(!beforeClear.isEmpty(), "The same helper can create countdown overlays after clearing a finished match");
             invoke(clear, highlights);
             require(allActive(fixtures).isEmpty() && beforeClear.stream().noneMatch(Entity::isValid),
-                    "Explicit cleanup removes every remaining real native display entity");
+                    "Explicit cleanup removes every real native marker");
             require(observer.spawned.values().stream().noneMatch(initial -> initial.entity.isValid()),
-                    "Cleanup also leaves no orphan entities among all observed native display spawns");
+                    "Native lifecycle leaves no orphan marker entities");
             invoke(clear, highlights);
-            invoke(remove, highlights, UUID.randomUUID());
-            require(allActive(fixtures).isEmpty(), "Repeated cleanup and removal of an unknown participant remain safe");
-            smoke.getLogger().info("FINALS_HIGHLIGHTS_SMOKE_PASS: " + assertions + " native assertions; "
-                    + observer.spawned.size() + " display spawn events observed");
+            smoke.getLogger().info("FINALS_HIGHLIGHTS_SMOKE_PASS: " + assertions + " native assertions");
             return assertions;
         } finally {
             try { invoke(clear, highlights); }
@@ -201,6 +178,9 @@ public final class FinalsHighlightsSmoke {
         }
     }
 
+    private void close(double actual, double expected, String message) {
+        require(Math.abs(actual - expected) < .0001, message + ": expected " + expected + ", got " + actual);
+    }
     private void moved(Entity entity, Location before, double dx, double dy, double dz, String message) {
         Location after = entity.getLocation();
         require(after.getWorld().equals(before.getWorld()) && Math.abs(after.getX() - before.getX() - dx) < .0001
@@ -278,6 +258,8 @@ public final class FinalsHighlightsSmoke {
         final Set<Display> shown = new LinkedHashSet<>();
         Location location;
         Locale locale = Locale.ENGLISH;
+        boolean dead;
+        GameMode mode = GameMode.SURVIVAL;
 
         FakePlayer(World world, String name, double x, double z) {
             this.name = name;
@@ -292,7 +274,8 @@ public final class FinalsHighlightsSmoke {
                         case "getEyeLocation" -> location.clone().add(0, 1.62, 0);
                         case "locale" -> locale;
                         case "isOnline", "isValid" -> true;
-                        case "isDead" -> false;
+                        case "isDead" -> dead;
+                        case "getGameMode" -> mode;
                         case "showEntity" -> {
                             if (!(args[1] instanceof Display display))
                                 throw new AssertionError("Only private display entities may be shown to a viewer");

@@ -23,11 +23,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Predicate;
+import java.util.function.Function;
 
 /** Session-owned, private objective outlines and ally name markers. */
 final class FinalsHighlights {
     private final JavaPlugin plugin;
+    private final FinalsTeammateGlow teammateGlow;
     private final Map<UUID, View> views = new LinkedHashMap<>();
 
     record Marker(
@@ -60,17 +61,22 @@ final class FinalsHighlights {
 
     FinalsHighlights(JavaPlugin plugin) {
         this.plugin = plugin;
+        teammateGlow = new FinalsTeammateGlow(plugin);
     }
 
     void update(
             FinalsMapArena arena,
             FinalsState.Phase phase,
+            int activeStation,
             Collection<Player> players,
             Map<UUID, Integer> teams,
-            Predicate<Player> active) {
+            Function<Player, Location> teammateLocation) {
+        teammateGlow.update(arena.world(),
+                phase == FinalsState.Phase.FINISHED ? List.of() : players, teams);
         Set<UUID> present = new HashSet<>();
         for (Player player : players) {
-            List<Marker> markers = markers(arena, phase, player, players, teams, active);
+            List<Marker> markers = markers(arena, phase, activeStation,
+                    player, players, teams, teammateLocation);
             if (markers.isEmpty()) continue;
             UUID id = player.getUniqueId();
             present.add(id);
@@ -93,10 +99,11 @@ final class FinalsHighlights {
     static List<Marker> markers(
             FinalsMapArena arena,
             FinalsState.Phase phase,
+            int activeStation,
             Player viewer,
             Collection<Player> players,
             Map<UUID, Integer> teams,
-            Predicate<Player> active) {
+            Function<Player, Location> teammateLocation) {
         Integer team = teams.get(viewer.getUniqueId());
         if (phase == FinalsState.Phase.FINISHED
                 || team == null
@@ -115,6 +122,9 @@ final class FinalsHighlights {
                             Material.EMERALD_BLOCK));
         }
         for (int station = 0; station < 2; station++) {
+            boolean box = phase == FinalsState.Phase.CASHBOX_AVAILABLE
+                    || phase == FinalsState.Phase.CARRIED;
+            if (!box && !(phase == FinalsState.Phase.CASHOUT && station == activeStation)) continue;
             result.add(
                     new Marker(
                             "cashout-" + station,
@@ -128,12 +138,13 @@ final class FinalsHighlights {
             if (id.equals(viewer.getUniqueId())
                     || !team.equals(teams.get(id))
                     || !target.isOnline()
-                    || !arena.world().equals(target.getWorld())
-                    || !active.test(target)) continue;
+                    || !arena.world().equals(target.getWorld())) continue;
+            Location point = teammateLocation.apply(target);
+            if (point == null || !arena.world().equals(point.getWorld())) continue;
             result.add(
                     new Marker(
                             "teammate-" + id,
-                            target.getLocation().clone().add(0, 2.4, 0),
+                            point.clone(),
                             I18n.tr("finals.highlight.teammate", target.getName()),
                             team == 0 ? NamedTextColor.RED : NamedTextColor.BLUE,
                             null));
@@ -233,7 +244,7 @@ final class FinalsHighlights {
     }
 
     private static Location labelPosition(Marker marker) {
-        return marker.location().clone().add(0, marker.block() == null ? 0 : 2, 0);
+        return marker.location().clone().add(0, marker.block() == null ? 2.4 : 2, 0);
     }
 
     private static Location blockPosition(Marker marker) {
@@ -249,12 +260,14 @@ final class FinalsHighlights {
     }
 
     void remove(UUID id) {
+        teammateGlow.remove(id);
         View view = views.remove(id);
         if (view != null) view.clear();
         hideTeammate(id);
     }
 
     void clear() {
+        teammateGlow.clear();
         views.values().forEach(View::clear);
         views.clear();
     }

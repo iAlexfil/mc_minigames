@@ -57,6 +57,22 @@ public final class FinalsCashoutPhysicsCheck {
         close(value(capped, "y"), 18.5, "Terminal speed bounds each terrain query");
         Object removed = step(5, 0, List.of());
         close(value(removed, "y"), 4.92, "Destroying support restarts gravity immediately");
+        Object embeddedSlab = step(5.25, 0, List.of(new BoundingBox(0, 5, 0, 1, 5.5, 1)));
+        close(value(embeddedSlab, "y"), 5.5,
+                "A cashout initially embedded in a slab is lifted onto its surface");
+        close(value(embeddedSlab, "velocity"), 0, "Resolving initial penetration cancels downward momentum");
+        Object risingTerrain = step(5, -.8, List.of(new BoundingBox(0, 5, 0, 1, 6, 1)));
+        close(value(risingTerrain, "y"), 6, "Terrain placed inside a live cashout lifts the entire body clear");
+        Object fence = step(5, 0, List.of(new BoundingBox(.375, 4, .375, .625, 5.5, .625)));
+        close(value(fence, "y"), 5.5, "A fence extending above its block catches an overlapping cashout");
+        Object visualEdge = step(8, -1.4, List.of(new BoundingBox(.995, 6, 0, 1.2, 7, 1)));
+        close(value(visualEdge, "y"), 7, "The full visible block footprint collides at its outer edge");
+        Object touchingCeiling = step(5, 0, List.of(new BoundingBox(0, 6, 0, 1, 7, 1),
+                new BoundingBox(0, 4, 0, 1, 5, 1)));
+        close(value(touchingCeiling, "y"), 5, "Touching a ceiling without overlap does not teleport the body upward");
+        Object cascading = step(5.25, -.8, List.of(new BoundingBox(0, 6.25, 0, 1, 6.75, 1),
+                new BoundingBox(0, 5, 0, 1, 5.5, 1)));
+        close(value(cascading, "y"), 6.75, "Penetration correction rechecks the complete body against higher terrain");
         System.out.println("FinalsCashoutPhysicsCheck: " + checks + " checks passed");
     }
 

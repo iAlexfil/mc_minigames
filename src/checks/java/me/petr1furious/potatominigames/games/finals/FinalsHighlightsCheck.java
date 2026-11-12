@@ -20,7 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Predicate;
+import java.util.function.Function;
 
 /** Server-independent objective and teammate visibility regressions. */
 public final class FinalsHighlightsCheck {
@@ -42,10 +42,11 @@ public final class FinalsHighlightsCheck {
                         "markers",
                         FinalsMapArena.class,
                         FinalsState.Phase.class,
+                        int.class,
                         Player.class,
                         Collection.class,
                         Map.class,
-                        Predicate.class);
+                        Function.class);
         markers.setAccessible(true);
         phaseVisibility();
         viewerAndTeammateVisibility();
@@ -65,10 +66,15 @@ public final class FinalsHighlightsCheck {
                     phase == FinalsState.Phase.VAULT_CLOSED
                             || phase == FinalsState.Phase.VAULT_OPENING;
             require(view.containsKey("vault") == vault, "Vault visibility follows phase " + phase);
-            require(view.containsKey("cashout-0"), "Cashout A stays visible during " + phase);
-            require(view.containsKey("cashout-1"), "Cashout B stays visible during " + phase);
+            boolean box = phase == FinalsState.Phase.CASHBOX_AVAILABLE
+                    || phase == FinalsState.Phase.CARRIED;
+            boolean depositing = phase == FinalsState.Phase.CASHOUT;
+            require(view.containsKey("cashout-0") == (box || depositing),
+                    "Cashout A follows box availability or its active deposit: " + phase);
+            require(view.containsKey("cashout-1") == box,
+                    "Cashout B appears only while a cashbox can be deposited: " + phase);
             require(
-                    view.size() == (vault ? 3 : 2),
+                    view.size() == (vault || depositing ? 1 : 2),
                     "Only active objectives appear during " + phase);
             for (Object marker : view.values()) {
                 require(
@@ -80,8 +86,14 @@ public final class FinalsHighlightsCheck {
         require(
                 keyed(fixture.view(null))
                         .keySet()
-                        .equals(Set.of("vault", "cashout-0", "cashout-1")),
-                "Countdown previews the active vault and both active cashouts");
+                        .equals(Set.of("vault")),
+                "Countdown highlights only the vault before a cashbox exists");
+        fixture.activeStation = 1;
+        require(keyed(fixture.view(FinalsState.Phase.CASHOUT)).keySet().equals(Set.of("cashout-1")),
+                "The highlighted depositing station follows the active cashout index");
+        fixture.activeStation = -1;
+        require(fixture.view(FinalsState.Phase.CASHOUT).isEmpty(),
+                "A missing active deposit never reveals an unrelated cashout station");
     }
 
     private static void viewerAndTeammateVisibility() throws Exception {
@@ -101,9 +113,10 @@ public final class FinalsHighlightsCheck {
         fixture.active.remove(dead.getUniqueId());
         Map<String, Object> view = keyed(fixture.view(null));
         String allyKey = "teammate-" + ally.getUniqueId();
+        String deadKey = "teammate-" + dead.getUniqueId();
         require(
-                view.keySet().equals(Set.of("vault", "cashout-0", "cashout-1", allyKey)),
-                "Teammates exclude self, enemies, inactive, other-world and departed players");
+                view.keySet().equals(Set.of("vault", allyKey, deadKey)),
+                "Teammates include dead allies but exclude self, enemies, other-world and departed players");
         Object marker = view.get(allyKey);
         require(value(marker, "block") == null, "Teammates use labels without objective blocks");
         appearance(marker);
@@ -118,15 +131,23 @@ public final class FinalsHighlightsCheck {
                         .equals(
                                 Set.of(
                                         "vault",
-                                        "cashout-0",
-                                        "cashout-1",
                                         "teammate-" + enemy.getUniqueId())),
                 "The other team receives only its own teammates");
         fixture.teams.put(fixture.viewer.getUniqueId(), 0);
         fixture.active.remove(ally.getUniqueId());
+        Location deathLocation = new Location(fixture.arena.world, 45, 65, 46);
+        fixture.markerLocations.put(ally.getUniqueId(), deathLocation);
+        fixture.locations.get(ally.getUniqueId()).add(0, 10, 0);
         require(
-                !keyed(fixture.view(null)).containsKey(allyKey),
-                "Downed teammates disappear when life state changes");
+                keyed(fixture.view(null)).containsKey(allyKey),
+                "Downed teammates remain visible during respawn");
+        require(value(keyed(fixture.view(null)).get(allyKey), "location").equals(deathLocation),
+                "Respawning allies use the supplied death position rather than the spectator camera");
+        for (FinalsState.Phase phase : FinalsState.Phase.values()) {
+            if (phase != FinalsState.Phase.FINISHED)
+                require(keyed(fixture.view(phase)).containsKey(deadKey),
+                        "Dead ally markers remain available throughout phase " + phase);
+        }
         fixture.active.add(ally.getUniqueId());
         fixture.players = List.of(fixture.viewer);
         require(
@@ -149,7 +170,7 @@ public final class FinalsHighlightsCheck {
         Location firstSource = fixture.arena.stations[0].clone();
         Location secondSource = fixture.arena.stations[1].clone();
         Location allySource = fixture.locations.get(ally.getUniqueId()).clone();
-        Map<String, Object> before = keyed(fixture.view(null));
+        Map<String, Object> before = allObjectives(fixture);
         require(fixture.arena.vault.equals(vaultSource), "Vault source location is never mutated");
         require(
                 fixture.arena.stations[0].equals(firstSource)
@@ -161,14 +182,14 @@ public final class FinalsHighlightsCheck {
         fixture.arena.nextVault();
         fixture.arena.nextCashout(0);
         fixture.locations.get(ally.getUniqueId()).add(4, 2, 6);
-        Map<String, Object> after = keyed(fixture.view(null));
+        Map<String, Object> after = allObjectives(fixture);
         moved(before, after, "vault", 20, 0, 30);
         moved(before, after, "cashout-0", -15, 0, 25);
         moved(before, after, "cashout-1", 0, 0, 0);
         moved(before, after, "teammate-" + ally.getUniqueId(), 4, 2, 6);
         require(after.size() == 4, "Inactive candidate locations never receive highlights");
         fixture.arena.nextCashout(1);
-        Map<String, Object> secondRotation = keyed(fixture.view(null));
+        Map<String, Object> secondRotation = allObjectives(fixture);
         moved(after, secondRotation, "cashout-0", 0, 0, 0);
         moved(after, secondRotation, "cashout-1", -15, 0, 25);
         Location exposed = (Location) value(after.get("vault"), "location");
@@ -176,6 +197,12 @@ public final class FinalsHighlightsCheck {
         require(
                 fixture.arena.vault.equals(vaultSource.clone().add(20, 0, 30)),
                 "A returned marker location cannot mutate the arena geometry");
+    }
+
+    private static Map<String, Object> allObjectives(Fixture fixture) throws Exception {
+        Map<String, Object> result = keyed(fixture.view(null));
+        result.putAll(keyed(fixture.view(FinalsState.Phase.CARRIED)));
+        return result;
     }
 
     private static void moved(
@@ -250,10 +277,12 @@ public final class FinalsHighlightsCheck {
     private static final class Fixture {
         final Arena arena = new Arena();
         final Map<UUID, Location> locations = new HashMap<>();
+        final Map<UUID, Location> markerLocations = new HashMap<>();
         final Map<UUID, Integer> teams = new HashMap<>();
         final Set<UUID> active = new HashSet<>();
         final Player viewer = player("viewer", arena.world, 1, 2);
         Collection<Player> players = List.of(viewer);
+        int activeStation;
 
         Fixture() {
             teams.put(viewer.getUniqueId(), 0);
@@ -297,11 +326,12 @@ public final class FinalsHighlightsCheck {
                                 null,
                                 arena,
                                 phase,
+                                activeStation,
                                 viewer,
                                 players,
                                 teams,
-                                (Predicate<Player>)
-                                        player -> active.contains(player.getUniqueId()));
+                                (Function<Player, Location>) player -> markerLocations.getOrDefault(
+                                        player.getUniqueId(), locations.get(player.getUniqueId())));
             } catch (InvocationTargetException failure) {
                 if (failure.getCause() instanceof Error error) throw error;
                 if (failure.getCause() instanceof Exception exception) throw exception;

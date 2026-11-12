@@ -29,7 +29,8 @@ client mod or resource pack is required.
 
 Right-click the emerald vault to open it in five seconds, then touch the cashbox.
 The carrier glows and moves slowly; aim and press Q to throw the cashbox forward
-with force. The thrown box follows a gravity-driven arc; death still drops it normally.
+with force, including when your selected hotbar slot is empty. The thrown box follows
+a gravity-driven arc; death still drops it normally.
 Right-click gold cashout A or B
 to deposit it. After 40 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
@@ -128,11 +129,13 @@ saved snapshots, and are visible only to the editor who enabled them. Use
 `/finals map preview rooftop off` to hide them or
 `/finals map preview rooftop on` to show them again while in the editor world.
 
-During matches, active vaults have green outlines and cashouts have gold outlines,
-with localized labels visible through walls. Team-colored name markers show living
-teammates only to their allies. Markers follow objective rotations and player movement;
-opened vaults and departed or dead teammates lose their markers. Visibility is still
-subject to the server's entity tracking and the client's rendering distance.
+Before the cashbox opens, the vault has a green outline. Both cashout stations have
+gold outlines while the cashbox is available or carried; after depositing it, only
+the occupied cashout is highlighted. Labels remain visible through walls and follow
+falling stations. Teammates have private outlines and name markers visible only to
+their allies, including a marker at their death location while they respawn. Normal
+overhead player names are hidden during Finals. Visibility is still subject to the
+server's entity tracking and the client's rendering distance.
 
 Setup requires admin permission. Saving validates bounds, safe spawn support,
 headroom and objective spacing. Native snapshots retain block data, chest

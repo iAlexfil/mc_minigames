@@ -28,8 +28,12 @@ public final class ParkourRaceCheck {
         model();
         sampling();
         neighbouringTasks();
+        expandedTasks();
+        frostRollback();
+        vehicleIsolation();
         navigation();
         geometry();
+        swimRoute();
         staircase();
         flightBoundary();
         rollback();
@@ -41,8 +45,12 @@ public final class ParkourRaceCheck {
     }
 
     private static void model() {
+        for (int stages : List.of(7, 8)) model(stages);
+    }
+
+    private static void model(int stages) {
         UUID a = new UUID(0, 1), b = new UUID(0, 2), c = new UUID(0, 3);
-        ParkourRace race = new ParkourRace(List.of(a, b, c), ParkourCourse.LENGTH);
+        ParkourRace race = new ParkourRace(List.of(a, b, c), stages);
         check(
                 race.result(Set.of(a, b, c)).places().equals(List.of(List.of(a, b, c))),
                 "Starting racers tie");
@@ -63,12 +71,12 @@ public final class ParkourRaceCheck {
         check(
                 race.checkpoint(a) == 1 && race.result(Set.of(a, b)).place(a) == 1,
                 "Reset preserves the reached checkpoint");
-        for (int checkpoint = 2; checkpoint <= ParkourCourse.LENGTH; checkpoint++)
+        for (int checkpoint = 2; checkpoint <= stages; checkpoint++)
             check(race.reach(a, checkpoint, checkpoint * 100), "Sequential progress");
         check(
-                race.finished(a) && race.time(a) == ParkourCourse.LENGTH * 100L && !race.reset(a),
+                race.finished(a) && race.time(a) == stages * 100L && !race.reset(a),
                 "Finish time is elapsed race time, never a reset section timer");
-        for (int checkpoint = 1; checkpoint <= ParkourCourse.LENGTH; checkpoint++)
+        for (int checkpoint = 1; checkpoint <= stages; checkpoint++)
             race.reach(b, checkpoint, checkpoint * 100);
         check(
                 race.result(Set.of(a, b, c)).places().equals(List.of(List.of(a, b), List.of(c))),
@@ -81,7 +89,24 @@ public final class ParkourRaceCheck {
     }
 
     private static ParkourCourse course(ParkourCourse.Kind... kinds) {
-        return new ParkourCourse(List.of(kinds), false);
+        return layout(List.of(kinds), false);
+    }
+
+    private static ParkourCourse layout(List<ParkourCourse.Kind> selected, boolean mirror) {
+        // Keep focused fixture sections at their original indices; append neutral tasks.
+        var full = new java.util.ArrayList<>(selected);
+        for (var kind :
+                List.of(
+                        ParkourCourse.Kind.PEARL,
+                        ParkourCourse.Kind.BRIDGE,
+                        ParkourCourse.Kind.BOAT_ICE,
+                        ParkourCourse.Kind.BOAT_WATER,
+                        ParkourCourse.Kind.MINECART_RIDE,
+                        ParkourCourse.Kind.FROST_WALKER,
+                        ParkourCourse.Kind.SOUL_SPEED,
+                        ParkourCourse.Kind.SWIM))
+            if (full.size() < ParkourCourse.MIN_LENGTH && !full.contains(kind)) full.add(kind);
+        return new ParkourCourse(full, mirror);
     }
 
     private static ParkourCourse buildingCourse() {
@@ -97,17 +122,38 @@ public final class ParkourRaceCheck {
     private static void sampling() {
         Set<ParkourCourse.Kind> seen = new java.util.HashSet<>();
         Set<List<ParkourCourse.Kind>> orders = new java.util.HashSet<>();
-        for (int seed = 0; seed < 128; seed++) {
-            ParkourCourse sampled = new ParkourCourse(new Random(seed));
+        Set<Integer> lengths = new java.util.HashSet<>();
+        for (int seed = 0; seed < 256; seed++) {
+            ParkourCourse sampled = new ParkourCourse(new Random(seed * 0x9E3779B97F4A7C15L));
             check(
-                    sampled.stages() == 6
-                            && sampled.sequence().size() == 6
-                            && new java.util.HashSet<>(sampled.sequence()).size() == 6,
-                    "Each race samples exactly six tasks without replacement");
+                    sampled.stages() >= 7
+                            && sampled.stages() <= 8
+                            && sampled.sequence().size() == sampled.stages()
+                            && new java.util.HashSet<>(sampled.sequence()).size()
+                                    == sampled.stages(),
+                    "Each race samples seven or eight tasks without replacement");
+            var families =
+                    new java.util.EnumMap<ParkourCourse.Family, Integer>(
+                            ParkourCourse.Family.class);
+            for (var kind : sampled.sequence()) families.merge(kind.family(), 1, Integer::sum);
+            check(
+                    families.size() >= 4 && families.values().stream().allMatch(n -> n <= 2),
+                    "random races combine at least four movement families without overloading one"
+                            + " mechanic");
+            lengths.add(sampled.stages());
             seen.addAll(sampled.sequence());
             orders.add(sampled.sequence());
             check(
-                    sampled.blocks().equals(new ParkourCourse(new Random(seed)).blocks()),
+                    sampled.blocks()
+                                    .equals(
+                                            new ParkourCourse(
+                                                            new Random(seed * 0x9E3779B97F4A7C15L))
+                                                    .blocks())
+                            && sampled.states()
+                                    .equals(
+                                            new ParkourCourse(
+                                                            new Random(seed * 0x9E3779B97F4A7C15L))
+                                                    .states()),
                     "All lanes reproduce the same selected order and geometry");
             for (var pos : sampled.blocks().keySet())
                 check(
@@ -133,9 +179,10 @@ public final class ParkourRaceCheck {
             }
         }
         check(
-                seen.size() == ParkourCourse.Kind.values().length && seen.size() == 15,
+                seen.size() == ParkourCourse.Kind.values().length && seen.size() >= 30,
                 "Every original and new building task is eligible");
-        check(orders.size() > 100, "The six-task order varies between games");
+        check(lengths.equals(Set.of(7, 8)), "Both course lengths are generated");
+        check(orders.size() > 100, "The seven/eight-task order varies between games");
         ParkourCourse lateral = buildingCourse();
         var from = lateral.island(5);
         var to = lateral.island(6);
@@ -164,9 +211,10 @@ public final class ParkourRaceCheck {
                 List<ParkourCourse.Kind> selected =
                         new java.util.ArrayList<>(List.of(first, second));
                 for (var kind : ParkourCourse.Kind.values())
-                    if (selected.size() < 6 && !selected.contains(kind)) selected.add(kind);
+                    if (selected.size() < ParkourCourse.MIN_LENGTH && !selected.contains(kind))
+                        selected.add(kind);
                 for (boolean mirror : List.of(false, true)) {
-                    ParkourCourse course = new ParkourCourse(selected, mirror);
+                    ParkourCourse course = layout(selected, mirror);
                     for (int stage = 0; stage < course.stages(); stage++)
                         if (course.stage(stage) == ParkourCourse.Kind.LADDER_TRAVERSE) {
                             var from = course.island(stage);
@@ -183,6 +231,29 @@ public final class ParkourRaceCheck {
                                             "neighbouring task terrain must not block the lateral"
                                                     + " route");
                         }
+                    if (first == ParkourCourse.Kind.LADDER_DROP
+                            || first == ParkourCourse.Kind.HONEY_DROP) {
+                        var from = course.island(0);
+                        var goal = course.island(1);
+                        int wall =
+                                from.centerX() < ParkourCourse.WIDTH / 2.0
+                                        ? 0
+                                        : ParkourCourse.WIDTH - 1;
+                        for (int y = goal.y(); y <= from.y() + 4; y++) {
+                            var anchor = new ParkourCourse.Pos(wall, y, from.z() + 7);
+                            check(
+                                    (course.blocks().get(anchor) == Material.DEEPSLATE_TILES)
+                                            == (y < goal.y() + 3),
+                                    "Clutch anchors exist only in the bottom three rows");
+                            check(
+                                    course.buildPosition(0, anchor) == (y < goal.y() + 3),
+                                    "Invisible dividers cannot support a series of upper catches");
+                        }
+                        check(
+                                !course.buildPosition(
+                                        0, new ParkourCourse.Pos(wall, goal.y() - 1, from.z() + 7)),
+                                "Clutch placement stays at the final catch rather than below it");
+                    }
                     if ((first == ParkourCourse.Kind.LADDER_DROP
                                     || first == ParkourCourse.Kind.HONEY_DROP)
                             && second == ParkourCourse.Kind.LADDER_TRAVERSE) {
@@ -226,7 +297,7 @@ public final class ParkourRaceCheck {
                 "vertical-only target is not given a misleading horizontal direction");
         for (boolean mirror : List.of(false, true)) {
             ParkourCourse course =
-                    new ParkourCourse(
+                    layout(
                             List.of(
                                     ParkourCourse.Kind.LADDER_TRAVERSE,
                                     ParkourCourse.Kind.BRIDGE,
@@ -271,6 +342,202 @@ public final class ParkourRaceCheck {
         } finally {
             me.petr1furious.potatominigames.i18n.I18n.unregister();
         }
+    }
+
+    private static void expandedTasks() {
+        var course =
+                course(
+                        ParkourCourse.Kind.LEAPING_PILLARS,
+                        ParkourCourse.Kind.RIPTIDE_LAUNCH,
+                        ParkourCourse.Kind.BOAT_WATER,
+                        ParkourCourse.Kind.MINECART_RIDE,
+                        ParkourCourse.Kind.SLOW_FALLING,
+                        ParkourCourse.Kind.WIND_HOPS);
+        for (int stage = 0; stage < course.stages(); stage++) {
+            var from = course.island(stage);
+            var to = course.island(stage + 1);
+            check(
+                    course.attempt(stage, to.centerX(), to.y() + 1, to.z() + 3.5),
+                    "every new task goal remains in the current attempt, not beyond its boundary");
+            if (course.stage(stage) == ParkourCourse.Kind.BOAT_WATER) {
+                for (int row = 0; row < 3; row++) {
+                    int z = from.z() + 14 + row * 8;
+                    int open = 0;
+                    for (int x = 0; x < ParkourCourse.WIDTH; x++)
+                        if (!course.blocks().containsKey(new ParkourCourse.Pos(x, from.y() + 2, z)))
+                            open++;
+                    check(open == 5, "boat gates have five clear columns for hull and passenger");
+                }
+            }
+        }
+        check(!course.states().isEmpty(), "rail task includes native block states");
+        for (var state : course.states().entrySet()) {
+            check(
+                    course.blocks().get(state.getKey()) == Material.POWERED_RAIL,
+                    "native rail properties only apply to rail blocks");
+            check(
+                    state.getValue().contains("shape=north_south")
+                            && state.getValue().contains("powered=true"),
+                    "cart rails remain straight and powered on initial construction");
+        }
+        var leap = course.island(0);
+        check(
+                course.blocks()
+                                .get(
+                                        new ParkourCourse.Pos(
+                                                (int) leap.centerX(), leap.y() + 2, leap.z() + 9))
+                        == Material.LIGHT_BLUE_CONCRETE,
+                "leaping task has a two-block first rise rather than another ordinary bridge");
+        var trident = course.supplies(1).getFirst();
+        check(
+                trident.material() == Material.TRIDENT
+                        && "riptide".equals(trident.enchantment())
+                        && trident.level() == 3,
+                "water launch receives a real vanilla Riptide trident");
+        me.petr1furious.potatominigames.i18n.I18n.register();
+        try {
+            for (var kind : ParkourCourse.Kind.values())
+                for (String suffix : List.of(".name", ".hint")) {
+                    var text = me.petr1furious.potatominigames.i18n.I18n.tr(kind.key() + suffix);
+                    for (var locale :
+                            List.of(
+                                    java.util.Locale.ENGLISH,
+                                    java.util.Locale.forLanguageTag("ru")))
+                        check(
+                                !me.petr1furious.potatominigames.i18n.I18n.plain(text, locale)
+                                        .contains("potatominigames."),
+                                "every task name and mechanic hint is localized");
+                }
+        } finally {
+            me.petr1furious.potatominigames.i18n.I18n.unregister();
+        }
+    }
+
+    private static void frostRollback() {
+        var course =
+                course(
+                        ParkourCourse.Kind.FROST_WALKER,
+                        ParkourCourse.Kind.BRIDGE,
+                        ParkourCourse.Kind.WIND_WALL,
+                        ParkourCourse.Kind.WATER_DROP,
+                        ParkourCourse.Kind.SCAFFOLD,
+                        ParkourCourse.Kind.PEARL);
+        UUID owner = new UUID(10, 1), other = new UUID(10, 2);
+        FakeWorld world = new FakeWorld();
+        ParkourArena arena = new ParkourArena(world.world, List.of(owner, other), course);
+        while (!arena.buildSlice(4096)) {}
+        var from = course.island(0);
+        Block water = world.block((int) from.centerX(), from.y(), from.z() + 9);
+        check(
+                arena.rememberFrost(owner, 0, water),
+                "frost walker can journal protected source water in its own section");
+        check(
+                !arena.rememberFrost(other, 0, water) && !arena.rememberFrost(owner, 1, water),
+                "freeze permission does not cross lanes or tasks");
+        water.setType(Material.FROSTED_ICE, false);
+        check(
+                !arena.mutable(owner, 0, water),
+                "temporary frost does not make protected lake terrain mineable");
+        arena.reset(owner);
+        check(
+                water.getType() == Material.WATER && !arena.changed(owner, water),
+                "clock/checkpoint restores frozen terrain to the original water");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void vehicleIsolation() throws ReflectiveOperationException {
+        UUID owner = new UUID(11, 1), other = new UUID(11, 2);
+        FakeWorld world = new FakeWorld();
+        var course =
+                course(
+                        ParkourCourse.Kind.BOAT_ICE,
+                        ParkourCourse.Kind.BRIDGE,
+                        ParkourCourse.Kind.WIND_WALL,
+                        ParkourCourse.Kind.WATER_DROP,
+                        ParkourCourse.Kind.SCAFFOLD,
+                        ParkourCourse.Kind.PEARL);
+        ParkourArena arena = new ParkourArena(world.world, List.of(owner, other), course);
+        boolean[] ejected = {false}, removed = {false}, stopped = {false};
+        var boat =
+                (org.bukkit.entity.Boat)
+                        Proxy.newProxyInstance(
+                                org.bukkit.entity.Boat.class.getClassLoader(),
+                                new Class<?>[] {org.bukkit.entity.Boat.class},
+                                (proxy, method, args) ->
+                                        switch (method.getName()) {
+                                            case "getWorld" -> world.world;
+                                            case "isValid" -> !removed[0];
+                                            case "eject" -> {
+                                                ejected[0] = true;
+                                                yield true;
+                                            }
+                                            case "remove" -> {
+                                                removed[0] = true;
+                                                yield null;
+                                            }
+                                            case "setVelocity" -> {
+                                                stopped[0] = true;
+                                                yield null;
+                                            }
+                                            case "hashCode" -> System.identityHashCode(proxy);
+                                            case "equals" -> proxy == args[0];
+                                            default ->
+                                                    throw new AssertionError(
+                                                            "Unexpected vehicle call: "
+                                                                    + method.getName());
+                                        });
+        ParkourRaceSession session =
+                new ParkourRaceSession(null, null, PartyRoundContext.standalone(null));
+        session.world = world.world;
+        session.standings = new SurvivalStandings(List.of(owner, other));
+        session.connected.addAll(List.of(owner, other));
+        field(PartySurvivalSession.class, "playing").set(session, true);
+        field(ParkourRaceSession.class, "course").set(session, course);
+        field(ParkourRaceSession.class, "arena").set(session, arena);
+        field(ParkourRaceSession.class, "race")
+                .set(session, new ParkourRace(List.of(owner, other), course.stages()));
+        ((Map<UUID, Set<org.bukkit.entity.Entity>>)
+                        field(ParkourRaceSession.class, "entities").get(session))
+                .put(owner, new java.util.HashSet<>(Set.of(boat)));
+        for (UUID id : List.of(owner, other)) {
+            Player p =
+                    (Player)
+                            Proxy.newProxyInstance(
+                                    Player.class.getClassLoader(),
+                                    new Class<?>[] {Player.class},
+                                    (proxy, method, args) ->
+                                            switch (method.getName()) {
+                                                case "getUniqueId" -> id;
+                                                case "getWorld" -> world.world;
+                                                case "getGameMode" -> GameMode.SURVIVAL;
+                                                case "isDead" -> false;
+                                                default ->
+                                                        throw new AssertionError(
+                                                                "Unexpected vehicle passenger call:"
+                                                                        + " "
+                                                                        + method.getName());
+                                            });
+            var enter = new org.bukkit.event.vehicle.VehicleEnterEvent(boat, p);
+            session.vehicleEnter(enter);
+            check(
+                    enter.isCancelled() == !id.equals(owner),
+                    "vehicle accepts its racing owner and rejects a rival passenger");
+        }
+        var move =
+                new org.bukkit.event.vehicle.VehicleMoveEvent(
+                        boat, arena.checkpoint(owner, 0), arena.checkpoint(other, 0));
+        session.vehicleMove(move);
+        check(
+                stopped[0]
+                        && ((Set<UUID>) field(ParkourRaceSession.class, "failed").get(session))
+                                .contains(owner),
+                "vehicle motion outside the owner's attempt is stopped and queues a reset");
+        var clear = ParkourRaceSession.class.getDeclaredMethod("clearEntities", UUID.class);
+        clear.setAccessible(true);
+        clear.invoke(session, owner);
+        check(
+                ejected[0] && removed[0],
+                "attempt cleanup ejects passengers before removing their vehicle");
     }
 
     private static void geometry() {
@@ -348,13 +615,13 @@ public final class ParkourRaceCheck {
         var swim = extras.island(0);
         int center = (int) swim.centerX();
         check(
-                extras.blocks().get(new ParkourCourse.Pos(center, swim.y() + 1, swim.z() + 10))
+                extras.blocks().get(new ParkourCourse.Pos(center, swim.y() + 1, swim.z() + 8))
                                 == Material.WATER
                         && extras.blocks()
                                         .get(
                                                 new ParkourCourse.Pos(
-                                                        center, swim.y() + 2, swim.z() + 10))
-                                == Material.SMOOTH_QUARTZ,
+                                                        center, swim.y() + 2, swim.z() + 8))
+                                == Material.DEEPSLATE_TILES,
                 "Swim geometry follows its sampled index");
         var bounce = extras.island(1);
         check(
@@ -364,14 +631,64 @@ public final class ParkourRaceCheck {
                                                 (int) bounce.centerX(),
                                                 bounce.y() - 36,
                                                 bounce.z() + 18))
-                        == Material.LIME_CONCRETE,
+                        == Material.LIGHT_BLUE_CONCRETE,
                 "Rebound pad follows the sampled source island");
+    }
+
+    private static void swimRoute() {
+        for (boolean mirror : List.of(false, true)) {
+            var course =
+                    layout(
+                            List.of(
+                                    ParkourCourse.Kind.BRIDGE,
+                                    ParkourCourse.Kind.WIND_WALL,
+                                    ParkourCourse.Kind.WATER_DROP,
+                                    ParkourCourse.Kind.SWIM,
+                                    ParkourCourse.Kind.BLOCK_ASCENT,
+                                    ParkourCourse.Kind.PEARL),
+                            mirror);
+            var from = course.island(3);
+            int center = (int) from.centerX(), start = from.z() + 7, end = course.island(4).z() - 1;
+            var pending = new java.util.ArrayDeque<ParkourCourse.Pos>();
+            var seen = new java.util.HashSet<ParkourCourse.Pos>();
+            pending.add(new ParkourCourse.Pos(center, from.y() + 1, start));
+            while (!pending.isEmpty()) {
+                var pos = pending.removeFirst();
+                if (pos.z() < start
+                        || pos.z() > end
+                        || !seen.add(pos)
+                        || course.blocks().get(pos) != Material.WATER) continue;
+                for (int[] step : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}})
+                    pending.add(
+                            new ParkourCourse.Pos(pos.x() + step[0], pos.y(), pos.z() + step[1]));
+            }
+            check(
+                    seen.contains(new ParkourCourse.Pos(center, from.y() + 1, end)),
+                    "Swimmers retain a connected route through every baffle in both lane layouts");
+            int gates = 0, lastOpening = 0;
+            for (int z = start; z <= end; z++) {
+                int blocked = 0, opening = 0;
+                for (int x = center - 1; x <= center + 1; x++)
+                    if (course.blocks().get(new ParkourCourse.Pos(x, from.y() + 1, z))
+                            == Material.LIGHT_BLUE_CONCRETE) blocked++;
+                    else opening = x;
+                if (blocked == 0) continue;
+                check(
+                        blocked == 2
+                                && Math.abs(opening - center) == 1
+                                && (gates == 0 || lastOpening != opening),
+                        "Each baffle leaves one full-width water cell, alternating left and right");
+                lastOpening = opening;
+                gates++;
+            }
+            check(gates == 4, "The tunnel requires four swimming detours");
+        }
     }
 
     private static void staircase() {
         for (boolean mirror : List.of(false, true)) {
             ParkourCourse course =
-                    new ParkourCourse(
+                    layout(
                             List.of(
                                     ParkourCourse.Kind.BLOCK_ASCENT,
                                     ParkourCourse.Kind.POT_ASCENT,
@@ -604,7 +921,7 @@ public final class ParkourRaceCheck {
         playing.set(session, true);
         var raceField = ParkourRaceSession.class.getDeclaredField("race");
         raceField.setAccessible(true);
-        ParkourRace race = new ParkourRace(List.of(id), ParkourCourse.LENGTH);
+        ParkourRace race = new ParkourRace(List.of(id), ParkourCourse.MIN_LENGTH);
         race.reach(id, 1, 1);
         race.reach(id, 2, 2);
         raceField.set(session, race);

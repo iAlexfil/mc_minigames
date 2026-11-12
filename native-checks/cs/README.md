@@ -89,6 +89,8 @@ The native runs and hashes below identify the CS-only artifact at commit
 `7e2e601`. The subsequent Miners finale-zone fix is covered by full builds on
 both APIs, including `checkPartyMiners` and i18n validation. It does not change
 CS code; its translucent zone walls still require an actual client playtest.
+The Parkour Sprint expansion is also covered by both full builds, including
+`checkParkourRace`; its native movement tasks still need a client playtest.
 
 On 2026-11-12, full Gradle builds passed on both 26.2 and 26.3; the final CS
 suite passed **2,003 checks** on each API, and both i18n gates passed. Native

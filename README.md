@@ -182,7 +182,7 @@ These games are also independently available:
 | Наковальни | `/play party anvils` | Dodge staggered rain on a 42×42 platform or shelter under slabs. Waves last six seconds. Rain-free relocation starts at ten seconds and shortens by one second per wave to a six-second minimum: old anvils disappear and shelters move randomly. Start with four shelters; remove one every two waves, minimum one. Roofs shrink from 2×2 to 1×1 from wave six. From wave three, punches push without health damage. Anvil contact eliminates. Ten waves. Rain keeps full density within a horizontal radius of eight blocks around living players and falls four times less densely elsewhere; overlapping zones do not stack. Distant cells rotate evenly over four sweeps instead of guaranteeing every cell is hit each wave. At most 2560 airborne anvils, with rate-limited impact sounds; slabs intercept anvils above shelters. |
 | Повтори постройку | `/play party build_memory` | Private platforms form a circle around an elder guardian jury. The first two stages pick distinct small models of 6–8 blocks; later stages draw from fourteen larger recognizable models without repeats. Material palettes, rotations and small changes to existing structural pieces vary the builds; random filler is one third of the former budget. Memorization drops from 12 to 5 seconds; construction starts at 30 seconds and adds five seconds per stage, up to 65. After the deadline, the guardian beams at each platform for three seconds. Red outlines mark missing, wrong and extra cells; chat reports errors and similarity (correct expected blocks / total expected blocks). One player with the most errors is eliminated; ties eliminate the later finisher, measured by the last change to the final build. If everyone is perfect, nobody leaves in stages 1–5; from stage 6 the slowest builder leaves. Edits in the same server tick use roster order as a final tie-break. Facing and upper/lower placement matter; sign text and automatic connections do not. Screens prevent copying during construction. The invisible beam target is parked above the central jury between reviews, outside every build footprint. |
 | Гонка инструментов | `/play party tool_race` | Mine down exactly **50 blocks** in your own 1×1 shaft. Everyone gets the same shuffled wood/dirt/stone sequence and unbreakable iron axe, shovel and pickaxe in slots 1–3. Incorrect tools are slower, not an instant loss. Unbreakable glass walls reveal other racers. The personal scoreboard shows current place, blocks mined and blocks remaining. Finishers fall onto a shared landing and remain in survival mode; the last finisher gets three seconds to land. No fall damage or drops. Finish time determines places; after three minutes, unfinished players rank by progress. |
-| Паркур-спидран | `/play party parkour_race` | Six random vanilla tasks, sampled without repeats from a fifteen-task pool, on identical parallel lanes with invisible barrier walls. Every checkpoint replaces the entire old inventory with a focused task kit; earlier supplies and construction cannot carry forward. Slot 9 returns to the last checkpoint and restores that section’s kit while rolling back its blocks, water and pending projectiles; the race timer keeps running. |
+| Паркур-спидран | `/play party parkour_race` | Seven or eight random vanilla tasks, sampled without repeats from a thirty-task pool, on identical parallel lanes with invisible barrier walls. Every checkpoint replaces the entire old inventory with a focused task kit; earlier supplies and construction cannot carry forward. Slot 9 returns to the last checkpoint and restores that section’s kit while rolling back its blocks, water and pending projectiles; the race timer keeps running. |
 | Дырка в стене | `/play party hole_in_the_wall` | Each round randomly selects Plus, Snake or Donut. Plus has four permanent 2×2 corner islands; its arms narrow from five to three blocks at the first shrink. Snake is a connected S-shaped track; Donut is a rounded ring with a permanent central pit. All layouts shrink by removing floor at one third and two thirds, with three-second red warnings; paths never teleport or grow. Plus uses twenty silhouettes, Snake and Donut twelve each, with map-specific side-lane routes and localized introductions. Every wall offers walk/jump/crouch alternatives; precision routes appear only after ten arrivals. First five walls teach walking and jumping. Types shuffle without repeats within their map catalog. Symmetric outlines and grounded frames replace scattered floating blocks; the hurdle uses a full-block sill instead of an automatically climbed slab. Concurrent perpendicular walls require compatible passages above the final floor, never just above the center pit. Real walls step one block at a time, can be ridden, and strongly push on side contact. All four directions stay in rotation. PvP is off; falling eliminates. Configure `holeInTheWall.durationSeconds` (45–300, default 120). Survival awards 3/2/1. |
 
 Tool Race, Anvils, Color Floor and Build Memory use fixed daytime and clear weather.
@@ -193,9 +193,10 @@ The new standalone modes award the same podium points to `/party points`.
 sets the time limit (60–600 s, default 240). Existing customized `partyGames.modes`
 lists need `parkour_race` added to include it in mixed matches.
 
-Each lane is twenty-seven blocks wide and has the same seven checkpoint islands.
-A shared six-task order is sampled without replacement from fifteen obstacle types
-once per race; resets do not reroll it. Ordinary islands are seven blocks wide;
+Each lane is twenty-seven blocks wide and has the same eight or nine checkpoint islands.
+A shared seven- or eight-task order is sampled without replacement from thirty obstacle
+types once per race, with either length equally likely; resets do not reroll it. At least four movement families appear in
+each random course, and at most two tasks share one family. Ordinary islands are seven blocks wide;
 the sideways ladder traverse uses two narrow three-block-wide ledges whose
 centres are twenty blocks apart. Absolute heights are translated together so any
 sampled sequence of climbs and drops fits safely inside the arena.
@@ -204,20 +205,32 @@ visible but cannot interact. Construction is sliced at 4096 blocks per tick; the
 full countdown starts after the course is ready. The HUD names the active task,
 and the player receives a localized hint on entering each section.
 
+Checkpoint islands use white quartz with a gold stripe (emerald at the finish).
+Intermediate walls, tunnel shells and support bases use dark deepslate tiles;
+intermediate pads and obstacle markers use light-blue concrete. Functional honey,
+ice, soul blocks and rails retain their native materials.
+
 Parkour Sprint highlights only the current runner's next checkpoint with a private,
 non-colliding green outline and a numbered label visible through walls. A view-relative
 arrow, distance and height difference stay on the action bar; the clock's left-click
 repeats the task hint, and right-click still restores the current attempt. Spawn and
-clock return face the next island, including sideways tasks. Clutch walls stop before
-the destination island and stay on the outer side of the lane, leaving the next lateral
-passage open; blue stripes mark their ends. Course generation validates checkpoint
+clock return face the next island, including sideways tasks. Ladder/honey clutch supports
+are only three blocks high at the bottom of the fall. Placement on these tasks is
+limited to those bottom three rows, preventing gradual descent via the invisible lane
+shell. Supports stop before the destination island and stay on the outer side of the
+lane, leaving the next lateral passage open; blue stripes mark their ends. Course generation validates checkpoint
 headroom and lateral passages before construction, retries blocked compositions and
-has a bounded safe fallback with six distinct tasks. Regression checks
+has a bounded safe fallback with the same chosen count of seven or eight distinct tasks. Regression checks
 cover all ordered neighbouring task pairs in both mirrored layouts.
 
-All kits use ordinary, unenchanted Minecraft items and native physics/cooldowns.
+All kits use vanilla Minecraft items, potion types and enchantments with native physics/cooldowns.
 A checkpoint removes the old inventory, cursor, armour and offhand before granting
-only the next task's kit. Elytra are equipped automatically on the flight task.
+only the next task's kit. Elytra are equipped automatically on the flight task; Frost Walker and Soul Speed
+boots are also equipped automatically on their tasks. Potion effects and freezing
+are cleared on reset/checkpoint changes. Boats and minecarts belong to their lane,
+reject foreign passengers and cannot activate a checkpoint while being ridden.
+Dismount onto the island; clock return removes the vehicle and restores the kit.
+Frost Walker ice is journaled and restored to the original water.
 The clock remains in slot 9; the other items can be rearranged.
 
 | Task | Gap between islands | Height change | Exclusive kit |
@@ -229,16 +242,31 @@ The clock remains in slot 9; the other items can be rearranged.
 | Ladder wall | 1 | +20 | 24 ladders |
 | Slime rebound | 15 | -20 | 4 slime blocks; place slime on a bare landing pad 36 blocks below the starting island |
 | Pearl throw | 32 | 0 | 3 ender pearls |
-| Swim tunnel | 20 | 0 | One water bucket; entry pool and a flooded, one-block-high passage |
-| Ladder clutch | 3 | -36 | 8 ladders; permanent side wall supports placement during the fall |
+| Swim tunnel | 20 | 0 | One water bucket; entry pool and a flooded, one-block-high passage with four blue barriers and alternating left/right openings |
+| Ladder clutch | 3 | -36 | 8 ladders; a three-block-high bottom support for a last-moment catch |
 | Cobweb clutch | 3 | -28 | 3 cobwebs and shears |
-| Honey clutch | 3 | -24 | 4 honey blocks and a side wall |
+| Honey clutch | 3 | -24 | 4 honey blocks and a three-block-high bottom support |
 | Elytra flight | 50 | +64 | Elytra and 6 rockets |
 | Ladder traverse | 20 sideways between checkpoint centres | 0 | 12 wool and 12 ladders; alternate blocks and side-mounted ladders |
 | Block staircase | 14 | +14 | 32 wool and shears; build forward and up |
 | Flower-pot staircase | 14 | +14 | 16 wool and 18 small flower pots; use each pot to place the next wool block diagonally forward and up |
+| Island jumps | 20 | +2 | No items; staggered blue ledges |
+| Low-ceiling hops | 20 | 0 | No items; short holes beneath a two-block-high passage |
+| Leaping pillars | 20 | +4 | Leaping II potion; two-block rises |
+| Slow-falling crossing | 20 | -32 | Slow Falling potion |
+| Riptide launch | 14 | 0 | Riptide III trident and a starting pool |
+| Water ascent | 2 | +20 | Water bucket and a climbing wall |
+| Powder-snow clutch | 3 | -40 | Powder snow bucket |
+| Wind-charge clutch | 3 | -44 | 3 wind charges; burst one into the floor just before landing, then land back on the checkpoint |
+| Honey-wall slide | 14 | -24 | No items; a honey wall at the outer edge |
+| Boat slalom | 32 | 0 | Oak boat, water and three offset gates |
+| Ice-boat chicane | 38 | 0 | Oak boat and a curved five-block-wide blue-ice road |
+| Rail sprint | 32 | 0 | Minecart; powered north–south rails with redstone support |
+| Frost-walker lake | 26 | 0 | Frost Walker II leather boots |
+| Soul-speed bends | 26 | 0 | Soul Speed III leather boots and a winding three-block-wide path |
+| Wind-charge hops | 14 | +6 | 4 wind charges and a raised middle ledge |
 
-The table lists the full pool; only six tasks appear in a given race.
+The table lists the full pool; only seven or eight tasks appear in a given race.
 
 The flower-pot staircase uses ordinary small flower pots as placement anchors:
 put a pot on the current wool block, then place the next wool block against the
@@ -260,7 +288,7 @@ velocity and gliding, so flight cannot carry over into the next kit.
 
 Fall, drowning and flight-collision damage use native rules. Lethal damage is
 cancelled and queues an attempt reset before checkpoint detection; a failed
-water/slime/ladder/web/honey clutch cannot claim the destination checkpoint.
+water/slime/ladder/web/honey/wind-charge clutch cannot claim the destination checkpoint.
 Nonlethal damage remains meaningful within the attempt; a fresh kit restores
 health and air. Falling out of the section also returns to the checkpoint.
 Every movement packet is checked against the current task bounds, including
@@ -1689,7 +1717,7 @@ geometry, seven eligible perks, the 50/40/10 lucky distribution, finite personal
 perk budgets, the 10% totem roll, 80/20 gold hearts and equipment replacement plans
 that preserve a drill even when the inventory is full.
 
-`checkParkourRace` checks six distinct tasks sampled from the full fifteen-task
+`checkParkourRace` checks seven or eight distinct tasks sampled from the full thirty-task
 pool, identical sealed lanes, build budgets, sequential grounded checkpoints,
 elytra bypass rejection, finite task kits, both orientations of the flower-pot
 staircase, lethal-clutch resets, construction rollback and Party Games/queue

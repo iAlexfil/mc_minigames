@@ -1,7 +1,16 @@
 package me.petr1furious.potatominigames.games.cs;
 
+import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.entity.Player;
+import org.bukkit.util.RayTraceResult;
+import org.bukkit.util.Vector;
 
+import java.lang.reflect.*;
 import java.util.*;
 
 import javax.imageio.ImageIO;
@@ -19,11 +28,17 @@ public final class CsCheck {
     public static void main(String[] args) throws Exception {
         hudTranslations();
         buying();
+        cs2Economy();
+        sizedEconomy();
+        grenadeFlight();
+        distantBullets();
         ammunition();
+        scopedControls();
         expandedArsenal();
         damageAndRewards();
         objectives();
         rounds();
+        mr12();
         lifecycle();
         importedMap();
         smokeGeometry();
@@ -45,13 +60,321 @@ public final class CsCheck {
                             "start-round health HUD renders with and without helmet");
                 }
             }
+            for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                for (String status : List.of("alive", "dead", "offline")) {
+                    var label = me.petr1furious.potatominigames.i18n.I18n.tr("cs.status." + status);
+                    var line =
+                            me.petr1furious.potatominigames.i18n.I18n.tr("cs.score.status", label);
+                    check(
+                            !me.petr1furious.potatominigames.i18n.I18n.plain(line, locale)
+                                    .contains("potatominigames."),
+                            "all roster states resolve in both languages");
+                }
+                String message = "<red>literal</red> <arg:0>";
+                var line =
+                        me.petr1furious.potatominigames.i18n.I18n.tr(
+                                "cs.chat.team",
+                                net.kyori.adventure.text.Component.text("Tester"),
+                                net.kyori.adventure.text.Component.text(message));
+                check(
+                        me.petr1furious.potatominigames.i18n.I18n.plain(line, locale)
+                                .contains(message),
+                        "private team messages preserve literal markup and placeholders");
+            }
         } finally {
             me.petr1furious.potatominigames.i18n.I18n.unregister();
         }
     }
 
+    private static void cs2Economy() {
+        CsMatch m = live();
+        var ct = m.actor(CT);
+        var t = m.actor(T);
+        check(
+                CsWeapon.M4A4.price == 2900
+                        && CsWeapon.FAMAS.price == 1950
+                        && CsWeapon.MP7.price == 1400,
+                "verified CS2 budget and standard rifle/SMG prices");
+        CsMatch.credit(ct, 50000);
+        CsMatch.credit(t, 50000);
+        int cash = ct.money;
+        check(
+                m.gear(ct, "fire", 3) == CsMatch.Buy.OK && cash - ct.money == 500,
+                "CT incendiary costs $500");
+        cash = t.money;
+        check(
+                m.gear(t, "fire", 3) == CsMatch.Buy.OK && cash - t.money == 400,
+                "T Molotov remains $400");
+        check(m.gear(ct, "helmet", 3) == CsMatch.Buy.OK, "buy initial vest and helmet");
+        ct.armour = 42;
+        cash = ct.money;
+        int quoted = m.gearPrice(ct, "helmet");
+        check(
+                m.gear(ct, "helmet", 3) == CsMatch.Buy.OK
+                        && cash - ct.money == quoted
+                        && quoted == 650
+                        && ct.armour == 100
+                        && ct.helmet,
+                "damaged vest refill retains helmet and never charges for a second helmet");
+        int[] expected = {760, 960, 1160, 1360, 1360};
+        for (int payout : expected) {
+            m.actor(CT).money = 0;
+            win(m, 0, m.liveAt + 1);
+            check(
+                    m.actor(CT).money == payout,
+                    "2v2 loss streak pays 40% of the competitive economy ladder");
+            m.tick(m.until, RNG);
+            m.tick(m.until, RNG);
+        }
+        m = live(1);
+        win(m, 0, 3);
+        m.tick(103, RNG);
+        m.tick(403, RNG);
+        ct = m.actor(CT);
+        t = m.actor(T);
+        check(
+                m.gearPrice(ct, "fire") == 400 && m.gearPrice(t, "fire") == 500,
+                "equipment quotes follow the halftime side swap");
+    }
+
+    private static void sizedEconomy() {
+        for (int left = 1; left <= 5; left++)
+            for (int right = 1; right <= 5; right++) {
+                Map<UUID, Integer> teams = new LinkedHashMap<>();
+                for (int i = 0; i < left; i++) teams.put(new UUID(1, i), 0);
+                for (int i = 0; i < right; i++) teams.put(new UUID(2, i), 1);
+                CsMatch match = new CsMatch(teams, 12, 2, 100, 20, 10, false);
+                match.start(0, RNG);
+                int largest = Math.max(left, right);
+                check(
+                        Math.abs(match.incomeScale(0) * left - match.incomeScale(1) * right)
+                                < .00001,
+                        "equal base rewards produce equal team budgets for every 1–5 player"
+                                + " roster");
+                for (var actor : match.actors()) {
+                    int size = actor.team == 0 ? left : right;
+                    check(
+                            actor.money == Math.round(800.0 * largest / size),
+                            "pistol cash compensates only the numeric disadvantage");
+                }
+                match.tick(2, RNG);
+                var shooter = match.actor(new UUID(1, 0));
+                var victim = match.actor(new UUID(2, 0));
+                int before = shooter.money;
+                double scale = largest / 5.0 * largest / left;
+                match.hurt(victim.id, shooter.id, 10000, false, false, CsWeapon.AK47, false);
+                check(
+                        shooter.money - before == Math.round(300 * scale),
+                        "actual kill payout applies the round's roster scale");
+                double locked = match.incomeScale(1);
+                match.disconnect(victim.id);
+                check(
+                        match.incomeScale(1) == locked,
+                        "death and disconnect never increase the remaining players' rewards");
+                for (var actor : match.actors())
+                    if (actor.team == 1 && actor.alive) match.suicide(actor.id);
+                before = shooter.money;
+                match.tick(3, RNG);
+                check(
+                        shooter.money == Math.min(16000, before + Math.round(3250 * scale)),
+                        "actual round win payout uses the same scale as kills");
+                if (right > 1) {
+                    match.tick(match.until, RNG);
+                    check(
+                            Math.abs(
+                                            match.incomeScale(1)
+                                                    - Math.max(left, right - 1)
+                                                            / 5.0
+                                                            * Math.max(left, right - 1)
+                                                            / (right - 1))
+                                    < .00001,
+                            "the next round updates its roster snapshot after a disconnect");
+                }
+            }
+    }
+
+    private static void grenadeFlight() {
+        Vector look = new Vector(0, 0, 1);
+        Vector launch = CsGrenadePhysics.launch(look, new Vector(), true);
+        check(
+                launch.getZ() == 1.5 && launch.getY() == 0 && look.getZ() == 1,
+                "level throws follow the crosshair without an upward boost or mutating aim");
+        Vector moving = CsGrenadePhysics.launch(look, new Vector(.2, .4, .3), true);
+        check(
+                moving.equals(new Vector(.2, 0, 1.8)),
+                "grounded throws inherit only horizontal motion");
+        moving = CsGrenadePhysics.launch(look, new Vector(.2, .4, .3), false);
+        check(
+                moving.equals(new Vector(.2, .4, 1.8)),
+                "airborne throws inherit vertical motion too");
+        double travelled = 0;
+        for (int tick = 0; tick < 20; tick++) {
+            CsGrenadePhysics.airTick(launch);
+            travelled += launch.getZ();
+        }
+        check(
+                Math.abs(launch.getZ() - 1.5 * Math.pow(.99, 20)) < .000001
+                        && Math.abs(launch.getY() + .03 * .99 * (1 - Math.pow(.99, 20)) / .01)
+                                < .000001
+                        && travelled > 27
+                        && travelled < 28,
+                "twenty ticks retain snowball drag, gravity and horizontal travel");
+    }
+
+    private static void distantBullets() throws Exception {
+        CsMatch match = live();
+        World[] world = new World[1];
+        Player target = player(CT, world);
+        Player shooter = player(T, world);
+        int[] mode = {0}; // distant player, solid cover, then an unobstructed miss
+        Block cover =
+                (Block)
+                        Proxy.newProxyInstance(
+                                Block.class.getClassLoader(),
+                                new Class<?>[] {Block.class},
+                                (proxy, method, args) ->
+                                        method.getName().equals("getType")
+                                                ? Material.BEDROCK
+                                                : defaultValue(method.getReturnType()));
+        world[0] =
+                (World)
+                        Proxy.newProxyInstance(
+                                World.class.getClassLoader(),
+                                new Class<?>[] {World.class},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("equals")) return proxy == args[0];
+                                    if (method.getName().equals("rayTrace")) {
+                                        Location start = (Location) args[0];
+                                        Vector direction = (Vector) args[1];
+                                        double range = (double) args[2];
+                                        if (mode[0] == 2) return null;
+                                        double distance = mode[0] == 0 ? 150 : 40;
+                                        if (range < distance) return null;
+                                        Vector hit =
+                                                start.toVector()
+                                                        .add(direction.clone().multiply(distance));
+                                        return mode[0] == 0
+                                                ? new RayTraceResult(hit, target)
+                                                : new RayTraceResult(hit, cover, BlockFace.NORTH);
+                                    }
+                                    return defaultValue(method.getReturnType());
+                                });
+        CsSession session = new CsSession(null, null, null);
+        set(session, "world", world[0]);
+        set(session, "match", match);
+        set(session, "built", true);
+        CsCombat combat = new CsCombat(session);
+        Method trace =
+                CsCombat.class.getDeclaredMethod(
+                        "trace",
+                        Player.class,
+                        Location.class,
+                        Vector.class,
+                        double.class,
+                        CsWeapon.class);
+        trace.setAccessible(true);
+        for (CsWeapon weapon : CsWeapon.values()) {
+            check(weapon.range() >= 220, "all guns span the imported map diagonal");
+            check(
+                    Math.abs(weapon.damageScale(64) - Math.pow(weapon.rangeFalloff(), 100.0 / 16))
+                                    < .000001
+                            && weapon.damageScale(0) == 1
+                            && weapon.damageScale(100) < weapon.damageScale(64),
+                    "the old 100-block damage curve is reached at 64 blocks, without reducing base"
+                        + " damage");
+        }
+        for (CsWeapon weapon :
+                List.of(CsWeapon.FAMAS, CsWeapon.AK47, CsWeapon.M4A4, CsWeapon.AWP)) {
+            Object shot =
+                    trace.invoke(
+                            combat,
+                            shooter,
+                            new Location(world[0], 0, 79, 0),
+                            new Vector(0, 0, 1),
+                            weapon.range(),
+                            weapon);
+            Object impact = get(shot, "impact");
+            check(
+                    impact != null
+                            && get(impact, "target") == target
+                            && (double) get(impact, "damage") > 0,
+                    "real hitscan reaches a player 150 blocks away");
+            check((double) get(shot, "distance") == 150, "trail ends at the distant target");
+            check(
+                    Math.abs(
+                                    (double) get(impact, "damage")
+                                            - weapon.damage * weapon.damageScale(150))
+                            < .000001,
+                    "actual distant hits apply the strengthened distance curve");
+        }
+        mode[0] = 1;
+        Object shot =
+                trace.invoke(
+                        combat,
+                        shooter,
+                        new Location(world[0], 0, 79, 0),
+                        new Vector(0, 0, 1),
+                        256.0,
+                        CsWeapon.FAMAS);
+        check(
+                get(shot, "impact") == null && (double) get(shot, "distance") == 40,
+                "cover stops both the actual bullet and its visible trail");
+        mode[0] = 2;
+        shot =
+                trace.invoke(
+                        combat,
+                        shooter,
+                        new Location(world[0], 0, 79, 0),
+                        new Vector(0, 0, 1),
+                        256.0,
+                        CsWeapon.FAMAS);
+        check(
+                get(shot, "impact") == null && (double) get(shot, "distance") == 256,
+                "unobstructed miss retains full range");
+    }
+
+    private static Player player(UUID id, World[] world) {
+        return (Player)
+                Proxy.newProxyInstance(
+                        Player.class.getClassLoader(),
+                        new Class<?>[] {Player.class},
+                        (proxy, method, args) ->
+                                switch (method.getName()) {
+                                    case "getUniqueId" -> id;
+                                    case "getWorld" -> world[0];
+                                    case "getGameMode" -> GameMode.SURVIVAL;
+                                    case "getHeight" -> 1.8;
+                                    case "getLocation" -> new Location(world[0], 0, 78, 150);
+                                    default -> defaultValue(method.getReturnType());
+                                });
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (!type.isPrimitive() || type == void.class) return null;
+        if (type == boolean.class) return false;
+        if (type == double.class) return 0.0;
+        if (type == float.class) return 0f;
+        if (type == long.class) return 0L;
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == char.class) return (char) 0;
+        return 0;
+    }
+
+    private static void set(Object object, String name, Object value) throws Exception {
+        Field field = object.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(object, value);
+    }
+
+    private static Object get(Object object, String name) throws Exception {
+        Field field = object.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(object);
+    }
+
     private static CsMatch live() {
-        return live(15);
+        return live(CsConfig.DEFAULT_HALF);
     }
 
     private static CsMatch live(int half) {
@@ -158,11 +481,101 @@ public final class CsCheck {
                 "loaded shell can interrupt shotgun reload");
     }
 
+    private static void scopedControls() {
+        for (var weapon : CsWeapon.values()) {
+            CsGun gun = new CsGun(weapon);
+            if (!weapon.scope()) {
+                check(
+                        !gun.toggleScope(0) && !gun.scoped,
+                        "guns without optics cannot enter scope mode");
+                continue;
+            }
+            check(
+                    weapon.material != Material.SPYGLASS,
+                    "right-click firing never activates native held-use spyglass behavior");
+            check(gun.toggleScope(0) && gun.scoped, "first left click enables scope");
+            check(
+                    !gun.toggleScope(0) && !gun.toggleScope(1) && gun.scoped,
+                    "overlapping interact, attack and swing events cannot immediately undo scope");
+            check(gun.toggleScope(4) && !gun.scoped, "a later left click disables scope");
+            check(
+                    gun.toggleScope(8) && gun.fire(8) && gun.scoped,
+                    "right-click shot preserves scope until a deliberate exit or reload");
+            check(
+                    gun.reload(9) && !gun.scoped && !gun.toggleScope(10),
+                    "reload exits scope and cannot be scoped through");
+            long ready = gun.reloadAt;
+            check(
+                    gun.toggleScope(ready) && gun.scoped,
+                    "scope can be enabled after reload completes");
+            gun.deploy(200);
+            check(
+                    !gun.scoped
+                            && !gun.toggleScope(200)
+                            && gun.toggleScope(200 + weapon.deployTicks()),
+                    "switching clears scope and its draw time is respected");
+            for (double tagged : new double[] {1, .45}) {
+                double normal = .26 * weapon.mobility * tagged;
+                float compensated = CsScope.walkSpeed(normal, weapon);
+                double effective = compensated * CsScope.speedFactor(weapon);
+                check(
+                        compensated > 0
+                                && compensated <= 1
+                                && Math.abs(effective - normal * .45) < .000001,
+                        "FOV compensation retains intended scoped speed including hit tagging");
+            }
+            double fov = (CsScope.speedFactor(weapon) + 1) / 2;
+            check(
+                    Math.abs(fov - (weapon.category == CsWeapon.Category.SNIPER ? .6 : .7))
+                            < .000001,
+                    "vanilla attribute-to-ability ratio produces stronger zoom for sniper rifles");
+        }
+    }
+
     private static void expandedArsenal() {
         Set<CsWeapon> offered = EnumSet.noneOf(CsWeapon.class);
         for (int side = 0; side < 2; side++) {
             var choices = CsShop.weapons(side);
             offered.addAll(choices);
+            Set<CsWeapon> grouped = EnumSet.noneOf(CsWeapon.class);
+            Map<Integer, CsWeapon> placed = CsShop.slots(side);
+            Set<Integer> columns = new HashSet<>();
+            for (var category : CsWeapon.Category.values()) {
+                var weapons = CsShop.weapons(side, category);
+                check(
+                        weapons.size() <= CsShop.group(category).width() * CsShop.WEAPON_ROWS,
+                        "every category fits its assigned columns");
+                var group = CsShop.group(category);
+                for (int column = group.column(); column < group.column() + group.width(); column++)
+                    check(columns.add(column), "category columns never overlap");
+                for (int index = 0; index < weapons.size(); index++) {
+                    int slot = group.slot(index);
+                    check(
+                            slot >= 9
+                                    && slot < CsShop.GEAR_START
+                                    && slot % 9 >= group.column()
+                                    && slot % 9 < group.column() + group.width()
+                                    && placed.get(slot) == weapons.get(index),
+                            "each visible weapon stays below its header and above the gear row");
+                }
+                int previous = -1;
+                for (var weapon : weapons) {
+                    check(
+                            weapon.category == category
+                                    && weapon.allowed(side)
+                                    && weapon.price >= previous,
+                            "category contains only legal weapons ordered from cheapest to most"
+                                    + " expensive");
+                    previous = weapon.price;
+                    check(grouped.add(weapon), "each weapon appears in exactly one category");
+                }
+            }
+            check(
+                    grouped.equals(new HashSet<>(choices))
+                            && columns.size() == 9
+                            && new HashSet<>(placed.values()).equals(grouped)
+                            && placed.size() == grouped.size(),
+                    "one screen exposes every legal weapon once in distinct categorized columns");
             check(
                     choices.size() <= CsShop.GEAR_START && CsShop.GEAR_START + 7 <= CsShop.SIZE,
                     "all guns fit without replacing equipment buttons");
@@ -205,10 +618,10 @@ public final class CsCheck {
                 "Scout body hit cannot replace AWP one-shot");
         m = live();
         m.hurt(CT, T, 500, false, false, CsWeapon.CZ75, false);
-        check(m.actor(T).money == 900, "automatic pistol kill pays only $100");
+        check(m.actor(T).money == 840, "2v2 automatic pistol kill pays 40% of $100");
         m = live();
         m.hurt(CT, T, 500, false, false, CsWeapon.P90, false);
-        check(m.actor(T).money == 1100, "P90 does not receive the cheaper SMG kill bonus");
+        check(m.actor(T).money == 920, "P90 receives 40% of the normal $300 kill reward in 2v2");
         CsGun cz = new CsGun(CsWeapon.CZ75);
         cz.deploy(0);
         check(
@@ -248,8 +661,8 @@ public final class CsCheck {
                 "idle gap resets machine gun stabilization");
         check(
                 CsWeapon.AUG.shotSpread(true, 1) < CsWeapon.AUG.shotSpread(false, 1)
-                        && CsWeapon.AUG.range() < CsWeapon.SSG08.range(),
-                "scoped assault rifle gains accuracy without sniper range");
+                        && CsWeapon.AUG.range() == CsWeapon.SSG08.range(),
+                "scoped assault rifle gains accuracy while retaining full-map hitscan range");
         check(
                 CsWeapon.XM1014.rangeFalloff() < CsWeapon.AK47.rangeFalloff(),
                 "shotgun pellets lose more damage at distance than rifle bullets");
@@ -279,8 +692,8 @@ public final class CsCheck {
         ct.helmet = true;
         var hit = m.hurt(CT, T, 144, true, false, CsWeapon.AK47, false);
         check(
-                hit.killed() && m.actor(T).kills == 1 && m.actor(T).money == 1100,
-                "AK headshot kills through helmet and rewards once");
+                hit.killed() && m.actor(T).kills == 1 && m.actor(T).money == 920,
+                "AK headshot kills through helmet and rewards once at the 2v2 scale");
         check(
                 m.hurt(CT, T, 144, true, false, CsWeapon.AK47, false).health() == 0
                         && ct.deaths == 1,
@@ -308,7 +721,7 @@ public final class CsCheck {
         m.hurt(CT, T, 45, false, true, CsWeapon.GLOCK, false);
         m.hurt(CT, T2, 100, false, true, CsWeapon.MP9, false);
         check(
-                m.actor(T).assists == 1 && m.actor(T2).money == 1400,
+                m.actor(T).assists == 1 && m.actor(T2).money == 1040,
                 "40-damage assist and SMG kill bonus");
         m = live();
         m.hurt(T2, T, 100, false, true, CsWeapon.AK47, false);
@@ -319,7 +732,7 @@ public final class CsCheck {
                 "teamkill penalizes kills and money");
         m = live();
         m.hurt(CT, T, 180, false, false, null, false);
-        check(m.actor(T).money == 2300, "knife reward is $1500");
+        check(m.actor(T).money == 1400, "2v2 knife reward is 40% of $1500");
         m = live();
         m.suicide(T);
         m.hurt(CT, T, 500, false, false, null, true);
@@ -340,7 +753,7 @@ public final class CsCheck {
                 m.plant(T, 1, 5) && m.carrier == null && m.detonateAt == 25,
                 "plant consumes carrier and starts full fuse");
         check(!m.plant(T, 0, 6), "cannot plant twice");
-        check(m.actor(T).money == 1100, "plant bonus credited once");
+        check(m.actor(T).money == 920, "plant bonus credited once at the 2v2 scale");
         m.hurt(T, CT, 1000, false, false, CsWeapon.AWP, false);
         m.hurt(T2, CT, 1000, false, false, CsWeapon.AWP, false);
         m.tick(6, RNG);
@@ -353,7 +766,7 @@ public final class CsCheck {
                         && m.score[1] == 1
                         && m.actor(CT).mvps == 1,
                 "defuse wins round and awards MVP");
-        check(m.actor(T).money == 3800, "losing T receive loss bonus plus plant team bonus");
+        check(m.actor(T).money == 1920, "2v2 losing T receive scaled loss and $600 plant bonuses");
         int score = m.score[1];
         check(!m.defuse(CT2, 24) && m.score[1] == score, "defuse scores once");
         m = live();
@@ -388,7 +801,7 @@ public final class CsCheck {
         survivor.armour = 42;
         survivor.health = 20;
         win(m, 0, 3);
-        check(m.score[0] == 1 && m.actor(CT).money == 2700, "first loss pays $1900");
+        check(m.score[0] == 1 && m.actor(CT).money == 1560, "2v2 first loss pays 40% of $1900");
         check(
                 m.losses[0] == 0 && m.losses[1] == 2,
                 "loss counter decreases on win and increases on loss");
@@ -406,7 +819,7 @@ public final class CsCheck {
                 "dead player receives default pistol only");
         m.tick(105, RNG);
         win(m, 0, 106);
-        check(m.actor(CT).money == 5100, "consecutive second loss pays $2400");
+        check(m.actor(CT).money == 2520, "2v2 consecutive second loss pays 40% of $2400");
         m = live(1);
         m.actor(T).primary = new CsGun(CsWeapon.AK47);
         win(m, 0, 3);
@@ -437,6 +850,66 @@ public final class CsCheck {
                 "full-length tied match ends as draw");
     }
 
+    private static void mr12() throws Exception {
+        var config = new org.bukkit.configuration.file.YamlConfiguration();
+        config.set("roundsPerHalf", 15);
+        config.set("freezeSeconds", 21);
+        check(
+                CsConfig.migrateFormat(config)
+                        && config.getInt("roundsPerHalf") == 12
+                        && config.getInt("freezeSeconds") == 21,
+                "legacy default migrates to MR12 without changing other settings");
+        config.set("roundsPerHalf", 15);
+        check(
+                !CsConfig.migrateFormat(config) && config.getInt("roundsPerHalf") == 15,
+                "later explicit admin changes survive the one-time migration");
+        config = new org.bukkit.configuration.file.YamlConfiguration();
+        config.set("roundsPerHalf", 5);
+        check(
+                CsConfig.migrateFormat(config) && config.getInt("roundsPerHalf") == 5,
+                "custom short matches retain their half length");
+        try (var resource = CsCheck.class.getResourceAsStream("/games/cs.yml")) {
+            check(resource != null, "CS default configuration is bundled");
+            var bundled =
+                    org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                            new java.io.InputStreamReader(
+                                    resource, java.nio.charset.StandardCharsets.UTF_8));
+            check(
+                    bundled.getInt("roundsPerHalf") == 12
+                            && CsConfig.DEFAULT_HALF == 12
+                            && !CsConfig.migrateFormat(bundled),
+                    "fresh servers start with the MR12 defaults and current migration version");
+        }
+        for (boolean draw : List.of(false, true)) {
+            CsMatch match = live();
+            int total = draw ? 24 : 13;
+            for (int round = 1; round <= total; round++) {
+                check(
+                        match.phase == CsMatch.Phase.LIVE && match.number == round,
+                        "MR12 starts each scheduled round");
+                win(match, draw && round > 12 ? 1 : 0, match.liveAt + 1);
+                match.tick(match.until, RNG);
+                if (round == 12) {
+                    check(
+                            match.phase == CsMatch.Phase.HALFTIME,
+                            "MR12 changes sides after exactly twelve rounds");
+                    match.tick(match.until, RNG);
+                    check(
+                            match.number == 13
+                                    && match.side(match.actor(T)) == 1
+                                    && match.actor(T).money == 800,
+                            "thirteenth round swaps sides and resets cash");
+                }
+                if (round < total) match.tick(match.until, RNG);
+            }
+            check(
+                    match.phase == CsMatch.Phase.FINISHED
+                            && match.score[0] == (draw ? 12 : 13)
+                            && match.score[1] == (draw ? 12 : 0),
+                    "MR12 ends at thirteen wins or a 12:12 draw, without an extra round");
+        }
+    }
+
     private static void lifecycle() {
         CsMatch m = live();
         UUID c = m.carrier;
@@ -456,8 +929,10 @@ public final class CsCheck {
                 "queued timeout extends next freeze by 30 seconds");
         check(m.live(c), "rejoined player returns next round");
         m.forfeit(1);
-        check(m.phase == CsMatch.Phase.FINISHED && m.score[1] >= 16, "forfeit ends match");
-        CsMatch solo = new CsMatch(Map.of(T, 0), 15, 2, 100, 20, 10, true);
+        check(
+                m.phase == CsMatch.Phase.FINISHED && m.score[1] >= 13,
+                "forfeit ends match at the MR12 winning score");
+        CsMatch solo = new CsMatch(Map.of(T, 0), CsConfig.DEFAULT_HALF, 2, 100, 20, 10, true);
         solo.start(0, RNG);
         solo.tick(2, RNG);
         solo.tick(3, RNG);

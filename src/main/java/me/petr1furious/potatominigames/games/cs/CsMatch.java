@@ -2,7 +2,7 @@ package me.petr1furious.potatominigames.games.cs;
 
 import java.util.*;
 
-/** CS:GO MR15 bomb-defusal rules. Stable team IDs survive the halftime faction swap. */
+/** CS2-style MR12 bomb-defusal rules. Stable team IDs survive the halftime faction swap. */
 final class CsMatch {
     enum Phase {
         FREEZE,
@@ -73,6 +73,7 @@ final class CsMatch {
     record Damage(double health, boolean killed, boolean head) {}
 
     private final Map<UUID, Actor> actors = new LinkedHashMap<>();
+    private final int[] economySizes = new int[2];
     final int halfRounds, freezeTicks, roundTicks, bombTicks, buyTicks;
     final boolean practice;
     final int[] score = {0, 0}, losses = {1, 1}, timeouts = {4, 4};
@@ -149,6 +150,16 @@ final class CsMatch {
 
     private void beginRound(long now, Random random) {
         number++;
+        // Freeze the participating roster for all payouts in this round. Deaths, spectating
+        // and disconnects during combat must never increase rewards for the remaining players.
+        for (int team = 0; team < 2; team++) {
+            int selected = team;
+            economySizes[team] =
+                    (int)
+                            actors.values().stream()
+                                    .filter(p -> p.online && p.team == selected)
+                                    .count();
+        }
         phase = Phase.FREEZE;
         until = now + freezeTicks;
         carrier = null;
@@ -162,10 +173,11 @@ final class CsMatch {
         if (number == halfRounds + 1) {
             Arrays.fill(losses, 1);
             for (Actor p : actors.values()) {
-                p.money = 800;
                 p.loseEquipment();
             }
         }
+        if (number == 1 || number == halfRounds + 1)
+            for (Actor p : actors.values()) p.money = startingCash(p.team);
         for (int team = 0; team < 2; team++)
             if (pendingPause[team]) {
                 until += 600;
@@ -243,22 +255,32 @@ final class CsMatch {
         return Buy.OK;
     }
 
+    /** One price source for the shop and the actual debit, including side-specific utility. */
+    int gearPrice(Actor p, String id) {
+        return switch (id) {
+            case "vest" -> 650;
+            case "helmet" -> p.helmet ? 650 : p.armour >= 100 ? 350 : 1000;
+            case "kit" -> 400;
+            case "flash" -> 200;
+            case "he", "smoke" -> 300;
+            case "fire" -> side(p) == 0 ? 400 : 500;
+            default -> 0;
+        };
+    }
+
     Buy gear(Actor p, String id, long now) {
         if (!canBuy(p, now)) return Buy.CLOSED;
-        int cost;
+        int cost = gearPrice(p, id);
         switch (id) {
             case "vest" -> {
                 if (p.armour >= 100) return Buy.LIMIT;
-                cost = 650;
             }
             case "helmet" -> {
                 if (p.helmet && p.armour >= 100) return Buy.LIMIT;
-                cost = p.armour >= 100 ? 350 : 1000;
             }
             case "kit" -> {
                 if (side(p) != 1) return Buy.SIDE;
                 if (p.kit) return Buy.LIMIT;
-                cost = 400;
             }
             default -> {
                 Utility u;
@@ -269,12 +291,6 @@ final class CsMatch {
                 }
                 int limit = u == Utility.FLASH ? 2 : 1;
                 if (p.grenades() >= 4 || p.utility.getOrDefault(u, 0) >= limit) return Buy.LIMIT;
-                cost =
-                        switch (u) {
-                            case HE, SMOKE -> 300;
-                            case FLASH -> 200;
-                            case FIRE -> side(p) == 0 ? 400 : 600;
-                        };
                 if (p.money < cost) return Buy.MONEY;
                 p.money -= cost;
                 p.utility.merge(u, 1, Integer::sum);
@@ -318,7 +334,7 @@ final class CsMatch {
         bombSite = site;
         detonateAt = now + bombTicks;
         dropped = false;
-        credit(p, 300);
+        reward(p, 300);
         return true;
     }
 
@@ -327,7 +343,7 @@ final class CsMatch {
         if (phase != Phase.LIVE || !planted() || now >= detonateAt || !live(player) || side(p) != 1)
             return false;
         defuser = player;
-        credit(p, 300);
+        reward(p, 300);
         p.mvps++;
         endRound(p.team, Reason.DEFUSE, now);
         return true;
@@ -390,7 +406,7 @@ final class CsMatch {
             } else {
                 source.kills++;
                 source.roundKills++;
-                credit(source, grenade ? 300 : weapon == null ? 1500 : weapon.killReward());
+                reward(source, grenade ? 300 : weapon == null ? 1500 : weapon.killReward());
                 contributions
                         .getOrDefault(p.id, Map.of())
                         .forEach((id, damage) -> {
@@ -435,10 +451,10 @@ final class CsMatch {
         for (Actor p : actors.values()) {
             if (!p.online) continue;
             if (p.team == winner)
-                credit(p, reason == Reason.EXPLOSION || reason == Reason.DEFUSE ? 3500 : 3250);
+                reward(p, reason == Reason.EXPLOSION || reason == Reason.DEFUSE ? 3500 : 3250);
             else if (!(reason == Reason.TIMEOUT && side(p) == 0 && p.alive))
-                credit(p, 1400 + 500 * Math.min(4, losses[p.team]));
-            if (p.team != winner && planted() && side(p) == 0) credit(p, 800);
+                reward(p, 1400 + 500 * Math.min(4, losses[p.team]));
+            if (p.team != winner && planted() && side(p) == 0) reward(p, 600);
         }
         losses[winner] = Math.max(0, losses[winner] - 1);
         losses[1 - winner] = Math.min(4, losses[1 - winner] + 1);
@@ -461,6 +477,23 @@ final class CsMatch {
 
     static void credit(Actor p, int amount) {
         p.money = Math.clamp((long) p.money + amount, 0, 16000);
+    }
+
+    double incomeScale(int team) {
+        int largest = Math.max(economySizes[0], economySizes[1]);
+        if (practice || largest == 0 || economySizes[team] == 0) return 1;
+        return largest / 5.0 * largest / economySizes[team];
+    }
+
+    private int startingCash(int team) {
+        int largest = Math.max(economySizes[0], economySizes[1]);
+        return economySizes[team] == 0
+                ? 800
+                : (int) Math.min(16000, Math.round(800.0 * largest / economySizes[team]));
+    }
+
+    private void reward(Actor p, int base) {
+        credit(p, (int) Math.round(base * incomeScale(p.team)));
     }
 
     boolean pause(int team) {

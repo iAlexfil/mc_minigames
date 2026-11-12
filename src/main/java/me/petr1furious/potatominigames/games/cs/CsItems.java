@@ -104,36 +104,43 @@ final class CsItems {
         return item(Material.SHEARS, "kit", tr("item.kit"), List.of(tr("controls.defuse", 5)), p);
     }
 
+    /** Visual equipment only: empty native attributes keep protection in CsMatch. */
+    static void syncArmour(Player p, CsMatch match) {
+        var actor = match.actor(p.getUniqueId());
+        Color color = Color.fromRGB(actor.team == 0 ? 0xB02E26 : 0x3C44AA);
+        Component uniform = tr("item.uniform", tr(actor.team == 0 ? "team.red" : "team.blue"));
+        p.getInventory().setBoots(cosmeticArmour(Material.LEATHER_BOOTS, uniform, color, p));
+        p.getInventory().setLeggings(cosmeticArmour(Material.LEATHER_LEGGINGS, uniform, color, p));
+        p.getInventory()
+                .setChestplate(
+                        actor.armour > 0
+                                ? cosmeticArmour(Material.IRON_CHESTPLATE, tr("buy.vest"), color, p)
+                                : cosmeticArmour(Material.LEATHER_CHESTPLATE, uniform, color, p));
+        p.getInventory()
+                .setHelmet(
+                        actor.helmet
+                                ? cosmeticArmour(Material.IRON_HELMET, tr("buy.helmet"), color, p)
+                                : cosmeticArmour(Material.LEATHER_HELMET, uniform, color, p));
+    }
+
+    private static ItemStack cosmeticArmour(
+            Material material, Component title, Color color, Player viewer) {
+        ItemStack stack = item(material, "uniform", title, List.of(), viewer);
+        stack.editMeta(meta -> {
+            if (meta instanceof org.bukkit.inventory.meta.LeatherArmorMeta leather)
+                leather.setColor(color);
+            meta.setAttributeModifiers(com.google.common.collect.ImmutableMultimap.of());
+        });
+        return stack;
+    }
+
     static void sync(Player p, CsMatch match, org.bukkit.map.MapView radar) {
         var a = match.actor(p.getUniqueId());
         p.setItemOnCursor(null);
         p.getInventory().clear();
         p.getInventory().setArmorContents(null);
         p.getInventory().setItemInOffHand(null);
-        // Cosmetic faction uniforms identify teammates without wall-visible nameplates.
-        // Damage protection comes exclusively from the CS armor model.
-        ItemStack uniform =
-                item(
-                        Material.LEATHER_CHESTPLATE,
-                        "uniform",
-                        tr("item.uniform", tr(match.side(a) == 0 ? "side.t" : "side.ct")),
-                        List.of(),
-                        p);
-        uniform.editMeta(meta -> {
-            ((org.bukkit.inventory.meta.LeatherArmorMeta) meta)
-                    .setColor(
-                            match.side(a) == 0
-                                    ? Color.fromRGB(153, 105, 55)
-                                    : Color.fromRGB(40, 70, 125));
-            meta.setAttributeModifiers(com.google.common.collect.ImmutableMultimap.of());
-        });
-        p.getInventory().setChestplate(uniform);
-        if (a.helmet) {
-            ItemStack helmet = item(Material.IRON_HELMET, "helmet", tr("buy.helmet"), List.of(), p);
-            helmet.editMeta(meta ->
-                    meta.setAttributeModifiers(com.google.common.collect.ImmutableMultimap.of()));
-            p.getInventory().setHelmet(helmet);
-        }
+        syncArmour(p, match);
 
         if (a.primary != null) p.getInventory().setItem(0, gun(a.primary, p));
         if (a.secondary != null) p.getInventory().setItem(1, gun(a.secondary, p));

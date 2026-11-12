@@ -3,7 +3,6 @@ package me.petr1furious.potatominigames.games.cs;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
@@ -14,6 +13,7 @@ final class CsCombat {
     private final CsSession session;
     private final Map<UUID, Long> knifeAt = new HashMap<>(), tagged = new HashMap<>();
     private final Map<UUID, Double> punch = new HashMap<>();
+    private final CsScope scope = new CsScope();
 
     CsCombat(CsSession session) {
         this.session = session;
@@ -33,12 +33,11 @@ final class CsCombat {
     }
 
     void left(Player p) {
-        if (!session.canAct(p)) return;
+        if (!session.canAct(p) || session.shopOpen(p)) return;
         CsGun gun = session.gun(p);
-        if (gun != null && gun.weapon.scope()) {
-            gun.scoped = !gun.scoped;
-            if (gun.scoped) p.startUsingItem(EquipmentSlot.HAND);
-            else p.clearActiveItem();
+        if (gun != null && gun.toggleScope(session.now())) {
+            if (gun.scoped) movement(p, gun);
+            else scope.stop(p);
             p.sendActionBar(CsItems.tr(gun.scoped ? "scope.on" : "scope.off"));
         }
     }
@@ -48,6 +47,7 @@ final class CsCombat {
         if (a == null) return;
         var old = a.gun(previous);
         if (old != null) old.switchAway();
+        scope.stop(p);
         p.clearActiveItem();
         var gun = a.gun(next);
         if (gun != null) gun.deploy(session.now());
@@ -56,6 +56,7 @@ final class CsCombat {
     void reload(Player p) {
         var gun = session.gun(p);
         if (session.canAct(p) && gun != null && gun.reload(session.now())) {
+            scope.stop(p);
             p.clearActiveItem();
             gun.scoped = false;
             p.playSound(p.getLocation(), Sound.BLOCK_IRON_TRAPDOOR_OPEN, .5f, 1.4f);
@@ -69,6 +70,7 @@ final class CsCombat {
             for (CsGun gun : new CsGun[] {a.primary, a.secondary})
                 if (gun != null) gun.tick(session.now());
             CsGun gun = session.gun(p);
+            if (!session.canAct(p) || session.shopOpen(p)) stopScope(p);
             if (session.canAct(p)
                     && !session.shopOpen(p)
                     && gun != null
@@ -76,13 +78,28 @@ final class CsCombat {
                     && session.now() < gun.heldUntil) fire(p, gun);
             punch.computeIfPresent(p.getUniqueId(), (id, n) -> n < .02 ? null : n * .85);
             if (session.canAct(p)) {
-                double mobility = gun == null ? 1 : gun.weapon.mobility;
-                if (gun != null && gun.scoped) mobility *= .45;
-                if (session.now() < tagged.getOrDefault(p.getUniqueId(), 0L)) mobility *= .45;
-                p.setWalkSpeed((float) (.26 * mobility));
+                movement(p, gun);
                 if (p.isSprinting()) p.setSprinting(false);
             }
         }
+    }
+
+    private void movement(Player p, CsGun gun) {
+        double speed = .26 * (gun == null ? 1 : gun.weapon.mobility);
+        if (session.now() < tagged.getOrDefault(p.getUniqueId(), 0L)) speed *= .45;
+        if (gun != null && gun.scoped) scope.apply(p, gun.weapon, speed);
+        else {
+            scope.stop(p);
+            if (Math.abs(p.getWalkSpeed() - speed) > .000001) p.setWalkSpeed((float) speed);
+        }
+    }
+
+    void stopScope(Player p) {
+        scope.stop(p);
+        var actor = session.actor(p);
+        if (actor != null)
+            for (CsGun gun : new CsGun[] {actor.primary, actor.secondary})
+                if (gun != null) gun.scoped = false;
     }
 
     @SuppressWarnings("deprecation")
@@ -119,9 +136,9 @@ final class CsCombat {
         Map<HitGroup, Impact> hits = new LinkedHashMap<>();
         for (int pellet = 0; pellet < w.pellets; pellet++) {
             Vector direction = spread(aim.getDirection(), spread);
-            Impact hit = trace(p, eye, direction, w.range(), w);
-            if (pellet == 0 && !w.silenced())
-                tracer(eye, direction, hit == null ? w.range() : hit.distance);
+            Shot shot = trace(p, eye, direction, w.range(), w);
+            Impact hit = shot.impact;
+            if (pellet == 0 && !w.silenced()) tracer(eye, direction, shot.distance);
             if (hit != null)
                 hits.merge(
                         new HitGroup(hit.target.getUniqueId(), hit.head, hit.leg),
@@ -160,7 +177,9 @@ final class CsCombat {
     private record Impact(
             Player target, double damage, boolean head, boolean leg, double distance) {}
 
-    private Impact trace(
+    private record Shot(Impact impact, double distance) {}
+
+    private Shot trace(
             Player shooter, Location origin, Vector direction, double distance, CsWeapon weapon) {
         Location at = origin.clone();
         double travelled = 0, scale = 1;
@@ -180,7 +199,7 @@ final class CsCombat {
                                                     && !target.getUniqueId()
                                                             .equals(shooter.getUniqueId())
                                                     && session.active(target));
-            if (hit == null) return null;
+            if (hit == null) return new Shot(null, distance);
             double segment = at.toVector().distance(hit.getHitPosition());
             travelled += segment;
             if (hit.getHitEntity() instanceof Player target) {
@@ -189,12 +208,18 @@ final class CsCombat {
                         feet = target.getLocation().getY();
                 boolean head = y > feet + height - .38, leg = y < feet + .58;
                 double multiplier = head ? 4 : leg ? .75 : y < feet + 1.0 ? 1.25 : 1;
-                double falloff = Math.pow(weapon.rangeFalloff(), travelled / 16);
-                return new Impact(
-                        target, weapon.damage * multiplier * scale * falloff, head, leg, travelled);
+                double falloff = weapon.damageScale(travelled);
+                return new Shot(
+                        new Impact(
+                                target,
+                                weapon.damage * multiplier * scale * falloff,
+                                head,
+                                leg,
+                                travelled),
+                        travelled);
             }
             Block block = hit.getHitBlock();
-            if (block == null) return null;
+            if (block == null) return new Shot(null, travelled);
             String material = block.getType().name();
             boolean glass = material.contains("GLASS");
             if (glass) session.arena().breakGlass(block);
@@ -215,7 +240,7 @@ final class CsCombat {
                                                             || weapon == CsWeapon.SG553
                                                     ? .65
                                                     : 0;
-            if (walls++ >= 2 || max == 0) return null;
+            if (walls++ >= 2 || max == 0) return new Shot(null, travelled);
             Location exit =
                     new Location(
                             session.world(),
@@ -227,13 +252,13 @@ final class CsCombat {
                 exit.add(direction.clone().multiply(.1));
                 thickness += .1;
             } while (thickness < max && !exit.getBlock().isPassable());
-            if (!exit.getBlock().isPassable()) return null;
+            if (!exit.getBlock().isPassable()) return new Shot(null, travelled);
             scale *= glass ? .9 : .5;
             scale *= Math.max(.25, 1 - thickness * .4);
             at = exit.add(direction.clone().multiply(.05));
             travelled += thickness + .05;
         }
-        return null;
+        return new Shot(null, distance);
     }
 
     private Vector spread(Vector forward, double amount) {
@@ -250,7 +275,9 @@ final class CsCombat {
     }
 
     private void tracer(Location from, Vector direction, double distance) {
-        for (double d = .5; d < Math.min(distance, 32); d += 4)
+        // Cover the actual path through the entire map with at most 32 particles per shot.
+        double step = Math.max(2, distance / 32);
+        for (double d = .5; d < distance; d += step)
             session.world()
                     .spawnParticle(
                             Particle.CRIT,
@@ -302,6 +329,8 @@ final class CsCombat {
     }
 
     void clear() {
+        scope.clear();
+        for (Player player : session.players()) stopScope(player);
         knifeAt.clear();
         tagged.clear();
         punch.clear();

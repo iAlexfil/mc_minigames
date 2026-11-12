@@ -82,7 +82,7 @@ public final class CsGame implements Minigame {
 
     @Override
     public void extendCommands(LiteralArgumentBuilder<CommandSourceStack> root) {
-        for (String action : List.of("buy", "reload", "drop", "pause", "help"))
+        for (String action : List.of("buy", "score", "reload", "drop", "pause", "help"))
             root.then(
                     Commands.literal(action)
                             .executes(ctx -> {

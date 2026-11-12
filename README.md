@@ -1416,8 +1416,8 @@ source entities, player records and executable world data are excluded.
 
 ### Rules and economy
 
-- Classic CS:GO MR15: first to 16 rounds, up to 30 rounds; 15:15 is a draw.
-  Sides swap after round 15, with an equipment and $800 economy reset.
+- CS2-style MR12: first to 13 rounds, up to 24 rounds; 12:12 is a draw.
+  Sides swap after round 12, with an equipment and $800 economy reset.
 - Each round has 15 seconds of frozen preparation and 115 seconds of play.
   Buy at your side's spawn during preparation and the first 20 seconds of play.
   Players have 100 logical HP, no regeneration and no respawns until next round.
@@ -1428,9 +1428,19 @@ source entities, player records and executable world data are excluded.
 - Cash starts at $800 and is capped at $16,000. Kill rewards depend on weapon,
   wins pay $3,250 or $3,500 for C4 outcomes, and loss payouts grow from $1,900
   toward $3,400. Winning reduces the loss counter by one. Planting/defusing has
-  individual rewards; a planted losing T team gets an extra $800. T who survive
+  individual rewards; a planted losing T team gets an extra $600. T who survive
   a timeout receive no loss payout. Team damage is reduced, and teamkills cost
   money and a kill. Assists and round MVPs are recorded.
+- The payout values above are the 5v5 baseline. Earned money (kills, round wins,
+  losses, plant/defuse and the planted-loss bonus) scales by `largerTeam / 5`.
+  The smaller side additionally receives `largerTeam / ownTeam` per player, giving
+  both sides the same team budget for the same base reward. Thus 2v2 pays 40% of
+  baseline; in 2v3, the two-person side gets 90% per person and the three-person
+  side 60%. Pistol-round cash stays $800 on equal sides and receives only the
+  smaller-team compensation ($1,200 vs $800 in 2v3). Shop prices, the $16,000 cap
+  and $300 misconduct penalties stay fixed. Counts are snapshotted from online
+  participants at round start, never from survivors or mid-round disconnects.
+  Practice retains its $16,000 allowance.
 - Survivors keep guns, remaining armor, kits and unused grenades; gun ammunition
   restocks at round start. Death drops guns with their actual remaining ammo,
   utility, kit and C4. Rejoining never grants a mid-round respawn. A team absent
@@ -1453,18 +1463,46 @@ The arsenal contains **27 guns**, plus the knife:
 | Machine gun | Negev |
 
 Faction restrictions apply to purchases, not captured weapons. The buy menu has
-45 slots with a separate equipment row; weapon entries show price, ammunition,
+54 slots on one screen. Colored columns group pistols, SMGs, rifles, snipers,
+shotguns and machine guns under category headers; pistols, rifles and shotguns
+use pairs of columns. Weapons are ordered by ascending price within each group,
+left to right and then down. The bottom row holds armor and grenades. All legal
+weapons stay visible together. Weapon entries show price, ammunition,
 category, damage per bullet/pellet, armor penetration and rate of fire. Every gun
 has its own price, magazine/reserve, fire/reload timing, mobility and spread.
-Values are adapted to Minecraft ticks and the classic CS:GO economy, rather than
-a claim of exact parity with the latest CS2 balance.
+Purchase prices and the planted-loss award follow the verified CS2 economy updates:
+M4A4 $2,900, FAMAS $1,950, MP7 $1,400, CT incendiary $500, and $600 for a
+planted losing T team. Armor refill costs $650 when the helmet is already owned;
+a helmet-only upgrade with full armor costs $350. Shop quotes and debits use the
+same equipment price calculation. Sources: Valve's
+[May 2024 update](https://store.steampowered.com/news/posts/?appids=730&enddate=1716500781&feed=steam_community_announcements),
+[January 2025 update](https://store.steampowered.com/news/posts/?appids=730&enddate=1738107723&feed=steam_community_announcements), and
+[January 2026 update](https://store.steampowered.com/news/posts/?appids=730&enddate=1769472539&feed=steam_community_announcements).
+Fire timing, accuracy and movement remain Minecraft adaptations; this is not exact
+parity with every current CS2 weapon statistic. The default match format is MR12.
 
 There are finite magazines/reserves, draw times, held automatic fire,
 burst recoil/recovery, movement/jump spread, crouch accuracy, head/body/leg
 damage, armor/helmet penetration, hit tagging and aim punch. AWP and SSG 08
-have 160-block range and scoped accuracy; SSG is cheaper and faster to move with,
+have scoped accuracy; SSG is cheaper and faster to move with,
 but an armored body hit is survivable. AUG and SG 553 trade mobility for scoped
-accuracy at the normal rifle range. Their scope toggles with left-click.
+accuracy at range. Their scope toggles with left-click, while right-click keeps
+firing. Zoom uses a transient movement-attribute modifier and compensated walk
+speed: approximately 0.60× normal FOV for snipers and 0.70× for scoped rifles,
+with the intended 45% scoped walking speed. Vanilla client FOV Effects must be
+enabled for visible zoom; their strength scales the result. No spyglass use is
+forced: a vanilla client releases it as soon as the use button is not held, and
+holding a spyglass consumes attack input. Non-usable gun icons prevent that
+native interaction. One click's overlapping interact/attack/swing events are
+debounced; reload, slot switch, gun drop, death, menus, leaving and round/match
+cleanup remove both scope state and the temporary modifier. All guns trace up to 256 blocks, covering Dust II; distance
+falloff and spread determine effectiveness instead of a 100-block rifle cutoff.
+Damage falloff is continuous and compressed to 64% of the original distance
+scale: `rangeFalloff ^ (distance / 10.24)`. A shot at 64 blocks now retains the
+same damage as an original shot at 100 blocks. At 100 blocks, ordinary
+pistols/rifles retain about 82% damage, M4A1-S 55%, most SMGs 26%, UMP-45 6%,
+shotguns 3% and snipers 91%. Point-blank base damage is unaffected.
+Visible trails cover the actual path and stop at cover or the hit target.
 USP-S and M4A1-S are quieter and omit visible bullet trails; M4A1-S trades magazine
 size and fire rate for accuracy. CZ75-Auto fires automatically, but has only one
 reserve magazine, a longer draw time and a $100 kill reward. P90 has 50 rounds
@@ -1477,9 +1515,22 @@ idle gap. Limited wallbangs lose damage; breakable glass is restored each round.
 FAMAS currently uses automatic fire only; Glock burst mode and removable
 suppressors are not implemented.
 
-HE, flash, smoke and Molotov/incendiary grenades bounce and detonate with fuses;
+HE, flash, smoke and Molotov/incendiary grenades use snowball-like air trajectories:
+1.5 blocks/tick initial speed, 0.03 gravity and 0.99 drag, with no artificial upward
+kick. The throw inherits horizontal motion and airborne vertical motion, starts
+0.1 blocks below the eye without skipping cover, and retains collision bounces
+and the utility fuse;
 HE respects cover, flash duration depends on distance and facing, smoke hides
-players while allowing bullets through, and smoke extinguishes fire. Carry at
+players while allowing bullets through, and smoke extinguishes fire. Molotov
+zones render animated fire blocks over supported floor cells within the existing
+radius and line of sight. These are batched client-only block changes, also shown
+to spectators: the server terrain, native ignition and combat calculations are
+untouched. Overlapping zones share their visual cells; extinguishing, expiry,
+leaving and round/end cleanup restore the current real block data. Active visuals
+refresh after chunk loads. Smoke's dense
+large-particle cloud also applies Darkness while the player’s eyes are inside.
+Leaving clears smoke Darkness without cancelling a longer flash effect. Flash
+particles include the color data required by Paper 26.2/26.3. Carry at
 most four grenades, with at most two flashes and one of each other kind.
 
 | Input / slot | Action |
@@ -1494,17 +1545,34 @@ most four grenades, with at most two flashes and one of each other kind.
 | Slot 8, hold right-click | Plant or defuse; look at C4 within three blocks to defuse |
 | Slot 9 | Native map radar; right-click at spawn for buy menu |
 | `/cs buy`, `/cs help` | Buy menu / controls |
+| `/cs score` / sneak + right-click with radar | Live roster, alive/dead/disconnected status, K/D/A and MVPs |
+| `!message` | Private chat to current teammates, including dead teammates |
 
 Drop your occupied gun slot before walking over a replacement. The radar uses the
 actual imported map: teammates are always shown, enemies only when a living
 teammate sees them, with a brief stationary last-seen marker. Smoke and flashes
 prevent spotting; CT learn the bomb location after seeing it. Ordinary Minecraft
-nameplates are hidden; tan T and blue CT cosmetic uniforms identify factions
-without adding native armor protection. Controls, gun visuals, movement and flash rendering are
+nameplates are hidden. Native player outlines are sent only to allies, refreshed
+every 0.5 seconds and suppressed across smoke or while flashed; enemies and
+outsiders never receive the override. Outlines are cleared on leaving, round reset
+and match end. The sidebar shows T/CT alive counts; `/cs score` lists each
+player's status, with cash visible only to their own team. Team chat uses the stable
+team assignment across halftime, accepts literal text and leaves ordinary global
+chat unchanged. Players wear a full red or blue leather uniform matching their
+stable team, including after halftime. Purchased kevlar shows an iron chestplate;
+a purchased helmet shows an iron helmet. Leggings and boots retain the team
+color. A depleted vest returns to the leather appearance; the owned helmet stays
+visible until equipment resets. All uniform pieces have explicit empty native
+attribute modifiers and are unbreakable: they add no native armor protection.
+Protection, penetration, durability and fire damage remain exclusively in the
+existing CS rule model. Controls, gun visuals, movement and flash rendering are
 Minecraft adaptations; this does not reproduce the Source client, its netcode,
 resource-pack weapon models or every CS game mode/weapon.
 
 Round timings and half length are configurable in `games/cs.yml` and `/cs config`.
+On upgrade, the old unversioned `roundsPerHalf: 15` default migrates once to 12;
+other customized half lengths remain intact. `formatVersion: 2` records that
+migration, so later admin edits are preserved across restarts.
 The imported architecture is protected from building/destruction except bullet
 breakable glass. `checkCounterStrike` covers the rule model, ammunition, economy,
 objective deadlines, rounds, reconnects, smoke geometry and imported spawn/site

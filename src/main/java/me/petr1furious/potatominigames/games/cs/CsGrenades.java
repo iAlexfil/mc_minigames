@@ -39,16 +39,20 @@ final class CsGrenades {
     private record Hidden(UUID viewer, UUID target) {}
 
     private final CsSession session;
+    private final CsFireFloor fireFloor;
     private final List<Flight> flights = new ArrayList<>();
     private final List<Zone> smoke = new ArrayList<>(), fire = new ArrayList<>();
     private final Map<UUID, Long> flashed = new HashMap<>();
+    private final Set<UUID> smokeDarkness = new HashSet<>();
     private final Set<Hidden> hidden = new HashSet<>();
     private final Map<UUID, Long> throwAt = new HashMap<>();
 
     CsGrenades(CsSession session) {
         this.session = session;
+        fireFloor = new CsFireFloor(session.world());
     }
 
+    @SuppressWarnings("deprecation")
     boolean toss(Player p, CsMatch.Utility kind) {
         var a = session.actor(p);
         if (flights.size() >= 40
@@ -56,7 +60,8 @@ final class CsGrenades {
                 || !session.canAct(p)
                 || !session.match().consume(a, kind)) return false;
         throwAt.put(p.getUniqueId(), session.now() + 16);
-        Location at = p.getEyeLocation().add(p.getEyeLocation().getDirection().multiply(.45));
+        // Start at the snowball's release height; a forward offset could skip thin cover.
+        Location at = p.getEyeLocation().subtract(0, .1, 0);
         Item item =
                 session.world()
                         .dropItem(at, CsItems.physical(new ItemStack(CsItems.material(kind))));
@@ -70,7 +75,8 @@ final class CsGrenades {
                         kind,
                         item,
                         at,
-                        p.getEyeLocation().getDirection().multiply(1.05).add(new Vector(0, .12, 0)),
+                        CsGrenadePhysics.launch(
+                                p.getEyeLocation().getDirection(), p.getVelocity(), p.isOnGround()),
                         session.now() + 30));
         return true;
     }
@@ -78,7 +84,7 @@ final class CsGrenades {
     void tick() {
         for (Flight f : List.copyOf(flights)) {
             boolean ground = false;
-            f.velocity.setY(f.velocity.getY() - .04).multiply(.985);
+            CsGrenadePhysics.airTick(f.velocity);
             for (int step = 0; step < 4; step++) {
                 Vector move = f.velocity.clone().multiply(.25);
                 double length = move.length();
@@ -124,19 +130,11 @@ final class CsGrenades {
         fire.removeIf(z ->
                 session.now() >= z.end
                         || smoke.stream().anyMatch(s -> s.at.distanceSquared(z.at) < 49));
+        fireFloor.update(fire.stream().map(Zone::at).toList(), session.viewers(), session.now());
         if (session.now() % 5 == 0) {
-            for (Zone z : smoke)
-                session.world()
-                        .spawnParticle(
-                                Particle.CAMPFIRE_COSY_SMOKE,
-                                z.at.clone().add(0, 1.2, 0),
-                                18,
-                                2.7,
-                                1.5,
-                                2.7,
-                                .015);
+            if (session.now() % 10 == 0) smokeClouds();
+            smokeDarkness();
             for (Zone z : fire) {
-                session.world().spawnParticle(Particle.FLAME, z.at, 22, 2.5, .1, 2.5, .02);
                 for (Player target : session.players())
                     if (session.active(target)
                             && target.getLocation().distanceSquared(z.at) < 16
@@ -146,6 +144,56 @@ final class CsGrenades {
             visibility();
         }
         flashed.entrySet().removeIf(e -> e.getValue() <= session.now());
+    }
+
+    /** Prioritize the six nearest clouds; forced particles remain visible along long sightlines. */
+    private void smokeClouds() {
+        var dust = new Particle.DustOptions(Color.fromRGB(110, 115, 120), 4);
+        for (Player viewer : session.players()) {
+            Location eye = viewer.getEyeLocation();
+            for (Zone z :
+                    smoke.stream()
+                            .filter(zone ->
+                                    eye.getWorld().equals(zone.at.getWorld())
+                                            && eye.distanceSquared(zone.at) < 256 * 256)
+                            .sorted(
+                                    Comparator.comparingDouble(
+                                            zone -> eye.distanceSquared(zone.at)))
+                            .limit(6)
+                            .toList()) {
+                Location center = z.at.clone().add(0, 1, 0);
+                // Large dust fills the cloud with one batched packet instead of a packet per puff.
+                viewer.spawnParticle(Particle.DUST, center, 110, 1.3, 1.3, 1.3, 0, dust, true);
+                viewer.spawnParticle(
+                        Particle.CAMPFIRE_SIGNAL_SMOKE, center, 12, 2, 1, 2, .005, null, true);
+            }
+        }
+    }
+
+    private void smokeDarkness() {
+        for (Player p : session.players()) {
+            UUID id = p.getUniqueId();
+            boolean inside =
+                    session.active(p)
+                            && smoke.stream()
+                                    .anyMatch(z ->
+                                            p.getEyeLocation()
+                                                            .distanceSquared(
+                                                                    z.at.clone().add(0, 1, 0))
+                                                    < 3.7 * 3.7);
+            if (inside) {
+                smokeDarkness.add(id);
+                p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 30, 0, false, false));
+            } else if (smokeDarkness.remove(id)) {
+                p.removePotionEffect(PotionEffectType.DARKNESS);
+                int remainingFlash =
+                        (int) Math.max(0, flashed.getOrDefault(id, 0L) - session.now());
+                if (remainingFlash > 0)
+                    p.addPotionEffect(
+                            new PotionEffect(
+                                    PotionEffectType.DARKNESS, remainingFlash, 0, false, false));
+            }
+        }
     }
 
     private void detonate(Flight f) {
@@ -180,7 +228,7 @@ final class CsGrenades {
             }
             case FLASH -> {
                 session.world().playSound(at, Sound.ENTITY_FIREWORK_ROCKET_TWINKLE, 1, 1.6f);
-                session.world().spawnParticle(Particle.FLASH, at, 1);
+                session.world().spawnParticle(Particle.FLASH, at, 1, Color.WHITE);
                 for (Player p : session.players())
                     if (session.active(p)
                             && p.getEyeLocation().distanceSquared(at) < 576
@@ -273,6 +321,7 @@ final class CsGrenades {
     }
 
     void release(UUID id) {
+        fireFloor.release(id);
         for (Hidden pair : List.copyOf(hidden))
             if (pair.viewer.equals(id) || pair.target.equals(id)) {
                 Player viewer = org.bukkit.Bukkit.getPlayer(pair.viewer),
@@ -281,9 +330,20 @@ final class CsGrenades {
                 hidden.remove(pair);
             }
         flashed.remove(id);
+        clearEffects(id);
+        smokeDarkness.remove(id);
+    }
+
+    private void clearEffects(UUID id) {
+        Player p = org.bukkit.Bukkit.getPlayer(id);
+        if (p != null) {
+            p.removePotionEffect(PotionEffectType.BLINDNESS);
+            p.removePotionEffect(PotionEffectType.DARKNESS);
+        }
     }
 
     void clear() {
+        fireFloor.clear();
         throwAt.clear();
         flights.forEach(f -> f.item.remove());
         flights.clear();
@@ -295,13 +355,10 @@ final class CsGrenades {
             if (a != null && b != null) a.showEntity(session.plugin(), b);
         }
         hidden.clear();
-        for (UUID id : flashed.keySet()) {
-            Player p = session.player(id);
-            if (p != null) {
-                p.removePotionEffect(PotionEffectType.BLINDNESS);
-                p.removePotionEffect(PotionEffectType.DARKNESS);
-            }
-        }
+        Set<UUID> affected = new HashSet<>(flashed.keySet());
+        affected.addAll(smokeDarkness);
+        affected.forEach(this::clearEffects);
+        smokeDarkness.clear();
         flashed.clear();
     }
 }

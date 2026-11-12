@@ -34,6 +34,7 @@ public final class SidebarService {
     private final Map<UUID, View> views = new LinkedHashMap<>();
     private final Map<UUID, TeamColor> nameColors = new HashMap<>();
     private final Supplier<Collection<Player>> spectators;
+    private boolean nameTagsVisible = true;
 
     public SidebarService(Supplier<Collection<Player>> spectators) {
         this.spectators = spectators;
@@ -149,6 +150,23 @@ public final class SidebarService {
         }
         views.clear();
         nameColors.clear();
+        nameTagsVisible = true;
+    }
+
+    /** Controls vanilla overhead names on this session's private scoreboards only. */
+    public void setNameTagsVisible(boolean visible) {
+        nameTagsVisible = visible;
+        for (View view : views.values()) {
+            for (TeamColor color : TeamColor.values()) {
+                Team team = view.scoreboard.getTeam("color_" + color.id());
+                if (team != null) applyNameTagVisibility(team);
+            }
+        }
+    }
+
+    private void applyNameTagVisibility(Team team) {
+        team.setOption(Team.Option.NAME_TAG_VISIBILITY,
+                nameTagsVisible ? Team.OptionStatus.ALWAYS : Team.OptionStatus.NEVER);
     }
 
     public void setNameColor(Player player, TeamColor color) {
@@ -183,6 +201,7 @@ public final class SidebarService {
                 NamedTextColor textColor = color.textColor();
                 team.color(textColor);
             }
+            applyNameTagVisibility(team);
             team.addEntry(player.getName());
         }
     }

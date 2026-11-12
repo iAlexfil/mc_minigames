@@ -66,6 +66,7 @@ final class FinalsSession implements GameSession {
     private BossBar bar;
     private FinalsHighlights highlights;
     private FinalsCashoutPhysics cashouts;
+    private FinalsDropInput dropInput;
     private Item cashbox;
     private Location cashboxLocation;
     private UUID recentDropper;
@@ -288,6 +289,7 @@ final class FinalsSession implements GameSession {
             if (arena != null) arena.cancelBuild();
             if (cashouts != null) cashouts.clear();
             if (highlights != null) highlights.clear();
+            if (dropInput != null) dropInput.clear();
             releaseAll();
             if (weapons != null) weapons.clear();
             if (gadgets != null) gadgets.clear();
@@ -355,6 +357,14 @@ final class FinalsSession implements GameSession {
         gadgets = new FinalsGadgets(combat);
         cashouts = new FinalsCashoutPhysics(arena);
         highlights = new FinalsHighlights(services.plugin());
+        dropInput =
+                new FinalsDropInput(
+                        services.plugin(),
+                        id -> {
+                            Player player = Bukkit.getPlayer(id);
+                            if (player != null) throwCashbox(player);
+                        });
+        services.sidebar().setNameTagsVisible(false);
         services.arena()
                 .applyBorder(world, arena.center(), arena.borderSize(), arena.borderSize(), 0);
         bar =
@@ -418,7 +428,12 @@ final class FinalsSession implements GameSession {
         List<Player> players =
                 connected.stream().map(Bukkit::getPlayer).filter(Objects::nonNull).toList();
         highlights.update(
-                arena, state == null ? null : state.phase(), players, roster, this::active);
+                arena,
+                state == null ? null : state.phase(),
+                state == null ? -1 : state.station(),
+                players,
+                roster,
+                player -> deathLocations.getOrDefault(player.getUniqueId(), player.getLocation()));
     }
 
     private boolean protectedSpawn(Player player) {
@@ -513,6 +528,7 @@ final class FinalsSession implements GameSession {
         }
         inventory.setHeldItemSlot(0);
         teleport(player, arena.spawn(roster.get(id), spawnIndex(id)));
+        if (dropInput != null) dropInput.track(player);
         if (state == null) freeze(player);
         services.sidebar().setNameColor(player, color(roster.get(id)));
         player.showBossBar(bar);
@@ -836,6 +852,7 @@ final class FinalsSession implements GameSession {
         if (ticker != null) ticker.cancel();
         if (cashouts != null) cashouts.clear();
         if (highlights != null) highlights.clear();
+        if (dropInput != null) dropInput.clear();
         releaseAll();
         if (weapons != null) weapons.clear();
         if (gadgets != null) gadgets.clear();
@@ -955,15 +972,20 @@ final class FinalsSession implements GameSession {
     }
 
     private void updateStealSiren() {
-        if (!running() || state == null || state.phase() != FinalsState.Phase.CASHOUT
+        if (!running()
+                || state == null
+                || state.phase() != FinalsState.Phase.CASHOUT
                 || state.stealDeadlines().isEmpty()) {
             stealSirenAt = 0;
             stealSirenHigh = false;
             return;
         }
         if (tick < stealSirenAt) return;
-        world.playSound(arena.station(state.station()).clone().add(0, .75, 0),
-                "minecraft:block.note_block.pling", 1.6f, stealSirenHigh ? 1.25f : .7f);
+        world.playSound(
+                arena.station(state.station()).clone().add(0, .75, 0),
+                "minecraft:block.note_block.pling",
+                1.6f,
+                stealSirenHigh ? 1.25f : .7f);
         stealSirenHigh = !stealSirenHigh;
         stealSirenAt = tick + 6;
     }
@@ -1164,7 +1186,6 @@ final class FinalsSession implements GameSession {
         if (gadgets != null) gadgets.forget(id);
         clearOrdnance(id);
         respawnAt.put(id, tick + respawnTicks);
-        if (highlights != null) highlights.hideTeammate(id);
         player.sendMessage(text("respawn", respawnTicks / 20));
     }
 
@@ -1356,6 +1377,7 @@ final class FinalsSession implements GameSession {
         if (!roster.containsKey(id) || done) return;
         dropCashbox(player);
         connected.remove(id);
+        if (dropInput != null) dropInput.remove(id);
         if (highlights != null) highlights.remove(id);
         if (permanent) withdrawn.add(id);
         if (state != null) {
@@ -1389,6 +1411,7 @@ final class FinalsSession implements GameSession {
         if (done || !roster.containsKey(id) || withdrawn.contains(id)) return;
         connected.add(id);
         if (preparing) return;
+        if (dropInput != null) dropInput.track(player);
         if (state == null) spawn(player);
         else {
             state.reconnect(id, tick);

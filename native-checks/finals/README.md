@@ -120,3 +120,12 @@ Lava Chicken at 15% volume. Entity bodies were native; player transport and enti
 tracking were simulated. The focused runner uses `-Dfinals.smoke.musicOnly=true`
 and `--noconsole`. The full Gradle build passed, including 49 music listener checks,
 139 state checks and 197 session checks. No client audio capture was performed.
+
+The downed-loadout run on 2026-11-12 passed **25 input and 178 session assertions**
+against JAR SHA-256 `18556176c4a3cebefc24046cde4efee038f1369648d199736a88000146978847`.
+The focused `-Dfinals.smoke.downedLoadoutOnly=true` harness checks Sneak key edges,
+downed inventory selection and persistence, complete equipped-kit preservation on
+manual/defibrillator revives, Space respawns, and synchronized team-wipe respawns.
+It uses native inventories/entities with fake player transport. The old JAR failed
+the manual-revival kit regression before the change; the full Gradle build and
+focused native checks pass with the new JAR. The test server shut down afterward.

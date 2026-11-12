@@ -48,6 +48,7 @@ final class FinalsSession implements GameSession {
 
     private final Map<UUID, OriginalVitals> originalVitals = new HashMap<>();
     private final Map<UUID, FinalsClass> classes = new HashMap<>();
+    private final Map<UUID, FinalsLoadouts.Choice> equippedLoadouts = new HashMap<>();
     private final FinalsKills kills = new FinalsKills();
     private final FinalsCashoutMusic cashoutMusic = new FinalsCashoutMusic();
     private final FinalsTeamWipes teamWipes = new FinalsTeamWipes();
@@ -361,7 +362,7 @@ final class FinalsSession implements GameSession {
                 if (!canAct(reviver) || !awaitingRespawn(teammate) || !friendly(teammate, reviver)
                         || point == null || !near(reviver, point, 4)) return false;
                 teamRespawnPositions.put(id, safeRevivePoint(id, point));
-                spawn(teammate);
+                spawn(teammate, false);
                 if (respawnAt.containsKey(id)) return false;
                 teammate.sendMessage(text("revived", reviver.displayName()));
                 return true;
@@ -419,7 +420,7 @@ final class FinalsSession implements GameSession {
                 Player player = Bukkit.getPlayer(target);
                 if (player == null || !player.isOnline()) return false;
                 teamRespawnPositions.put(target, safeRevivePoint(target, point));
-                spawn(player);
+                spawn(player, false);
                 if (respawnAt.containsKey(target)) return false;
                 if (defibrillator) {
                     player.setHealth(Math.max(.5, player.getAttribute(Attribute.MAX_HEALTH).getValue() / 2));
@@ -448,6 +449,14 @@ final class FinalsSession implements GameSession {
         return arena.spawn(roster.get(id), spawnIndex(id));
     }
 
+    private void requestDownedLoadout(UUID id) {
+        if (!running() || preparing || loadouts == null || state == null || state.isFinished()
+                || !connected.contains(id) || withdrawn.contains(id) || !respawnAt.containsKey(id)) return;
+        Player player = Bukkit.getPlayer(id);
+        if (player != null && player.isOnline() && !player.isDead() && !FinalsLoadouts.viewing(player))
+            loadouts.open(player);
+    }
+
     private void requestRespawn(UUID id) {
         if (!running() || !revivalMode || state == null || state.isFinished()
                 || !connected.contains(id) || withdrawn.contains(id) || !teamWipes.dead(id)) return;
@@ -459,7 +468,8 @@ final class FinalsSession implements GameSession {
         Long ready = respawnAt.get(id);
         if (ready == null || tick < ready) return;
         Player player = Bukkit.getPlayer(id);
-        if (player != null && player.isOnline()) spawn(player);
+        if (player != null && player.isOnline()
+                && (loadouts == null || !FinalsLoadouts.viewing(player))) spawn(player);
     }
 
     private void dropPressed(Player player) {
@@ -610,8 +620,9 @@ final class FinalsSession implements GameSession {
         if (gameMaster != null) gameEvents = new FinalsGameEvents(gameEventsContext());
         if (revivalMode) {
             revives = new FinalsRevives(reviveContext());
-            respawnInput = new FinalsRespawnInput(services.plugin(), this::requestRespawn);
         }
+        respawnInput = new FinalsRespawnInput(
+                services.plugin(), this::requestRespawn, this::requestDownedLoadout);
         dropInput =
                 new FinalsDropInput(
                         services.plugin(),
@@ -766,15 +777,23 @@ final class FinalsSession implements GameSession {
     }
 
     private void spawn(Player player) {
+        spawn(player, true);
+    }
+
+    private void spawn(Player player, boolean applySelectedLoadout) {
         UUID id = player.getUniqueId();
         if (preparing || !roster.containsKey(id) || teamWipes.locked(id, tick)) return;
         if (teamWipes.wave(id) != null) prepareTeamRespawns();
         boolean respawning = respawnAt.containsKey(id);
+        if (respawning && loadouts != null && FinalsLoadouts.viewing(player)) player.closeInventory();
         forceRespawn(player);
         release(player);
         rememberVitals(player);
-        FinalsLoadouts.Choice choice =
+        FinalsLoadouts.Choice selected =
                 loadouts == null ? FinalsLoadouts.Choice.defaults() : loadouts.choice(id);
+        // A revive continues the same life/kit; queued edits wait for a real respawn.
+        FinalsLoadouts.Choice choice = applySelectedLoadout
+                ? selected : equippedLoadouts.getOrDefault(id, selected);
         classes.put(id, choice.playerClass());
         player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(choice.playerClass().health());
         player.setWalkSpeed(choice.playerClass().walkSpeed());
@@ -795,6 +814,7 @@ final class FinalsSession implements GameSession {
         var inventory = player.getInventory();
         weapons.equip(player, choice.weapon());
         gadgets.equip(player, choice);
+        equippedLoadouts.put(id, choice);
         ItemStack pickaxe = gear(Material.IRON_PICKAXE);
         pickaxe.editMeta(meta -> meta.displayName(text("item.pickaxe")));
         inventory.setItem(7, I18n.item(pickaxe, player));
@@ -1297,6 +1317,7 @@ final class FinalsSession implements GameSession {
         gadgetSicknessUntil.clear();
         deathLocations.clear();
         protectedUntil.clear();
+        equippedLoadouts.clear();
     }
 
     @Override
@@ -1904,6 +1925,7 @@ final class FinalsSession implements GameSession {
         if (permanent) {
             withdrawn.add(id);
             classes.remove(id);
+            equippedLoadouts.remove(id);
             teamWipes.withdraw(id);
             teamRespawnPositions.remove(id);
             gadgetSicknessUntil.remove(id);

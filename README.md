@@ -60,6 +60,12 @@ during which combat and objectives are disabled. Teams remain fixed; a disconnec
 team has 15 seconds to return before the match ends without points. Connected
 winners receive three points; practice, draws and aborted matches award none.
 
+While downed or waiting to respawn, press **Sneak** (Shift by default) to choose a
+loadout, or use `/finals loadout`. Changes apply at your next automatic, Space-key
+or team-wipe respawn. Manual and defibrillator statue revives keep the kit you had
+when eliminated; your new selection stays pending until you respawn. During the
+pre-match countdown, loadout changes still apply immediately.
+
 **2v2 and 3v3 revivals:** elimination leaves a revive statue. After eight seconds the
 fallen player can press **Space** to respawn; reaching zero does not respawn them
 automatically. They remain available for revival until they actually respawn.

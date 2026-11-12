@@ -236,6 +236,11 @@ public final class FinalsLoadoutSmoke {
             close(light.walkSpeed,.17,"Releasing countdown restores new class speed");
             close(medium.walkSpeed,.20,"Releasing countdown restores Medium speed");
             close(heavy.walkSpeed,.17,"Releasing countdown restores Heavy speed");
+            if(Boolean.getBoolean("finals.smoke.downedLoadoutOnly")) {
+                downedLoadoutChecks(loadouts,light);
+                smoke.getLogger().info("FINALS_DOWNED_LOADOUT_SMOKE_PASS: "+assertions+" native loadout lifecycle assertions");
+                return assertions;
+            }
             if(Boolean.getBoolean("finals.smoke.musicOnly")) {
                 cashoutMusicChecks(light,medium);
                 smoke.getLogger().info("FINALS_CASHOUT_MUSIC_SMOKE_PASS: "+assertions+" config and lifecycle assertions");
@@ -560,6 +565,149 @@ public final class FinalsLoadoutSmoke {
     private void click(Object loadouts,FakePlayer player,int slot)throws Exception{
         InventoryClickEvent event=new InventoryClickEvent(player.view,InventoryType.SlotType.CONTAINER,slot,ClickType.LEFT,InventoryAction.PICKUP_ALL);
         call(loadouts,"onClick",event);require(event.isCancelled(),"Native GUI click is consumed");
+    }
+    @SuppressWarnings("unchecked") private void downedLoadoutChecks(Object loadouts,FakePlayer target)throws Exception {
+        Map<UUID,Integer> roster=(Map<UUID,Integer>)get(session,"roster");
+        FakePlayer ally=players.values().stream().filter(player->player!=target
+                &&Objects.equals(roster.get(player.id),roster.get(target.id))).findFirst().orElseThrow();
+        customLoadoutChecks(loadouts,target);
+        Object equipped=call(loadouts,"choice",target.id);
+        call(loadouts,"open",target.player);
+        click(loadouts,target,15);click(loadouts,target,29);click(loadouts,target,22);
+        Object pending=call(loadouts,"choice",target.id);
+        target.player.closeInventory();
+        require(!pending.equals(equipped),"The next-spawn selection differs from the complete equipped kit");
+        assertEquipped(target,equipped,"Choosing a new kit while alive");
+        set(session,"tick",500L);
+        nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+        Object revival=get(session,"revives"),context=call(session,"reviveContext");
+        Location point=(Location)call(revival,"location",target.id);
+        require((boolean)withNativePlayerLookup(context,"complete",target,target.id,ally.player,point,false),
+                "A teammate can complete the actual manual revival callback");
+        assertEquipped(target,equipped,"Manual revival");
+        require(call(loadouts,"choice",target.id).equals(pending),
+                "Manual revival preserves the pending next-spawn choice");
+
+        Map<UUID,Long> respawns=(Map<UUID,Long>)get(session,"respawnAt");
+        set(session,"tick",600L);
+        downForLoadout(target);
+        long ready=respawns.get(target.id);
+        withNativePlayerLookup(session,"requestDownedLoadout",target,target.id);
+        require((boolean)call(type("FinalsLoadouts"),"viewing",target.player),
+                "The downed-player callback opens the actual loadout inventory");
+        click(loadouts,target,13);click(loadouts,target,29);click(loadouts,target,22);
+        Object medium=value("FinalsClass","MEDIUM");
+        List<Object> options=(List<Object>)call(type("FinalsGadgetState$Kind"),"gadgets",medium);
+        List<String> nextGadgets=List.of("SMOKE_GRENADE","GAS_GRENADE","APS_TURRET");
+        for(int slot=0;slot<nextGadgets.size();slot++) {
+            call(loadouts,"open",target.player,slot);
+            click(loadouts,target,options.indexOf(value("FinalsGadgetState$Kind",nextGadgets.get(slot))));
+        }
+        Object downedChoice=call(loadouts,"choice",target.id);
+        require(call(downedChoice,"playerClass")==medium
+                        &&call(downedChoice,"weapon").toString().equals("FCAR")
+                        &&call(downedChoice,"specialization").toString().equals("GUARDIAN_TURRET")
+                        &&((List<?>)call(downedChoice,"gadgets")).stream().map(Object::toString).toList().equals(nextGadgets),
+                "While downed, the real menus save the chosen class, weapon, specialization and all three gadgets");
+        require(respawns.get(target.id)==ready&&target.mode==GameMode.SPECTATOR
+                        &&((Map<?,?>)get(session,"classes")).get(target.id)==call(equipped,"playerClass"),
+                "Downed menu edits preserve the wait timer and the eliminated player's equipped class");
+        Object reloaded=make("FinalsLoadouts",main,(Consumer<Player>)ignored->{});
+        try {
+            require(call(reloaded,"choice",target.id).equals(downedChoice),
+                    "The full choice made while downed is persisted for future respawns");
+        } finally {org.bukkit.event.HandlerList.unregisterAll((org.bukkit.event.Listener)reloaded);}
+        set(session,"tick",ready);
+        withNativePlayerLookup(session,"requestRespawn",target,target.id);
+        require(respawns.containsKey(target.id),"Space cannot accidentally respawn while the loadout inventory is open");
+        point=(Location)call(revival,"location",target.id);
+        require((boolean)withNativePlayerLookup(context,"complete",target,target.id,ally.player,point,true),
+                "A defibrillator can revive the downed player while their loadout menu is open");
+        assertEquipped(target,equipped,"Defibrillator revival after downed edits");
+        close(target.attribute.getHealth(),(double)call(call(equipped,"playerClass"),"health")/2,
+                "Defibrillator half-health uses the equipped class");
+        require(call(loadouts,"choice",target.id).equals(downedChoice)
+                        &&!(boolean)call(type("FinalsLoadouts"),"viewing",target.player),
+                "Revival closes the menu while preserving the full pending choice");
+
+        set(session,"tick",(long)get(session,"tick")+100);
+        downForLoadout(target);
+        ready=respawns.get(target.id);
+        withNativePlayerLookup(session,"requestDownedLoadout",target,target.id);
+        target.player.closeInventory();
+        set(session,"tick",ready-1);
+        withNativePlayerLookup(session,"requestRespawn",target,target.id);
+        require(respawns.containsKey(target.id),"Pending kit changes do not bypass the individual respawn timer");
+        set(session,"tick",ready);
+        withNativePlayerLookup(session,"requestRespawn",target,target.id);
+        require(!respawns.containsKey(target.id),"Ready Space respawn consumes the downed state");
+        assertEquipped(target,downedChoice,"Space respawn applies the pending kit");
+
+        call(loadouts,"open",target.player);click(loadouts,target,15);click(loadouts,target,29);click(loadouts,target,22);
+        Object wipeChoice=call(loadouts,"choice",target.id);
+        target.player.closeInventory();
+        set(session,"revivalMode",false);
+        Location allyPosition=ally.location.clone();
+        try {
+            set(session,"tick",(long)get(session,"tick")+100);
+            nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                    DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+            ally.location=target.location.clone();
+            Object combat=call(session,"combatContext");
+            require((boolean)nativeAccess(()->call(combat,"revive",target.player,ally.player)),
+                    "The legacy instant-defibrillator callback can complete a revival");
+            assertEquipped(target,downedChoice,"Legacy defibrillator preserves the equipped kit");
+            require(call(loadouts,"choice",target.id).equals(wipeChoice),
+                    "The legacy revival also leaves the pending kit saved");
+        } finally {set(session,"revivalMode",true);ally.location=allyPosition;}
+
+        List<FakePlayer> team=players.values().stream()
+                .filter(player->Objects.equals(roster.get(player.id),roster.get(target.id))).toList();
+        long waveStart=(long)get(session,"tick")+100;
+        for(int index=0;index<team.size();index++) {
+            set(session,"tick",waveStart+index*10);
+            downForLoadout(team.get(index));
+        }
+        long wipeDeadline=respawns.get(target.id);
+        withNativePlayerLookup(session,"requestDownedLoadout",target,target.id);
+        require((boolean)call(type("FinalsLoadouts"),"viewing",target.player),
+                "The loadout menu remains available during a full-team wipe countdown");
+        set(session,"tick",wipeDeadline-1);
+        nativeAccess(()->{call(session,"spawn",target.player);return null;});
+        require(respawns.containsKey(target.id),"A queued kit cannot bypass the team-wipe countdown");
+        set(session,"tick",wipeDeadline);
+        nativeAccess(()->{call(session,"prepareTeamRespawns");return null;});
+        for(FakePlayer player:team)nativeAccess(()->{call(session,"spawn",player.player);return null;});
+        assertEquipped(target,wipeChoice,"Team-wipe respawn applies the pending kit");
+        require(team.stream().allMatch(player->player.location.equals(target.location))
+                        &&!(boolean)call(type("FinalsLoadouts"),"viewing",target.player),
+                "The wipe respawns the whole team together and closes the loadout menu");
+        int menuOpens=target.menuOpens;
+        withNativePlayerLookup(session,"requestDownedLoadout",target,target.id);
+        require(target.menuOpens==menuOpens,"The downed shortcut does not open the menu for an alive player");
+    }
+
+    private void downForLoadout(FakePlayer target)throws Exception {
+        nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));
+            call(session,"waitForRespawn",target.player);return null;});
+    }
+
+    private void assertEquipped(FakePlayer player,Object choice,String label)throws Exception {
+        require(((Map<?,?>)get(session,"classes")).get(player.id)==call(choice,"playerClass"),
+                label+" keeps the actually equipped class");
+        require(call(get(session,"weapons"),"selected",player.id)==call(choice,"weapon"),
+                label+" keeps the actually equipped weapon");
+        List<?> gadgets=(List<?>)call(choice,"gadgets");
+        NamespacedKey key=new NamespacedKey("potatominigames","finals_gadget");
+        for(int slot=1;slot<=4;slot++) {
+            Object expected=slot==4?call(choice,"specialization"):gadgets.get(slot-1);
+            ItemStack item=player.storage.getItem(slot);
+            require(item!=null&&expected.toString().equals(item.getItemMeta().getPersistentDataContainer()
+                            .get(key,org.bukkit.persistence.PersistentDataType.STRING)),
+                    label+" keeps equipped gadget/specialization slot "+slot);
+        }
     }
     @SuppressWarnings("unchecked") private void customLoadoutChecks(Object loadouts,FakePlayer player)throws Exception {
         call(loadouts,"open",player.player);

@@ -87,6 +87,8 @@ final class FinalsCashoutPhysics {
             if (origin == null)
                 throw new IllegalStateException("No collision-free cashout spawn is available");
         }
+        origin.setYaw(0);
+        origin.setPitch(0);
         BlockDisplay display =
                 arena.world()
                         .spawn(
@@ -142,12 +144,119 @@ final class FinalsCashoutPhysics {
                 body.velocity = 0;
             }
             if (!point.equals(destination)) {
-                body.position = destination;
-                body.display.teleport(displayPosition(destination));
-                body.interaction.teleport(destination);
-                arena.moveStation(slot, destination);
+                publish(slot, body, destination);
             }
         }
+    }
+
+    /** A Winch step moves the real body, click target and objective coordinates together. */
+    boolean moveToward(int slot, Location goal, double maxDistance) {
+        if (slot < 0 || slot >= bodies.length || goal == null
+                || !arena.world().equals(goal.getWorld()) || !Double.isFinite(maxDistance)
+                || maxDistance <= 0 || !Double.isFinite(goal.getX())
+                || !Double.isFinite(goal.getY()) || !Double.isFinite(goal.getZ())) return false;
+        Body body = bodies[slot];
+        if (body == null || !body.display.isValid() || !body.interaction.isValid()) return false;
+        Vector delta = goal.toVector().subtract(body.position.toVector());
+        double distance = delta.length();
+        if (!Double.isFinite(distance) || distance <= EPSILON) return false;
+        delta.multiply(Math.min(.35, Math.min(maxDistance, distance)) / distance);
+        List<BoundingBox> terrain = movementBoxes(body.position, delta);
+        if (terrain == null) return false;
+        Body other = bodies[1 - slot];
+        if (other != null) terrain.add(bodyBox(other.position));
+        for (BoundingBox box : terrain)
+            if (bodyBox(body.position).overlaps(box)) return false;
+        Vector movement = clipMovement(body.position.toVector(), delta, terrain);
+        if (movement.lengthSquared() <= EPSILON * EPSILON) return false;
+        Location destination = body.position.clone().add(movement);
+        if (!fits(destination)) return false;
+        if (!publish(slot, body, destination)) return false;
+        body.velocity = 0;
+        return true;
+    }
+
+    private boolean publish(int slot, Body body, Location destination) {
+        destination = destination.clone();
+        destination.setYaw(0);
+        destination.setPitch(0);
+        if (!body.display.teleport(displayPosition(destination))) return false;
+        if (!body.interaction.teleport(destination)) {
+            body.display.teleport(displayPosition(body.position));
+            return false;
+        }
+        body.position = destination;
+        arena.moveStation(slot, destination);
+        return true;
+    }
+
+    private static BoundingBox bodyBox(Location point) {
+        return new BoundingBox(point.getX() - HALF, point.getY(), point.getZ() - HALF,
+                point.getX() + HALF, point.getY() + HEIGHT, point.getZ() + HALF);
+    }
+
+    /** Clip vertical pressure against support first, then sweep the full resulting 3D step. */
+    static Vector clipMovement(Vector start, Vector requested, Collection<BoundingBox> terrain) {
+        Vector movement = requested.clone();
+        double dy = movement.getY();
+        for (BoundingBox box : terrain) {
+            if (!horizontalOverlap(start.getX(), start.getZ(), box)) continue;
+            if (dy < 0 && box.getMaxY() <= start.getY() + EPSILON)
+                dy = Math.max(dy, box.getMaxY() - start.getY());
+            else if (dy > 0 && box.getMinY() >= start.getY() + HEIGHT - EPSILON)
+                dy = Math.min(dy, box.getMinY() - start.getY() - HEIGHT);
+        }
+        movement.setY(dy);
+        double fraction = 1;
+        for (BoundingBox box : terrain) {
+            BoundingBox expanded = new BoundingBox(box.getMinX() - HALF, box.getMinY() - HEIGHT,
+                    box.getMinZ() - HALF, box.getMaxX() + HALF, box.getMaxY(), box.getMaxZ() + HALF);
+            fraction = Math.min(fraction, sweepFraction(start, movement, expanded));
+        }
+        return movement.multiply(fraction);
+    }
+
+    private static double sweepFraction(Vector start, Vector movement, BoundingBox obstacle) {
+        double entry = 0, exit = 1;
+        double[] origin = {start.getX(), start.getY(), start.getZ()};
+        double[] delta = {movement.getX(), movement.getY(), movement.getZ()};
+        double[] min = {obstacle.getMinX(), obstacle.getMinY(), obstacle.getMinZ()};
+        double[] max = {obstacle.getMaxX(), obstacle.getMaxY(), obstacle.getMaxZ()};
+        for (int axis = 0; axis < 3; axis++) {
+            if (Math.abs(delta[axis]) <= EPSILON) {
+                // Touching a supporting floor or adjacent wall permits parallel motion.
+                if (origin[axis] <= min[axis] + EPSILON || origin[axis] >= max[axis] - EPSILON)
+                    return 1;
+                continue;
+            }
+            double first = (min[axis] - origin[axis]) / delta[axis];
+            double last = (max[axis] - origin[axis]) / delta[axis];
+            entry = Math.max(entry, Math.min(first, last));
+            exit = Math.min(exit, Math.max(first, last));
+            if (entry >= exit - EPSILON) return 1;
+        }
+        if (exit <= EPSILON || entry > 1) return 1;
+        return Math.max(0, entry - EPSILON / Math.max(EPSILON, movement.length()));
+    }
+
+    private static List<BoundingBox> movementBoxes(Location point, Vector delta) {
+        World world = point.getWorld();
+        List<BoundingBox> boxes = new ArrayList<>();
+        int minX = (int) Math.floor(Math.min(point.getX(), point.getX() + delta.getX()) - HALF);
+        int maxX = (int) Math.floor(Math.max(point.getX(), point.getX() + delta.getX()) + HALF);
+        int minZ = (int) Math.floor(Math.min(point.getZ(), point.getZ() + delta.getZ()) - HALF);
+        int maxZ = (int) Math.floor(Math.max(point.getZ(), point.getZ() + delta.getZ()) + HALF);
+        int minY = Math.max(world.getMinHeight(),
+                (int) Math.floor(Math.min(point.getY(), point.getY() + delta.getY())) - 1);
+        int maxY = Math.min(world.getMaxHeight() - 1,
+                (int) Math.floor(Math.max(point.getY(), point.getY() + delta.getY()) + HEIGHT));
+        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
+            if (!world.isChunkLoaded(x >> 4, z >> 4) && !world.getChunkAt(x >> 4, z >> 4).load()) return null;
+            for (int y = minY; y <= maxY; y++)
+                for (BoundingBox box : world.getBlockAt(x, y, z).getCollisionShape().getBoundingBoxes())
+                    boxes.add(box.clone().shift(x, y, z));
+        }
+        return boxes;
     }
 
     /** Sweep the complete footprint to the first terrain surface, including slabs and stairs. */
@@ -314,7 +423,9 @@ final class FinalsCashoutPhysics {
     }
 
     private static Location displayPosition(Location point) {
-        return point.clone().subtract(.5, 0, .5);
+        // Map points retain the editor's facing for player spawns. A block display
+        // rotates around its minimum corner, so inheriting that pitch buries it.
+        return new Location(point.getWorld(), point.getX() - HALF, point.getY(), point.getZ() - HALF);
     }
 
     void clear() {

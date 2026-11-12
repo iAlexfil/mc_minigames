@@ -47,6 +47,8 @@ public final class FinalsHighlightsSmoke {
         Object highlights = constructor.newInstance(main);
         Method update = method(type, "update", FinalsMapArena.class, FinalsState.Phase.class,
                 int.class, Collection.class, Map.class, Function.class);
+        Method timed = method(type, "update", FinalsMapArena.class, FinalsState.Phase.class,
+                int.class, long.class, long.class, Collection.class, Map.class, Function.class);
         Method remove = method(type, "remove", UUID.class);
         Method clear = method(type, "clear");
         SpawnObserver observer = new SpawnObserver();
@@ -112,12 +114,27 @@ public final class FinalsHighlightsSmoke {
             moved(vault, oldVault, 8, 0, 4, "Vault labels follow objective rotation");
             moved(vaultBody, oldBody, 8, 0, 4, "Vault outline follows objective rotation");
             moved(ally, oldAlly, 3, 1, -2, "Ally labels follow movement during countdown and opening");
+            bob.locale = Locale.forLanguageTag("ru");
+            Set<Display> timedBefore = allActive(fixtures);
+            invoke(timed, highlights, arena, FinalsState.Phase.VAULT_OPENING, -1, 17L, 40L, players, teams, positions);
+            require(label(alice, "Vault") == vault && plain(vault).contains("17"),
+                    "Native opening-vault text shows remaining seconds without replacing its display");
+            require(hasLabel(bob, "Хранилище") && plain(label(bob, "Хранилище")).contains("17"),
+                    "Russian native vault labels include the same remaining time");
+            invoke(timed, highlights, arena, FinalsState.Phase.VAULT_OPENING, -1, 16L, 40L, players, teams, positions);
+            require(plain(vault).contains("16") && timedBefore.equals(allActive(fixtures)),
+                    "Countdown refreshes update native label text while reusing every marker entity");
+            bob.locale = Locale.ENGLISH;
             invoke(update, highlights, arena, FinalsState.Phase.CASHBOX_AVAILABLE, -1, players, teams, positions);
             require(alice.active().size() == 6 && alice.blocks().size() == 2
                     && hasLabel(alice, "Cashout A") && hasLabel(alice, "Cashout B") && !hasLabel(alice, "Vault"),
                     "A loose cashbox reveals both cashouts and removes the vault highlight");
             require(!vault.isValid() && !vaultBody.isValid(), "Opening removes both native vault entities");
             Set<Display> bothCashouts = alice.active();
+            invoke(timed, highlights, arena, FinalsState.Phase.CASHBOX_AVAILABLE, -1, 5L, 40L, players, teams, positions);
+            require(plain(label(alice, "Cashout A")).contains("40")
+                            && plain(label(alice, "Cashout B")).contains("40"),
+                    "Both available cashouts show the configured duration above their native bodies");
             invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
             require(bothCashouts.equals(alice.active()), "Carrying preserves both cashout display pairs");
             TextDisplay cashoutA = label(alice, "Cashout A"), cashoutB = label(alice, "Cashout B");
@@ -127,12 +144,35 @@ public final class FinalsHighlightsSmoke {
             invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
             moved(cashoutA, oldA, -6, 0, 8, "Cashout labels follow replacement candidates");
             moved(bodyA, oldABody, -6, 0, 8, "Cashout outlines follow replacement candidates");
+            Location fractional = new Location(world, 508.2, 65.5, 495.9, 37, 80);
+            Location fractionalBefore = fractional.clone();
+            arena.stations[0] = fractional;
+            invoke(update, highlights, arena, FinalsState.Phase.CARRIED, -1, players, teams, positions);
+            close(bodyA.getLocation().getX(), 507.7,
+                    "Native cashout outline retains the body's fractional X anchor");
+            close(bodyA.getLocation().getY(), 65.5,
+                    "Native cashout outline retains its exact falling height");
+            close(bodyA.getLocation().getZ(), 495.4,
+                    "Native cashout outline retains the body's fractional Z anchor");
+            require(bodyA.getLocation().getYaw() == 0 && bodyA.getLocation().getPitch() == 0,
+                    "Native cashout outline clears saved spawn yaw and pitch");
+            var transform = bodyA.getTransformation();
+            close(bodyA.getLocation().getX() + transform.getTranslation().x + transform.getScale().x / 2d,
+                    fractional.getX(), "Native outlined model bounds stay centered on the actual cashout body");
+            close(bodyA.getLocation().getZ() + transform.getTranslation().z + transform.getScale().z / 2d,
+                    fractional.getZ(), "Native outlined model depth stays centered on the actual cashout body");
+            require(fractional.equals(fractionalBefore),
+                    "Native highlight updates preserve fractional objective location and saved facing");
             invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 1, players, teams, positions);
             require(alice.active().size() == 4 && alice.blocks().size() == 1
                     && !hasLabel(alice, "Cashout A") && hasLabel(alice, "Cashout B"),
                     "An ongoing deposit highlights only its active station B");
             require(!cashoutA.isValid() && !bodyA.isValid() && cashoutB.isValid(),
                     "Inactive station displays are removed while active station displays are reused");
+            invoke(timed, highlights, arena, FinalsState.Phase.CASHOUT, 1, 5L, 9L, players, teams, positions);
+            require(label(alice, "Cashout B") == cashoutB && plain(cashoutB).contains("9")
+                            && !hasLabel(alice, "Cashout A"),
+                    "Only the active cashout receives its live remaining-time label");
             invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
             require(hasLabel(alice, "Cashout A") && !hasLabel(alice, "Cashout B") && !cashoutB.isValid(),
                     "Changing the active deposit switches the single highlighted station");

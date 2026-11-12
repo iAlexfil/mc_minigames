@@ -31,6 +31,8 @@ Right-click the emerald vault to open it in five seconds, then touch the cashbox
 The carrier glows and moves slowly; aim and press Q to throw the cashbox forward
 with force, including when your selected hotbar slot is empty. The thrown box follows
 a gravity-driven arc; death still drops it normally.
+Throw the cashbox into either cashout to deposit it automatically for the thrower's
+team. Fast throws are checked along their full path, and walls block insertion.
 Right-click gold cashout A or B
 to deposit it. After 40 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
@@ -43,23 +45,35 @@ destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
-a draw. Death has a five-second respawn delay and two seconds of spawn protection,
+a draw. Death has a five-second respawn delay. When all three members of a
+three-player team are dead together, their respawns switch to a shared 12-second
+team-wipe countdown. They return at the same randomly selected team spawn; a
+disconnected teammate keeps that location and timer. Defibrillators cannot bypass
+the team-wipe delay. Respawns grant two seconds of spawn protection,
 during which combat and objectives are disabled. Teams remain fixed; a disconnected
 team has 15 seconds to return before the match ends without points. Connected
 winners receive three points; practice, draws and aborted matches award none.
 
 **Loadouts:** `/finals loadout` opens the menu. You can also use
 `/finals class S|M|L` (or `light|medium|heavy`) and `/finals weapon <id>`.
-Choices are saved per player in `finals/loadouts.yml`. Countdown changes apply
+Choose one specialization and three distinct, class-compatible gadgets in the
+menu. Choices are saved per player in `finals/loadouts.yml`; old saved loadouts
+receive the class's default equipment. Countdown changes apply
 immediately; combat changes apply on the next spawn. Opening the menu does not
 protect you from enemy damage. Original health and movement settings return when
 you leave.
 
-| Class | Health / movement | Weapons | Specialization and gadgets |
+| Class | Health / movement | Weapons | Specializations |
 |---|---|---|---|
-| Light (S) | 15 HP / 120% | M11 (`m11`), XP-54 (`xp54`), SR-84 (`sr84`), Sword (`sword`), Dagger (`dagger`) | Evasive Dash; Frag Grenade, Sonar Grenade, Vanishing Bomb |
-| Medium (M) | 25 HP / 100% | AKM (`akm`), FCAR (`fcar`), Model 1887 (`model1887`), Riot Shield (`riotshield`), Dual Blades (`dualblades`) | Healing Beam; Frag Grenade, Jump Pad, Defibrillator |
-| Heavy (L) | 35 HP / 85% | M60 (`m60`), Lewis Gun (`lewisgun`), SA1216 (`sa1216`), Sledgehammer (`sledgehammer`), Spear (`spear`) | Charge 'n' Slam; RPG-7, Dome Shield, Barricade |
+| Light (S) | 15 HP / 120% | M11 (`m11`), XP-54 (`xp54`), SR-84 (`sr84`), Sword (`sword`), Dagger (`dagger`) | Evasive Dash, Cloaking Device, Grappling Hook |
+| Medium (M) | 25 HP / 100% | AKM (`akm`), FCAR (`fcar`), Model 1887 (`model1887`), Riot Shield (`riotshield`), Dual Blades (`dualblades`) | Healing Beam, Guardian Turret, Dematerializer |
+| Heavy (L) | 35 HP / 85% | M60 (`m60`), Lewis Gun (`lewisgun`), SA1216 (`sa1216`), Sledgehammer (`sledgehammer`), Spear (`spear`) | Charge 'n' Slam, Mesh Shield, Winch Claw |
+
+All classes can choose Frag, Smoke, Gas, Pyro and Goo Grenades or Flashbangs.
+Light also has Sonar Grenade, Vanishing Bomb and Breach Charge; Medium has Sonar
+Grenade, Jump Pad, Defibrillator, Explosive Mine, Gas Mine and APS Turret; Heavy has RPG-7,
+Dome Shield, Barricade, Explosive Mine and Pyro Mine. The menu shows charges,
+recharge times and controls for every item.
 
 The primary weapon is in slot 1, three gadgets in slots 2–4, specialization in
 slot 5, demolition pickaxe in slot 8, and loadout menu in slot 9. Right-click to
@@ -75,8 +89,17 @@ The Healing Beam can heal allies (or the user more slowly); Defibrillator revive
 a nearby teammate at their death position during the respawn delay. Dome Shield
 blocks enemy attacks from outside while enemies can still enter it; cashbox
 carriers do not receive dome protection. Explosives can hurt their owner.
+Turrets and mines can be destroyed with weapons. APS intercepts enemy grenades
+and rockets. Smoke obscures enemies and extinguishes fire; fire clears gas.
+Dematerializer holes restore once clear of players. Mesh Shield requires holding
+the specialization and blocks attacks from the front. Winch Claw pulls enemies,
+cashboxes and cashouts, with terrain stopping their movement.
 Arena cover and temporary barricades are destructible, while objectives, spawn
 areas and the protected floor remain intact.
+
+Vault and cashout labels show their remaining timers. Eliminations appear in
+chat, cashout starts show a title, and vaults, cashouts, kills, explosions and
+respawns have sound cues.
 
 **Custom maps:** the generated arena is a fallback. You can import a vanilla Java
 overworld folder or ZIP, or register an existing persistent world. Put imports in
@@ -136,6 +159,16 @@ falling stations. Teammates have private outlines and name markers visible only 
 their allies, including a marker at their death location while they respawn. Normal
 overhead player names are hidden during Finals. Visibility is still subject to the
 server's entity tracking and the client's rendering distance.
+
+The Tab player list shows each contestant's equipped class and match kill count.
+Only teammates (including yourself) see current/max HP or a respawning indicator.
+Rows update during countdown and play, use each viewer's language, and return to
+their normal names when the match ends. Kills persist through respawns and reconnects.
+
+Every match starts with an 18-second loadout selection window. The loadout menu
+opens automatically, movement and combat remain locked, and changes apply immediately.
+You can close it and reopen it with the slot 9 item. The menu closes when play begins.
+`games/finals.yml` can extend `countdownSeconds` up to 60; values below 18 use 18 seconds.
 
 Setup requires admin permission. Saving validates bounds, safe spawn support,
 headroom and objective spacing. Native snapshots retain block data, chest
@@ -1629,9 +1662,12 @@ independent cloaks, on-hit wand cooldown and blocked-hit rejection, alongside al
 
 `checkFinals` checks cash-box ownership, deposits, theft, payouts and match results.
 `checkFinalsSession` exercises combat attribution, protection, interrupted steals,
-respawn/reconnect handling, frozen movement and TNT routing through event handlers.
+respawn/reconnect handling, three-player team wipes, frozen movement and TNT routing
+through event handlers. `checkFinalsEquipment` and `checkFinalsLoadouts` cover class
+restrictions, localized equipment and saved choices. `checkFinalsTeamWipes` covers
+shared deadlines; `checkFinalsCashboxFlight` checks swept throw-to-deposit collisions.
 `checkFinalsArena` checks the generated arena's protected objectives, safe spawns,
-traversable layout and destructible cover. Both run as part of `build`.
+traversable layout and destructible cover. All run as part of `build`.
 
 ## License
 

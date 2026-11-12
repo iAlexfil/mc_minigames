@@ -31,7 +31,8 @@ final class FinalsGadgets {
     private static final double DOME_RADIUS = 4;
     private final FinalsCombatContext context;
     private final FinalsGadgetState resources = new FinalsGadgetState();
-    private final Map<UUID, FinalsClass> equipped = new HashMap<>();
+    private final Map<UUID, FinalsLoadouts.Choice> equipped = new HashMap<>();
+    private final FinalsGadgetEffects effects;
     private final List<Ordnance> ordnance = new ArrayList<>();
     private final Map<UUID, Hidden> hidden = new HashMap<>();
     private final Map<UUID, Revealed> revealed = new HashMap<>();
@@ -82,6 +83,7 @@ final class FinalsGadgets {
 
     FinalsGadgets(FinalsCombatContext context) {
         this.context = context;
+        effects = new FinalsGadgetEffects(context, this);
     }
 
     private static String prefix(FinalsGadgetState.Kind kind) {
@@ -108,19 +110,7 @@ final class FinalsGadgets {
     }
 
     private static Material material(FinalsGadgetState.Kind kind) {
-        return switch (kind) {
-            case EVASIVE_DASH -> Material.FEATHER;
-            case FRAG_GRENADE -> Material.FIREWORK_STAR;
-            case SONAR_GRENADE -> Material.ENDER_EYE;
-            case VANISHING_BOMB -> Material.INK_SAC;
-            case HEALING_BEAM -> Material.BLAZE_ROD;
-            case JUMP_PAD -> Material.SLIME_BLOCK;
-            case DEFIBRILLATOR -> Material.SHEARS;
-            case CHARGE_N_SLAM -> Material.RAVAGER_SPAWN_EGG;
-            case RPG7 -> Material.FIRE_CHARGE;
-            case DOME_SHIELD -> Material.HEART_OF_THE_SEA;
-            case BARRICADE -> Material.IRON_BARS;
-        };
+        return kind.material();
     }
 
     private ItemStack item(Player player, FinalsGadgetState.Kind kind) {
@@ -153,17 +143,25 @@ final class FinalsGadgets {
     }
 
     void equip(Player player, FinalsClass role) {
+        equip(player, new FinalsLoadouts.Choice(role, FinalsWeapon.byClass(role).getFirst()));
+    }
+
+    void equip(Player player, FinalsLoadouts.Choice choice) {
         forget(player.getUniqueId());
-        equipped.put(player.getUniqueId(), role);
+        equipped.put(player.getUniqueId(), choice);
         refreshItems(player);
     }
 
+    private static FinalsGadgetState.Kind selected(FinalsLoadouts.Choice choice, int slot) {
+        return slot == 4 ? choice.specialization() : choice.gadgets().get(slot - 1);
+    }
+
     private void refreshItems(Player player) {
-        FinalsClass role = equipped.get(player.getUniqueId());
-        if (role == null) return;
-        var kinds = loadout(role);
+        var choice = equipped.get(player.getUniqueId());
+        if (choice == null) return;
         for (int slot = 1; slot <= 4; slot++)
-            player.getInventory().setItem(slot, I18n.item(item(player, kinds[slot - 1]), player));
+            player.getInventory()
+                    .setItem(slot, I18n.item(item(player, selected(choice, slot)), player));
     }
 
     boolean interact(PlayerInteractEvent event) {
@@ -174,13 +172,18 @@ final class FinalsGadgets {
         if (event.getAction() != Action.RIGHT_CLICK_AIR
                 && event.getAction() != Action.RIGHT_CLICK_BLOCK) return true;
         Player player = event.getPlayer();
-        FinalsClass role = equipped.get(player.getUniqueId());
+        var choice = equipped.get(player.getUniqueId());
         int slot = player.getInventory().getHeldItemSlot();
-        if (role == null
+        if (choice == null
                 || slot < 1
                 || slot > 4
-                || loadout(role)[slot - 1] != kind
+                || selected(choice, slot) != kind
                 || !context.canAct(player)) return true;
+        if (kind == CLOAKING_DEVICE && hidden.containsKey(player.getUniqueId())) {
+            reveal(player);
+            return true;
+        }
+        if (effects.toggle(player, kind)) return true;
         if (!resources.ready(player.getUniqueId(), kind, context.tick())) {
             player.sendActionBar(
                     text(
@@ -193,14 +196,24 @@ final class FinalsGadgets {
         boolean used =
                 switch (kind) {
                     case EVASIVE_DASH -> dash(player);
-                    case FRAG_GRENADE, SONAR_GRENADE, RPG7 -> launch(player, kind);
+                    case FRAG_GRENADE,
+                            SONAR_GRENADE,
+                            RPG7,
+                            SMOKE_GRENADE,
+                            FLASHBANG,
+                            GAS_GRENADE,
+                            PYRO_GRENADE,
+                            GOO_GRENADE ->
+                            launch(player, kind);
                     case VANISHING_BOMB -> vanish(player);
+                    case CLOAKING_DEVICE -> vanish(player, 200);
                     case HEALING_BEAM -> beginBeam(player);
                     case JUMP_PAD -> placePad(player);
                     case DEFIBRILLATOR -> defibrillate(player);
                     case CHARGE_N_SLAM -> beginCharge(player);
                     case DOME_SHIELD -> dome(player);
                     case BARRICADE -> barricade(player);
+                    default -> effects.activate(player, kind);
                 };
         if (used) {
             resources.use(player.getUniqueId(), kind, context.tick());
@@ -210,10 +223,10 @@ final class FinalsGadgets {
     }
 
     Component hud(Player player) {
-        FinalsClass role = equipped.get(player.getUniqueId());
-        if (role == null) return Component.empty();
+        var choice = equipped.get(player.getUniqueId());
+        if (choice == null) return Component.empty();
         int slot = player.getInventory().getHeldItemSlot();
-        var kind = loadout(role)[slot >= 1 && slot <= 4 ? slot - 1 : 3];
+        var kind = selected(choice, slot >= 1 && slot <= 4 ? slot : 4);
         long seconds = (resources.remaining(player.getUniqueId(), kind, context.tick()) + 19) / 20;
         if (seconds == 0)
             return text("hud_ready", I18n.tr(prefix(kind) + ".name"), kind.capacity, kind.capacity)
@@ -275,13 +288,17 @@ final class FinalsGadgets {
     }
 
     private boolean vanish(Player player) {
+        return vanish(player, 100);
+    }
+
+    private boolean vanish(Player player, long duration) {
         if (context.carrier(player)) {
             player.sendActionBar(text("carrier_visible"));
             return false;
         }
         restoreGlow(player.getUniqueId());
         reveal(player);
-        Hidden effect = new Hidden(player, context.tick() + 100, new HashSet<>());
+        Hidden effect = new Hidden(player, context.tick() + duration, new HashSet<>());
         hidden.put(player.getUniqueId(), effect);
         updateHidden(effect);
         context.world()
@@ -302,7 +319,13 @@ final class FinalsGadgets {
     void reveal(Player player) {
         Hidden effect = hidden.remove(player.getUniqueId());
         if (effect == null) return;
-        for (Player viewer : effect.viewers()) viewer.showPlayer(context.plugin(), effect.player());
+        for (Player viewer : effect.viewers())
+            if (!effects.smokeHides(viewer, effect.player()))
+                viewer.showPlayer(context.plugin(), effect.player());
+    }
+
+    boolean cloakedFor(Player viewer, Player target) {
+        return hidden.containsKey(target.getUniqueId()) && !context.friendly(viewer, target);
     }
 
     private boolean beginBeam(Player player) {
@@ -373,14 +396,14 @@ final class FinalsGadgets {
         return true;
     }
 
-    private Block placement(Player player) {
+    Block placement(Player player) {
         Block target = player.getTargetBlockExact(6, FluidCollisionMode.NEVER);
         if (target == null || !target.getType().isSolid()) return null;
         Block above = target.getRelative(BlockFace.UP);
         return placeable(above) ? above : null;
     }
 
-    private boolean placeable(Block block) {
+    boolean placeable(Block block) {
         if (!context.canPlace(block)
                 || !context.inside(block.getLocation().add(.5, .5, .5))
                 || !block.getType().isAir()
@@ -398,7 +421,7 @@ final class FinalsGadgets {
         return true;
     }
 
-    private void putCover(Player owner, Block block, Material material, long duration) {
+    void putCover(Player owner, Block block, Material material, long duration) {
         BlockData previous = block.getBlockData().clone();
         block.setType(material, false);
         cover.put(
@@ -452,13 +475,18 @@ final class FinalsGadgets {
     }
 
     boolean blocksDamage(Player target, Player source) {
+        return blocksDamage(target, source, source == null ? null : source.getLocation());
+    }
+
+    boolean blocksDamage(Player target, Player source, Location origin) {
         if (source == null
                 || source.equals(target)
                 || !context.active(target)
                 || !context.active(source)
                 || context.carrier(target)
                 || context.friendly(target, source)) return false;
-        Location to = target.getLocation(), from = source.getLocation();
+        Location to = target.getLocation(), from = origin == null ? source.getLocation() : origin;
+        if (effects.blocksDamage(target, source, from)) return true;
         for (Dome dome : domes) {
             Location c = dome.center();
             if (context.tick() < dome.expires()
@@ -488,7 +516,7 @@ final class FinalsGadgets {
         return true;
     }
 
-    private boolean clearLine(Location from, Location to) {
+    boolean clearLine(Location from, Location to) {
         if (!from.getWorld().equals(to.getWorld())) return false;
         Vector delta = to.toVector().subtract(from.toVector());
         double length = delta.length();
@@ -505,6 +533,7 @@ final class FinalsGadgets {
 
     void tick() {
         long now = context.tick();
+        effects.tick();
         for (Hidden effect : List.copyOf(hidden.values())) {
             if (now >= effect.expires()
                     || !context.canAct(effect.player())
@@ -556,6 +585,10 @@ final class FinalsGadgets {
             return;
         }
         Vector velocity = shot.velocity.clone();
+        if (effects.intercept(source, shot.position, shot.position.clone().add(velocity))) {
+            removeOrdnance(shot);
+            return;
+        }
         double length = velocity.length();
         RayTraceResult wall =
                 length < .001
@@ -600,6 +633,14 @@ final class FinalsGadgets {
             }
         }
         if (wall != null) {
+            if (shot.kind == PYRO_GRENADE || shot.kind == GOO_GRENADE) {
+                Location contact = wall.getHitPosition().toLocation(context.world());
+                if (wall.getHitBlockFace() != null)
+                    contact.add(wall.getHitBlockFace().getDirection().multiply(.1));
+                removeOrdnance(shot);
+                detonate(source, shot.kind, contact);
+                return;
+            }
             BlockFace face = wall.getHitBlockFace();
             if (face != null) {
                 Vector normal = face.getDirection();
@@ -620,8 +661,9 @@ final class FinalsGadgets {
         else context.world().spawnParticle(Particle.SMOKE, shot.position, 2, .03, .03, .03, 0);
     }
 
-    private void detonate(Player source, FinalsGadgetState.Kind kind, Location center) {
-        if (!context.canAct(source) || !context.inside(center)) return;
+    void detonate(Player source, FinalsGadgetState.Kind kind, Location center) {
+        if (!context.active(source) || !context.inside(center)) return;
+        if (effects.detonate(source, kind, center)) return;
         if (kind == SONAR_GRENADE) {
             context.world().spawnParticle(Particle.END_ROD, center, 48, 2.5, 1.5, 2.5, .03);
             context.world().playSound(center, Sound.BLOCK_BEACON_AMBIENT, .9f, 1.7f);
@@ -635,6 +677,7 @@ final class FinalsGadgets {
         }
         double radius = kind == RPG7 ? 4 : 4.5;
         double maximum = kind == RPG7 ? 12 : 10;
+        effects.blastDevices(source, center, radius, maximum);
         context.world().spawnParticle(Particle.EXPLOSION, center, 2);
         context.world()
                 .playSound(center, Sound.ENTITY_GENERIC_EXPLODE, 1, kind == RPG7 ? .8f : 1.2f);
@@ -649,12 +692,12 @@ final class FinalsGadgets {
                 continue;
             // Self damage is intentional, but is still routed through the session's protection
             // checks.
-            context.damage(target, source, Math.max(2, maximum * (1 - distance / radius)));
+            context.damage(target, source, Math.max(2, maximum * (1 - distance / radius)), center);
         }
         if (context.active(source)) destroyAround(center, kind == RPG7 ? 2 : 1.5);
     }
 
-    private void destroyAround(Location center, double radius) {
+    void destroyAround(Location center, double radius) {
         int r = (int) Math.ceil(radius);
         for (int x = -r; x <= r; x++)
             for (int y = -r; y <= r; y++)
@@ -830,7 +873,21 @@ final class FinalsGadgets {
         return true;
     }
 
+    boolean weaponBlocked(Player player) {
+        return effects.weaponBlocked(player);
+    }
+
+    double deviceDistance(Player source, Location eye, Vector direction, double reach) {
+        return effects.deviceDistance(source, eye, direction, reach);
+    }
+
+    boolean attackDevice(
+            Player source, Location eye, Vector direction, double reach, double damage) {
+        return effects.attackDevice(source, eye, direction, reach, damage);
+    }
+
     void forget(UUID id) {
+        effects.forget(id);
         resources.forget(id);
         equipped.remove(id);
         Hidden effect = hidden.get(id);
@@ -861,6 +918,7 @@ final class FinalsGadgets {
         for (UUID id : List.copyOf(revealed.keySet())) restoreGlow(id);
         for (Ordnance shot : List.copyOf(ordnance)) removeOrdnance(shot);
         for (Block block : List.copyOf(cover.keySet())) breakTemporary(block);
+        effects.clear();
         resources.clear();
         equipped.clear();
         beams.clear();

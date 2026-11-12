@@ -11,7 +11,7 @@ public final class FinalsConfig {
 
     private final PropertyBag bag = new PropertyBag("finals");
     public final Property<Integer> countdownSeconds =
-            bag.define("countdownSeconds", PropertyCodec.INT, 5);
+            bag.define("countdownSeconds", PropertyCodec.INT, 18);
     public final Property<Integer> durationSeconds =
             bag.define("durationSeconds", PropertyCodec.INT, 360);
     public final Property<Integer> vaultOpenSeconds =

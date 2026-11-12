@@ -3,6 +3,8 @@ package me.petr1furious.potatominigames.games.finals;
 import com.destroystokyo.paper.event.player.PlayerJumpEvent;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.core.config.ConfigRegistry;
+import me.petr1furious.potatominigames.core.player.ParticipantRegistry;
 import me.petr1furious.potatominigames.core.session.ActiveSession;
 import me.petr1furious.potatominigames.core.session.GamePhase;
 import me.petr1furious.potatominigames.core.text.Messages;
@@ -15,6 +17,7 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Entity;
@@ -66,6 +69,8 @@ public final class FinalsSessionCheck {
         protectionAndObjectiveGates();
         damageInterruptions();
         deathAndRejoin();
+        creditedEnemyKills();
+        teamWipeDeadlines();
         legacyItemsAndNativeMutation();
         customDamageAndActionGates();
         menuAndEquipmentSlotGates();
@@ -74,6 +79,7 @@ public final class FinalsSessionCheck {
         cashoutMovesOnlyAfterPayout();
         fixedCountdownAnchor();
         mapPreparationGates();
+        countdownLoadoutWindow();
         cashboxThrowDirection();
         cashboxThrowGuards();
         cashoutStealSiren();
@@ -259,6 +265,86 @@ public final class FinalsSessionCheck {
         FakePlayer unknown = new FakePlayer(UNKNOWN, rejoin.world.world);
         rejoin.session.onParticipantRejoin(unknown.player);
         check(!rejoin.connected().contains(UNKNOWN), "unknown player cannot join fixed roster");
+    }
+
+    private static void creditedEnemyKills() throws Exception {
+        Fixture credited = new Fixture();
+        credited.blue.killer = credited.red.player;
+        PlayerDeathEvent death = death(credited.blue.player);
+        credited.session.onPlayerDeath(death);
+        FinalsKills kills = (FinalsKills) field(credited.session, "kills").get(credited.session);
+        check(kills.snapshot().get(RED) == 1, "actual enemy death records native credited killer");
+        credited.session.onPlayerDeath(death);
+        check(kills.snapshot().get(RED) == 1, "duplicate session death cannot inflate kills");
+        check(credited.red.sounds == 1, "only the actual credited enemy kill plays the killer cue once");
+        credited.red.dead = true;
+        credited.connected().remove(RED);
+        credited.state.disconnect(RED, 100);
+        credited.session.onParticipantRejoin(credited.red.player);
+        check(kills.snapshot().get(RED) == 1, "session disconnect and recovery preserve match kills");
+
+        Fixture friendly = new Fixture();
+        friendly.blue.killer = friendly.blueMate.player;
+        friendly.session.onPlayerDeath(death(friendly.blue.player));
+        FinalsKills friendlyKills = (FinalsKills) field(friendly.session, "kills").get(friendly.session);
+        check(friendlyKills.snapshot().isEmpty(), "actual friendly death receives no kill credit");
+
+        Fixture outsider = new Fixture();
+        outsider.blue.killer = new FakePlayer(UNKNOWN, outsider.world.world).player;
+        outsider.session.onPlayerDeath(death(outsider.blue.player));
+        FinalsKills outsiderKills = (FinalsKills) field(outsider.session, "kills").get(outsider.session);
+        check(outsiderKills.snapshot().isEmpty(), "nonparticipant native killer receives no match credit");
+
+        Fixture countdown = new Fixture();
+        set(countdown.session, "state", null);
+        countdown.blue.killer = countdown.red.player;
+        countdown.session.onPlayerDeath(death(countdown.blue.player));
+        FinalsKills countdownKills = (FinalsKills) field(countdown.session, "kills").get(countdown.session);
+        check(countdownKills.snapshot().isEmpty(), "countdown accidents never count as match kills");
+    }
+
+    private static void teamWipeDeadlines() throws Exception {
+        Fixture f = new Fixture();
+        map(f.session, "roster").put(BLUE, 0);
+        map(f.session, "roster").put(BLUE_MATE, 0);
+        f.session.onPlayerDeath(death(f.red.player));
+        set(f.session, "tick", 110L);
+        f.session.onPlayerDeath(death(f.blue.player));
+        check(f.respawns().get(RED) == 160L && f.respawns().get(BLUE) == 170L,
+                "individual deaths keep the ordinary five-second schedule before a wipe");
+        set(f.session, "tick", 120L);
+        f.session.onPlayerDeath(death(f.blueMate.player));
+        check(f.respawns().values().stream().allMatch(deadline -> deadline == 360L),
+                "the third teammate death synchronizes all three timers to last death plus240 ticks");
+        set(f.session, "tick", 359L);
+        var spawn = FinalsSession.class.getDeclaredMethod("spawn", Player.class);
+        spawn.setAccessible(true);
+        spawn.invoke(f.session, f.red.player);
+        check(map(f.session, "classes").isEmpty(), "the shared spawn entry cannot bypass a pending team wipe");
+        f.respawns().remove(RED);
+        check(!context(f.session).revive(f.blue.player, f.red.player),
+                "revive rejects wipe-locked teammates even if another path makes a reviver active");
+        f.respawns().put(RED, 360L);
+        f.connected().remove(BLUE_MATE);
+        f.state.disconnect(BLUE_MATE, 359L);
+        set(f.session, "tick", 360L);
+        var prepare = FinalsSession.class.getDeclaredMethod("prepareTeamRespawns");
+        prepare.setAccessible(true);
+        prepare.invoke(f.session);
+        Map<UUID, Location> positions = map(f.session, "teamRespawnPositions");
+        check(positions.size() == 3 && positions.values().stream().allMatch(positions.get(RED)::equals),
+                "one chosen team spawn is cached identically for the entire cohort including an offline member");
+        f.blueMate.dead = true;
+        f.session.onParticipantRejoin(f.blueMate.player);
+        check(f.respawns().get(BLUE_MATE) == 360L && positions.containsKey(BLUE_MATE),
+                "late reconnect retains its completed wave and shared anchor instead of adding five more seconds");
+        f.connected().clear();
+        f.session.onEnd(me.petr1furious.potatominigames.core.game.EndReason.ABORTED);
+        check(positions.isEmpty(), "match cleanup releases pending shared-spawn anchors");
+    }
+
+    private static PlayerDeathEvent death(Player player) {
+        return new PlayerDeathEvent(player, null, new ArrayList<>(), 0, Component.text("death"), true);
     }
 
     private static void legacyItemsAndNativeMutation() throws Exception {
@@ -502,6 +588,68 @@ public final class FinalsSessionCheck {
         spawn.invoke(f.session, f.red.player);
         check(map(f.session, "classes").isEmpty(), "early spawn requests cannot apply uninitialized loadouts");
     }
+
+    private static void countdownLoadoutWindow() throws Exception {
+        ConfigRegistry configs = new ConfigRegistry(null);
+        map(configs, "files").put(FinalsConfig.FILE, new YamlConfiguration());
+        FinalsConfig defaults = new FinalsConfig(configs);
+        check(defaults.countdownSeconds.get() == 18, "fresh Finals configuration grants 18 seconds for loadout selection");
+        check(countdownFromStart(5) == 360L, "persisted five-second defaults cannot shorten the loadout window");
+        check(countdownFromStart(0) == 360L, "invalid short settings still grant the full minimum window");
+        check(countdownFromStart(45) == 900L, "longer configured loadout windows remain supported");
+        check(countdownFromStart(1000) == 1200L, "loadout selection is bounded to sixty seconds");
+
+        Fixture f = new Fixture(new Messages(() -> { throw new CountdownStarted(); }, null));
+        set(f.session, "state", null);
+        set(f.session, "countdownEnd", 360L);
+        set(f.session, "tick", 358L);
+        var tick = FinalsSession.class.getDeclaredMethod("tick");
+        tick.setAccessible(true);
+        tick.invoke(f.session);
+        check(field(f.session, "state").get(f.session) == null
+                        && (Long) field(f.session, "tick").get(f.session) == 359L,
+                "combat remains disabled through countdown tick359");
+        try {
+            tick.invoke(f.session);
+            throw new AssertionError("GO must broadcast at the end of the loadout window");
+        } catch (java.lang.reflect.InvocationTargetException expected) {
+            check(expected.getCause() instanceof CountdownStarted,
+                    "tick360 reaches the real GO broadcast after creating match state");
+        }
+        FinalsState started = (FinalsState) field(f.session, "state").get(f.session);
+        check(started != null && started.phase() == FinalsState.Phase.VAULT_CLOSED
+                        && started.matchDeadline() == 360L + FinalsState.Rules.defaults().matchTicks(),
+                "tick360 starts combat and its own complete match timer");
+    }
+
+    private static long countdownFromStart(int configured) throws Exception {
+        ConfigRegistry configs = new ConfigRegistry(null);
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("countdownSeconds", configured);
+        map(configs, "files").put(FinalsConfig.FILE, yaml);
+        FinalsConfig config = new FinalsConfig(configs);
+        ParticipantRegistry participants = new ParticipantRegistry();
+        FakeWorld world = new FakeWorld();
+        participants.add(new FakePlayer(RED, world.world).player);
+        participants.add(new FakePlayer(BLUE, world.world).player);
+        ActiveSession active = bare(ActiveSession.class);
+        set(active, "phase", GamePhase.RUNNING);
+        FinalsSession session = new FinalsSession(new SessionServices(null, active, participants,
+                null, null, null, null, null, null, null, new Messages(Audience::empty, null), null), config);
+        var start = FinalsSession.class.getDeclaredMethod("start");
+        start.setAccessible(true);
+        try {
+            start.invoke(session);
+            throw new AssertionError("The pure fixture must stop at the native world boundary");
+        } catch (java.lang.reflect.InvocationTargetException expected) {
+            check(expected.getCause() instanceof NullPointerException
+                            && expected.getCause().getMessage().contains("createVoid"),
+                    "actual start configures rules before requesting unavailable native world transport");
+        }
+        return (Long) field(session, "countdownEnd").get(session);
+    }
+
+    private static final class CountdownStarted extends RuntimeException {}
 
     private static void cashboxThrowDirection() {
         Vector aim = new Vector(0, 0, 4);
@@ -764,9 +912,12 @@ public final class FinalsSessionCheck {
         final FinalsSession session;
 
         Fixture() throws Exception {
+            this(new Messages(Audience::empty, null));
+        }
+
+        Fixture(Messages messages) throws Exception {
             ActiveSession active = bare(ActiveSession.class);
             set(active, "phase", GamePhase.RUNNING);
-            Messages messages = new Messages(Audience::empty, null);
             session =
                     new FinalsSession(
                             new SessionServices(
@@ -837,6 +988,8 @@ public final class FinalsSessionCheck {
         final Player player;
         Location location;
         boolean dead;
+        Player killer;
+        int sounds;
         int slot;
         InventoryHolder openHolder;
         final InventoryView view;
@@ -875,6 +1028,7 @@ public final class FinalsSessionCheck {
                                     switch (method.getName()) {
                                         case "getItemInMainHand" -> hand;
                                         case "getHeldItemSlot" -> slot;
+                                        case "setItemInOffHand" -> null;
                                         default ->
                                                 throw new AssertionError(
                                                         "Unexpected inventory call: "
@@ -886,6 +1040,7 @@ public final class FinalsSessionCheck {
                             (p, method, args) ->
                                     switch (method.getName()) {
                                         case "getUniqueId" -> id;
+                                        case "getName" -> id.toString();
                                         case "getWorld" -> location.getWorld();
                                         case "getGameMode" -> GameMode.SURVIVAL;
                                         case "getLocation" -> location.clone();
@@ -907,6 +1062,9 @@ public final class FinalsSessionCheck {
                                             yield null;
                                         }
                                         case "isDead" -> dead;
+                                        case "getKiller" -> killer;
+                                        case "playSound" -> { sounds++; yield null; }
+                                        case "setGlowing", "removePotionEffect" -> null;
                                         case "isSneaking" -> true;
                                         case "sendMessage" -> null;
                                         case "displayName" -> Component.text(id.toString());

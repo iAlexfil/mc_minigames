@@ -29,3 +29,23 @@ Cashout coverage checks persistence of additional candidates, exactly two distin
 Preview checks use real native display entities with simulated player transport: private visibility, numbered English/Russian labels, particles, live draft changes, entity reuse, snapshot exclusion, separate editor views, range limits, and cleanup on permission loss, world changes, disconnect and plugin disable. They verify entity metadata and lifecycle; visual appearance still benefits from an actual client playtest.
 
 Loadout checks use real registries, attributes, inventories, GUI events and weapon events with fake player transport. Real `onStart` creates the roster and arena; the production private spawn path is then explicitly invoked for each fixture player. Only player-lookup operations temporarily use a server proxy. Assertions cover all three classes, countdown and deferred choices, respawn application, leave/end stat restoration, all 15 weapon choices, gun/reload/melee inputs, and English/Russian metadata. This does not replace a multiplayer client playtest.
+
+The loadout fixture also covers the 18-second selection window, saved specialization
+and gadget choices, and two complete three-player team wipes. It checks early
+respawn/revive rejection, identical shared spawn positions, equipment restoration,
+and a disconnected member returning after the shared deadline.
+
+`FinalsSpecializationsSmoke.run(smokePlugin, mainPlugin)` is an additional synchronous
+fixture to invoke on the server thread in an isolated runner. Compile it alongside
+the other native fixtures. It exercises real deployable entities, turret line of
+sight and destruction, mine arming, remote breach detonation, APS interception,
+cloud effects, smoke/cloak visibility ownership, temporary terrain restoration
+with goo and fluids, full-body pull collisions, directional Mesh protection, and
+cleanup. Player transport is simulated; collision shapes, blocks and display
+entities use the actual server implementation.
+
+The combined run on 2026-11-12 passed against main JAR SHA-256
+`9620f6596571e9a238f4a62704fb2f5628e9cae75fdac57500c9f8c682654c37`:
+115 highlight, 7 name-tag, 43 teammate-glow, 39 Tab, 17 point-removal,
+88 cashout-physics, 36 thrown-deposit, 444 loadout/team-wipe,
+58 specialization/gadget, 12 drop-input and 32 asynchronous-map assertions.

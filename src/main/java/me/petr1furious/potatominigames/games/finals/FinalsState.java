@@ -144,12 +144,28 @@ public final class FinalsState {
                 || phase != Phase.CARRIED
                 || !player.equals(carrier)
                 || !validTeam(station)) return false;
+        beginCashout(player, station, now);
+        return true;
+    }
+
+    /** The session verifies the actual thrown item's owner and collision with this station. */
+    public boolean depositThrown(UUID thrower, int station, long now) {
+        tick(now);
+        if (phase != Phase.CASHBOX_AVAILABLE
+                || !validTeam(station)
+                || !roster.containsKey(thrower)
+                || withdrawn.contains(thrower)) return false;
+        // An in-flight item retains ownership after death or temporary disconnection.
+        beginCashout(thrower, station, now);
+        return true;
+    }
+
+    private void beginCashout(UUID player, int station, long now) {
         carrier = null;
         ownerTeam = teamOf(player);
         this.station = station;
         phase = Phase.CASHOUT;
         phaseDeadline = deadline(now, rules.cashoutTicks());
-        return true;
     }
 
     public boolean beginSteal(UUID player, long now) {

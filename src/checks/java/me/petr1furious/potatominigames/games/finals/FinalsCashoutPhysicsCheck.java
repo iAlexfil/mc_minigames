@@ -1,5 +1,6 @@
 package me.petr1furious.potatominigames.games.finals;
 
+import org.bukkit.Location;
 import org.bukkit.util.BoundingBox;
 
 import java.lang.reflect.Method;
@@ -20,6 +21,19 @@ public final class FinalsCashoutPhysicsCheck {
         } catch (ClassNotFoundException missing) {
             throw new AssertionError(
                     "Cashouts need simulated gravity instead of fixed gold blocks", missing);
+        }
+        Method displayPosition = physics.getDeclaredMethod("displayPosition", Location.class);
+        displayPosition.setAccessible(true);
+        for (float[] angles : new float[][]{{87.30008f, 76.34995f}, {179.84937f, 71.54993f}, {37, 90}}) {
+            Location saved = new Location(null, 700.3, 96.5, 700.8, angles[0], angles[1]);
+            Location display = (Location) displayPosition.invoke(null, saved);
+            close(display.getYaw(), 0, "Saved editor yaw must not rotate a cashout around its corner");
+            close(display.getPitch(), 0, "Saved editor pitch must not tilt a cashout into its support");
+            close(display.getX(), 699.8, "The display starts at the physics body's exact minimum X");
+            close(display.getY(), 96.5, "The display rests at the physics body's surface height");
+            close(display.getZ(), 700.3, "The display starts at the physics body's exact minimum Z");
+            close(saved.getYaw(), angles[0], "Rendering leaves saved player-facing yaw intact");
+            close(saved.getPitch(), angles[1], "Rendering leaves saved player-facing pitch intact");
         }
         fall =
                 physics.getDeclaredMethod(
@@ -73,6 +87,36 @@ public final class FinalsCashoutPhysicsCheck {
         Object cascading = step(5.25, -.8, List.of(new BoundingBox(0, 6.25, 0, 1, 6.75, 1),
                 new BoundingBox(0, 5, 0, 1, 5.5, 1)));
         close(value(cascading, "y"), 6.75, "Penetration correction rechecks the complete body against higher terrain");
+        Method movement;
+        try {
+            movement = physics.getDeclaredMethod("clipMovement", org.bukkit.util.Vector.class,
+                    org.bukkit.util.Vector.class, Collection.class);
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError("Winch movement must sweep the complete cashout body against terrain", missing);
+        }
+        movement.setAccessible(true);
+        var start = new org.bukkit.util.Vector(.5, 5, .5);
+        var desired = new org.bukkit.util.Vector(.35, -.2, 0);
+        var floor = new BoundingBox(-2, 4, -2, 3, 5, 3);
+        var dragged = (org.bukkit.util.Vector) movement.invoke(null, start, desired, List.of(floor));
+        close(dragged.getX(), .35, "Dragging across a supporting floor permits horizontal movement");
+        close(dragged.getY(), 0, "Dragging toward lower terrain never sinks into the current floor");
+        var wall = new BoundingBox(1.2, 5, 0, 1.3, 6, 1);
+        var stopped = (org.bukkit.util.Vector) movement.invoke(null, start,
+                new org.bukkit.util.Vector(.35, 0, 0), List.of(wall));
+        require(stopped.getX() > .19 && stopped.getX() <= .2,
+                "The complete moving cashout stops at a thin wall before penetrating it");
+        var ceiling = new BoundingBox(0, 6.1, 0, 1, 6.2, 1);
+        var lifted = (org.bukkit.util.Vector) movement.invoke(null, start,
+                new org.bukkit.util.Vector(0, .35, 0), List.of(ceiling));
+        require(lifted.getY() > .09 && lifted.getY() <= .1,
+                "Upward pulling respects the cashout's full head clearance");
+        var away = (org.bukkit.util.Vector) movement.invoke(null, start,
+                new org.bukkit.util.Vector(-.35, 0, 0), List.of(new BoundingBox(1, 5, 0, 2, 6, 1)));
+        close(away.getX(), -.35, "A body touching a wall can be pulled safely away from it");
+        require(start.equals(new org.bukkit.util.Vector(.5, 5, .5))
+                        && desired.equals(new org.bukkit.util.Vector(.35, -.2, 0)),
+                "Swept pull calculations never mutate source position or requested direction");
         System.out.println("FinalsCashoutPhysicsCheck: " + checks + " checks passed");
     }
 
@@ -91,5 +135,10 @@ public final class FinalsCashoutPhysicsCheck {
         checks++;
         if (Math.abs(actual - expected) > 1e-8)
             throw new AssertionError(message + ": expected " + expected + ", got " + actual);
+    }
+
+    private static void require(boolean condition, String message) {
+        checks++;
+        if (!condition) throw new AssertionError(message);
     }
 }

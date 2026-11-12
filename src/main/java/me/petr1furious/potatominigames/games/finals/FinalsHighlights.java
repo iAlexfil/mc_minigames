@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Session-owned, private objective outlines and ally name markers. */
 final class FinalsHighlights {
@@ -71,12 +72,26 @@ final class FinalsHighlights {
             Collection<Player> players,
             Map<UUID, Integer> teams,
             Function<Player, Location> teammateLocation) {
+        update(arena, phase, activeStation, -1, -1, players, teams, teammateLocation);
+    }
+
+    void update(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
+            long vaultSeconds, long cashoutSeconds, Collection<Player> players,
+            Map<UUID, Integer> teams, Function<Player, Location> teammateLocation) {
+        update(arena, phase, activeStation, vaultSeconds, cashoutSeconds, players, teams,
+                teammateLocation, ignored -> false);
+    }
+
+    void update(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
+            long vaultSeconds, long cashoutSeconds, Collection<Player> players,
+            Map<UUID, Integer> teams, Function<Player, Location> teammateLocation,
+            Predicate<Player> downed) {
         teammateGlow.update(arena.world(),
                 phase == FinalsState.Phase.FINISHED ? List.of() : players, teams);
         Set<UUID> present = new HashSet<>();
         for (Player player : players) {
-            List<Marker> markers = markers(arena, phase, activeStation,
-                    player, players, teams, teammateLocation);
+            List<Marker> markers = markers(arena, phase, activeStation, vaultSeconds, cashoutSeconds,
+                    player, players, teams, teammateLocation, downed);
             if (markers.isEmpty()) continue;
             UUID id = player.getUniqueId();
             present.add(id);
@@ -104,6 +119,20 @@ final class FinalsHighlights {
             Collection<Player> players,
             Map<UUID, Integer> teams,
             Function<Player, Location> teammateLocation) {
+        return markers(arena, phase, activeStation, -1, -1, viewer, players, teams, teammateLocation);
+    }
+
+    static List<Marker> markers(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
+            long vaultSeconds, long cashoutSeconds, Player viewer, Collection<Player> players,
+            Map<UUID, Integer> teams, Function<Player, Location> teammateLocation) {
+        return markers(arena, phase, activeStation, vaultSeconds, cashoutSeconds, viewer,
+                players, teams, teammateLocation, ignored -> false);
+    }
+
+    static List<Marker> markers(FinalsMapArena arena, FinalsState.Phase phase, int activeStation,
+            long vaultSeconds, long cashoutSeconds, Player viewer, Collection<Player> players,
+            Map<UUID, Integer> teams, Function<Player, Location> teammateLocation,
+            Predicate<Player> downed) {
         Integer team = teams.get(viewer.getUniqueId());
         if (phase == FinalsState.Phase.FINISHED
                 || team == null
@@ -117,7 +146,8 @@ final class FinalsHighlights {
                     new Marker(
                             "vault",
                             arena.vault().clone(),
-                            I18n.tr("finals.highlight.vault"),
+                            vaultSeconds < 0 ? I18n.tr("finals.highlight.vault")
+                                    : I18n.tr("finals.highlight.vault_time", vaultSeconds),
                             NamedTextColor.GREEN,
                             Material.EMERALD_BLOCK));
         }
@@ -129,7 +159,9 @@ final class FinalsHighlights {
                     new Marker(
                             "cashout-" + station,
                             arena.station(station).clone(),
-                            I18n.tr("finals.highlight.cashout", station == 0 ? "A" : "B"),
+                            cashoutSeconds < 0
+                                    ? I18n.tr("finals.highlight.cashout", station == 0 ? "A" : "B")
+                                    : I18n.tr("finals.highlight.cashout_time", station == 0 ? "A" : "B", cashoutSeconds),
                             NamedTextColor.GOLD,
                             Material.GOLD_BLOCK));
         }
@@ -145,7 +177,8 @@ final class FinalsHighlights {
                     new Marker(
                             "teammate-" + id,
                             point.clone(),
-                            I18n.tr("finals.highlight.teammate", target.getName()),
+                            I18n.tr(downed.test(target) ? "finals.highlight.downed"
+                                    : "finals.highlight.teammate", target.getName()),
                             team == 0 ? NamedTextColor.RED : NamedTextColor.BLUE,
                             null));
         }
@@ -249,6 +282,8 @@ final class FinalsHighlights {
 
     private static Location blockPosition(Marker marker) {
         Location point = marker.location();
+        if (marker.key().startsWith("cashout-"))
+            return new Location(point.getWorld(), point.getX() - .5, point.getY(), point.getZ() - .5);
         return new Location(point.getWorld(), point.getBlockX(), point.getY(), point.getBlockZ());
     }
 

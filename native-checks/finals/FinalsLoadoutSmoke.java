@@ -104,7 +104,10 @@ public final class FinalsLoadoutSmoke {
         FakePlayer light=new FakePlayer("NativeLight",initial,28,.27f,.14f);
         FakePlayer medium=new FakePlayer("NativeMedium",initial,32,.31f,.16f);
         FakePlayer heavy=new FakePlayer("NativeHeavy",initial,36,.29f,.18f);
-        for(FakePlayer player:List.of(light,medium,heavy))players.put(player.id,player);
+        FakePlayer opponentA=new FakePlayer("NativeOpponentA",initial,20,.2f,.1f);
+        FakePlayer opponentB=new FakePlayer("NativeOpponentB",initial,20,.2f,.1f);
+        FakePlayer opponentC=new FakePlayer("NativeOpponentC",initial,20,.2f,.1f);
+        for(FakePlayer player:List.of(light,medium,opponentA,heavy,opponentB,opponentC))players.put(player.id,player);
         serverField=Bukkit.class.getDeclaredField("server");serverField.setAccessible(true);
         preloadProductionClasses();
         Server proxy=(Server)Proxy.newProxyInstance(Server.class.getClassLoader(),new Class<?>[]{Server.class},(receiver,method,args)->{
@@ -125,6 +128,10 @@ public final class FinalsLoadoutSmoke {
             set(active,"test",true);set(active,"options",Map.of());
             Object configs=make("me.petr1furious.potatominigames.core.config.ConfigRegistry",main);
             Object config=make("FinalsConfig",configs);
+            Object countdown=get(config,"countdownSeconds");
+            call(countdown,"reset");
+            require(call(countdown,"get").equals(18),"Native Finals configuration defaults to an eighteen-second loadout window");
+            call(countdown,"set",5);
             Object stateService=make("me.petr1furious.potatominigames.core.player.PlayerStateService",main);
             Object sidebar=make("me.petr1furious.potatominigames.core.hud.SidebarService",(Supplier<Collection<Player>>)List::of);
             Object bossbars=make("me.petr1furious.potatominigames.core.hud.BossBarService",(Supplier<Collection<Player>>)()->players.values().stream().map(p->p.player).toList());
@@ -142,13 +149,30 @@ public final class FinalsLoadoutSmoke {
                 choices.put(entry.getKey().id,make("FinalsLoadouts$Choice",role,weapon));
             }
             session=make("FinalsSession",services,config,null,loadouts);
-            // Native world setup runs under CraftServer. Fake players are not online transports,
-            // so onStart builds the real roster/arena and the exact production spawn path is
-            // then invoked explicitly for each fixture player.
+            // World creation and mutation require the real CraftServer. As in the original
+            // fixture, fake participant transports are spawned explicitly after real startup.
             call(session,"onStart");
+            Object ticker=get(session,"ticker");
+            require(ticker!=null,"Prepared startup installs the production match ticker");
+            call(ticker,"cancel");
+            require((boolean)call(ticker,"isCancelled"),"Manual countdown checks disable the scheduled ticker to avoid interference");
             require(((Map<?,?>)get(session,"roster")).size()==players.size(),"Real onStart builds the full participant roster");
+            require((boolean)get(session,"revivalMode"),"The actual initial six-player roster enables three-v-three revival rules");
             require(get(session,"world") instanceof World,"Real onStart creates the native match world");
-            for(FakePlayer player:players.values())call(session,"spawn",player.player);
+            // These packet/display helpers have independent native coverage. Do not create
+            // world entities while the scoped lookup-only Server proxy drives manual ticks.
+            for(String helper:List.of("highlights","tabList")){
+                Object presentation=get(session,helper);
+                if(presentation!=null)call(presentation,"clear");
+                set(session,helper,null);
+            }
+            for(FakePlayer player:players.values()){
+                call(session,"spawn",player.player);
+                call(loadouts,"open",player.player);
+            }
+            require((long)get(session,"countdownEnd")==360L,"A legacy five-second setting still grants the complete eighteen-second loadout window");
+            Map<UUID,Integer> killsBeforeCountdown=(Map<UUID,Integer>)call(get(session,"kills"),"snapshot");
+            require(killsBeforeCountdown.isEmpty(),"A prepared match starts with no carried-over kills");
             Map<UUID,Object> frozen=(Map<UUID,Object>)get(session,"frozen");
             for(var entry:Map.of(light,15d,medium,25d,heavy,35d).entrySet()){
                 FakePlayer player=entry.getKey();double expected=entry.getValue();
@@ -158,24 +182,56 @@ public final class FinalsLoadoutSmoke {
                 for(int slot=1;slot<=4;slot++)require(player.storage.getItem(slot)!=null,"Native spawn equips each class gadget");
                 require(player.storage.getItem(8).getType()==Material.NETHER_STAR,"Native spawn equips loadout menu control");
                 close(player.walkSpeed,0,"Countdown freezes movement");
+                require((boolean)call(type("FinalsLoadouts"),"viewing",player.player),"The native selection fixture displays the Finals loadout menu");
             }
             close((float)call(frozen.get(light.id),"walkSpeed"),.24,"Light class speed before freeze");
             close((float)call(frozen.get(medium.id),"walkSpeed"),.20,"Medium class speed before freeze");
             close((float)call(frozen.get(heavy.id),"walkSpeed"),.17,"Heavy class speed before freeze");
 
-            call(loadouts,"open",light.player);
             require(light.top.getSize()==54&&light.top.getItem(11).getType()==Material.FEATHER,"Native loadout GUI paints class controls");
             InventoryClickEvent countdownClick=new InventoryClickEvent(light.view,InventoryType.SlotType.CONTAINER,15,ClickType.LEFT,InventoryAction.PICKUP_ALL);
             call(loadouts,"onClick",countdownClick);
             require(countdownClick.isCancelled(),"Loadout GUI consumes inventory clicks");
             close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),35,"Countdown GUI class change applies immediately");
             close((float)call(frozen.get(light.id),"walkSpeed"),.17,"Countdown class change saves Heavy speed while frozen");
-            withPlayerLookup(session,"releaseAll");
+            withPlayerLookup(session,"onParticipantQuit",heavy.player);
+            restored(heavy);
+            require(((Map<?,?>)get(session,"classes")).get(heavy.id).toString().equals("HEAVY"),
+                    "Temporary disconnect restores outside stats while preserving the equipped class for Tab");
+            withPlayerLookup(session,"onParticipantRejoin",heavy.player);
+            require(heavy.menuOpens==2&&(boolean)call(type("FinalsLoadouts"),"viewing",heavy.player),
+                    "Rejoining during the countdown automatically reopens the loadout menu");
+            close(heavy.walkSpeed,0,"A countdown rejoin remains frozen for the rest of the selection window");
+            set(session,"tick",358L);
+            withPlayerLookup(session,"tick");
+            require((long)get(session,"tick")==359L&&get(session,"state")==null,
+                    "At tick359 the full loadout countdown is still active");
+            for(FakePlayer player:players.values()){
+                close(player.walkSpeed,0,"Players remain frozen before the exact GO tick");
+                require((boolean)call(type("FinalsLoadouts"),"viewing",player.player),
+                        "The selection menu remains visible through tick359");
+            }
+            require(light.menuOpens==1&&medium.menuOpens==1&&heavy.menuOpens==2,
+                    "Countdown refreshes and class changes never reopen the menu repeatedly");
+            withPlayerLookup(session,"tick");
+            require((long)get(session,"tick")==360L&&get(session,"state")!=null,
+                    "Tick360 creates the actual match state at the end of eighteen seconds");
+            require(frozen.isEmpty(),"The actual GO transition releases every countdown freeze");
+            for(FakePlayer player:players.values())
+                require(!(boolean)call(type("FinalsLoadouts"),"viewing",player.player),
+                        "The actual GO transition closes the visible Finals loadout menus");
+            require(call(get(session,"kills"),"snapshot").equals(killsBeforeCountdown),
+                    "Countdown selection, reconnect and GO leave match kill totals unchanged");
             close(light.walkSpeed,.17,"Releasing countdown restores new class speed");
             close(medium.walkSpeed,.20,"Releasing countdown restores Medium speed");
             close(heavy.walkSpeed,.17,"Releasing countdown restores Heavy speed");
-            Map<UUID,Integer> roster=(Map<UUID,Integer>)get(session,"roster");
-            set(session,"state",make("FinalsState",roster,0L,get(session,"rules")));
+            withPlayerLookup(session,"onParticipantQuit",heavy.player);
+            withPlayerLookup(session,"onParticipantRejoin",heavy.player);
+            require(((Map<?,?>)get(session,"classes")).get(heavy.id).toString().equals("HEAVY")
+                            &&((Map<?,?>)get(session,"respawnAt")).containsKey(heavy.id),
+                    "A mid-match reconnect keeps the actual Heavy class throughout respawn recovery");
+            call(session,"spawn",heavy.player);
+            call(loadouts,"open",light.player);
             InventoryClickEvent activeClick=new InventoryClickEvent(light.view,InventoryType.SlotType.CONTAINER,13,ClickType.LEFT,InventoryAction.PICKUP_ALL);
             ItemStack previousWeapon=light.storage.getItem(0).clone();
             call(loadouts,"onClick",activeClick);
@@ -188,11 +244,16 @@ public final class FinalsLoadoutSmoke {
             close(light.attribute.getHealth(),25,"Next spawn fully heals selected class");
             close(light.walkSpeed,.20,"Next spawn applies selected Medium speed");
             equipmentChecks(loadouts,light,heavy);
+            customLoadoutChecks(loadouts,light);
+            teamWipeChecks(light,medium,heavy);
             call(session,"onParticipantLeave",light.player);
             restored(light);
+            require(!((Map<?,?>)get(session,"classes")).containsKey(light.id),"Permanent leave removes the former contestant's class entry");
             withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));
             restored(medium);restored(heavy);
             require(((Map<?,?>)get(session,"originalVitals")).isEmpty(),"Session end clears captured original vitals");
+            require(((Map<?,?>)get(session,"classes")).isEmpty(),"Session end clears retained match class entries");
+            hostedMatchChecks(services,config,registry,loadouts);
             smoke.getLogger().info("FINALS_LOADOUT_SMOKE_PASS: "+assertions+" native lifecycle, GUI, health, speed and restoration assertions");
             return assertions;
         } finally {
@@ -200,6 +261,116 @@ public final class FinalsLoadoutSmoke {
             serverField.set(null,originalServer);
             if(worlds!=null)call(worlds,"destroyVoid","finals");
             for(FakePlayer player:players.values())player.attribute.remove();
+        }
+    }
+
+    @SuppressWarnings("unchecked") private void hostedMatchChecks(Object services,Object config,Object registry,Object loadouts)throws Exception {
+        nativeAccess(()->{call(worlds,"destroyVoid","finals");return null;});
+        call(registry,"clear");
+        List<FakePlayer> hosted=players.values().stream().limit(5).toList();
+        for(FakePlayer player:hosted)call(registry,"add",player.player);
+        FakePlayer master=hosted.getLast(),first=hosted.get(0),second=hosted.get(1);
+        session=make("FinalsSession",services,config,null,loadouts);
+        call(session,"onStart");
+        call(get(session,"ticker"),"cancel");
+        for(String helper:List.of("highlights","tabList")) {
+            call(get(session,helper),"clear");set(session,helper,null);
+        }
+        Map<UUID,Integer> roster=(Map<UUID,Integer>)get(session,"roster");
+        require(roster.size()==4&&!roster.containsKey(master.id)&&master.id.equals(get(session,"gameMaster")),
+                "Actual five-player startup reserves the final participant as a teamless game master");
+        require(Collections.frequency(new ArrayList<>(roster.values()),0)==2
+                        &&Collections.frequency(new ArrayList<>(roster.values()),1)==2,
+                "The real hosted startup balances exactly two teams of two");
+        require((boolean)get(session,"revivalMode")&&get(session,"revives")!=null&&get(session,"respawnInput")!=null,
+                "Hosted two-v-two installs the actual statue and Space-input helpers");
+        for(FakePlayer player:hosted.subList(0,4))call(session,"spawn",player.player);
+        master.storage.setItem(0,new ItemStack(Material.DIAMOND_SWORD));
+        call(session,"spawnGameMaster",master.player);
+        require(master.mode==GameMode.SPECTATOR&&master.storage.isEmpty()
+                        &&!((Map<?,?>)get(session,"classes")).containsKey(master.id),
+                "The game master spawns in spectator mode without combat gear or a class");
+        require(!(boolean)call(session,"isInGame",master.player)&&(boolean)call(session,"mayFollowPlayers",master.player),
+                "The game master is excluded from fighting and enabled for the spectator camera");
+        require(master.walkSpeed>0&&master.flySpeed>0&&!((Map<?,?>)get(session,"frozen")).containsKey(master.id),
+                "The game master can move during the contestants' loadout countdown");
+        Object commands=make("FinalsEventCommands",main,(Supplier<Object>)()->session);
+        try {
+            commandDenied(commands,first,"low_gravity","A contestant cannot use game-master event commands");
+            commandDenied(commands,master,"low_gravity","The game master cannot start an event before GO");
+            call(commands,"open",master.player);
+            require((boolean)call(type("FinalsEventCommands"),"isMenu",master.top)
+                            &&master.top.getSize()==27&&nativeText(master.top.getItem(10)).length()>0,
+                    "The game master's event menu renders real localized native item controls");
+            InventoryOpenEvent open=new InventoryOpenEvent(master.view);
+            call(session,"onInventoryOpen",open);
+            require(!open.isCancelled(),"Session inventory rules permit the spectator event menu");
+            master.player.closeInventory();
+            set(session,"tick",360L);
+            set(session,"state",make("FinalsState",new LinkedHashMap<>(roster),360L,get(session,"rules")));
+            withPlayerLookup(session,"releaseAll");
+            require((boolean)call(session,"gameEventsReady"),"The GM controls become ready only after the match begins");
+            Object events=get(session,"gameEvents");
+            call(commands,"execute",master.player,"low_gravity");
+            require(call(events,"activeKind").toString().equals("LOW_GRAVITY")&&(int)call(events,"remainingSeconds")==30,
+                    "The authorized GM command starts a thirty-second event");
+            commandDenied(commands,master,"meteor_shower","A second event cannot overlap an already active event");
+            call(commands,"execute",master.player,"stop");
+            require(call(events,"activeKind")==null,"The GM stop command ends the active event");
+            call(commands,"open",master.player);
+            InventoryClickEvent click=new InventoryClickEvent(master.view,InventoryType.SlotType.CONTAINER,13,ClickType.LEFT,InventoryAction.PICKUP_ALL);
+            call(commands,"onClick",click);
+            require(click.isCancelled()&&call(events,"activeKind").toString().equals("METEOR_SHOWER"),
+                    "Clicking the spectator menu starts the selected meteor event without moving its icon");
+            call(session,"onParticipantQuit",master.player);
+            require(call(events,"activeKind")==null&&!(boolean)call(session,"isGameMaster",master.player),
+                    "Disconnecting the game master stops the event and removes their control authority");
+            call(session,"onParticipantRejoin",master.player);
+            require((boolean)call(session,"isGameMaster",master.player)&&master.mode==GameMode.SPECTATOR
+                            &&!roster.containsKey(master.id),
+                    "Rejoining restores the same teamless spectator game-master role");
+            call(commands,"onClick",click);
+            require(call(events,"activeKind")==null,"A menu closed on disconnect cannot act as a new live control");
+
+            PlayerTeleportEvent follow=new PlayerTeleportEvent(master.player,master.location,first.location,PlayerTeleportEvent.TeleportCause.SPECTATE);
+            call(session,"onPlayerTeleport",follow);
+            require(!follow.isCancelled(),"The game master may use spectator follow teleports within the arena");
+            PlayerTeleportEvent escape=new PlayerTeleportEvent(master.player,master.location,Bukkit.getWorlds().getFirst().getSpawnLocation(),PlayerTeleportEvent.TeleportCause.COMMAND);
+            call(session,"onPlayerTeleport",escape);
+            require(escape.isCancelled(),"The session keeps game-master teleports inside the match world");
+            set(session,"tick",500L);
+            downedSpaceChecks(first,second);
+            long start=(long)get(session,"tick")+100;
+            Map<UUID,Long> respawns=(Map<UUID,Long>)get(session,"respawnAt");
+            for(int index=0;index<2;index++) {
+                FakePlayer victim=hosted.get(index);set(session,"tick",start+index*10);
+                call(session,"onPlayerDeath",new PlayerDeathEvent(victim.player,DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));
+            }
+            long deadline=start+330;
+            require(respawns.size()==2&&respawns.values().stream().allMatch(at->at==deadline)
+                            &&!respawns.containsKey(master.id),
+                    "Both duo deaths start one sixteen-second wipe without involving the spectator game master");
+            require(((Map<?,?>)get(get(session,"revives"),"statues")).isEmpty(),
+                    "A duo wipe clears both old revive statues");
+            set(session,"tick",deadline);call(session,"prepareTeamRespawns");
+            call(session,"spawn",first.player);call(session,"spawn",second.player);
+            require(first.location.equals(second.location)&&respawns.isEmpty(),
+                    "Both duo teammates return equipped to the identical shared spawn location");
+            call(session,"onParticipantLeave",master.player);
+            call(session,"onParticipantRejoin",master.player);
+            require(!(boolean)call(session,"isGameMaster",master.player),
+                    "A GM who permanently leaves cannot recover control by reconnecting");
+        } finally {
+            org.bukkit.event.HandlerList.unregisterAll((org.bukkit.event.Listener)commands);
+            withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));
+        }
+    }
+
+    private void commandDenied(Object commands,FakePlayer player,String action,String label)throws Exception {
+        try {call(commands,"execute",player.player,action);throw new AssertionError(label);}
+        catch(Exception expected) {
+            if(!expected.getClass().getSimpleName().equals("CommandFailure"))throw expected;
+            assertions++;
         }
     }
     @SuppressWarnings("unchecked") private void equipmentChecks(Object loadouts,FakePlayer source,FakePlayer victim)throws Exception {
@@ -258,6 +429,225 @@ public final class FinalsLoadoutSmoke {
         InventoryClickEvent event=new InventoryClickEvent(player.view,InventoryType.SlotType.CONTAINER,slot,ClickType.LEFT,InventoryAction.PICKUP_ALL);
         call(loadouts,"onClick",event);require(event.isCancelled(),"Native GUI click is consumed");
     }
+    @SuppressWarnings("unchecked") private void customLoadoutChecks(Object loadouts,FakePlayer player)throws Exception {
+        call(loadouts,"open",player.player);
+        click(loadouts,player,11);
+        click(loadouts,player,22);
+        Object selected=call(loadouts,"choice",player.id);
+        require(call(selected,"specialization").toString().equals("CLOAKING_DEVICE"),
+                "The actual loadout menu saves the selected class specialization");
+        List<Object> available=(List<Object>)call(type("FinalsGadgetState$Kind"),"gadgets",value("FinalsClass","LIGHT"));
+        Object smoke=value("FinalsGadgetState$Kind","SMOKE_GRENADE");
+        Object flash=value("FinalsGadgetState$Kind","FLASHBANG");
+        call(loadouts,"open",player.player,1);
+        click(loadouts,player,available.indexOf(smoke));
+        selected=call(loadouts,"choice",player.id);
+        require(((List<?>)call(selected,"gadgets")).get(1)==smoke,
+                "The gadget picker replaces only the chosen gadget slot");
+        call(loadouts,"open",player.player,2);
+        Object before=call(loadouts,"choice",player.id);
+        click(loadouts,player,available.indexOf(value("FinalsGadgetState$Kind","FRAG_GRENADE")));
+        require(before.equals(call(loadouts,"choice",player.id)),
+                "The actual picker rejects a duplicate gadget without changing the saved loadout");
+        click(loadouts,player,available.indexOf(flash));
+        call(loadouts,"open",player.player);
+        click(loadouts,player,29);
+        selected=call(loadouts,"choice",player.id);
+        require(call(selected,"weapon").toString().equals("XP54")
+                        &&call(selected,"specialization").toString().equals("CLOAKING_DEVICE")
+                        &&((List<?>)call(selected,"gadgets")).get(1)==smoke
+                        &&((List<?>)call(selected,"gadgets")).get(2)==flash,
+                "Selecting a new weapon preserves the custom specialization and gadget trio");
+        call(session,"spawn",player.player);
+        var key=new NamespacedKey("potatominigames","finals_gadget");
+        for(var entry:Map.of(1,"FRAG_GRENADE",2,"SMOKE_GRENADE",3,"FLASHBANG",4,"CLOAKING_DEVICE").entrySet()) {
+            ItemStack equipped=player.storage.getItem(entry.getKey());
+            require(entry.getValue().equals(equipped.getItemMeta().getPersistentDataContainer()
+                            .get(key,org.bukkit.persistence.PersistentDataType.STRING)),
+                    "A real respawn equips the chosen gadget or specialization in its intended slot");
+            nativeText(equipped);
+        }
+        Object reloaded=make("FinalsLoadouts",main,(Consumer<Player>)ignored -> {});
+        require(selected.equals(call(reloaded,"choice",player.id)),
+                "Reloading the real YAML restores all custom choices");
+        org.bukkit.event.HandlerList.unregisterAll((org.bukkit.event.Listener)reloaded);
+        player.player.closeInventory();
+    }
+    @SuppressWarnings("unchecked") private void teamWipeChecks(FakePlayer first,FakePlayer second,FakePlayer third)throws Exception {
+        List<FakePlayer> cohort=List.of(first,second,third);
+        Map<UUID,Integer> roster=(Map<UUID,Integer>)get(session,"roster");
+        Map<UUID,Integer> previousRoster=new LinkedHashMap<>(roster);
+        Object previousState=get(session,"state");
+        Map<UUID,Long> respawns=(Map<UUID,Long>)get(session,"respawnAt");
+        Map<UUID,Location> positions=(Map<UUID,Location>)get(session,"teamRespawnPositions");
+        long base=(long)get(session,"tick")+100;
+        try {
+            roster.replaceAll((id,team)->cohort.stream().anyMatch(player->player.id.equals(id))?0:1);
+            set(session,"state",make("FinalsState",new LinkedHashMap<>(roster),base,get(session,"rules")));
+            set(session,"tick",base);
+            require(respawns.isEmpty(),"The native wipe fixture begins with three living contestants");
+            downedSpaceChecks(first,second);
+            base=(long)get(session,"tick")+100;
+            for(int wave=0;wave<2;wave++) {
+                long start=base+wave*500;
+                for(int index=0;index<cohort.size();index++) {
+                    FakePlayer victim=cohort.get(index);
+                    set(session,"tick",start+index*10);
+                    nativeAccess(()->{
+                        PlayerDeathEvent event=new PlayerDeathEvent(victim.player,
+                                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true);
+                        call(session,"onPlayerDeath",event);return null;
+                    });
+                    if(index<2)require(respawns.get(victim.id)==start+index*10+160,
+                            "The first two actual death handlers unlock Space eight seconds later");
+                }
+                long deadline=start+340;
+                require(cohort.stream().allMatch(player->Objects.equals(respawns.get(player.id),deadline)),
+                        "The third native death handler synchronizes all three to last death plus sixteen seconds");
+                set(session,"tick",deadline-1);
+                Location before=first.location.clone();
+                nativeAccess(()->{call(session,"spawn",first.player);return null;});
+                require(first.location.equals(before)&&respawns.containsKey(first.id),
+                        "The actual spawn entry cannot release a teammate one tick before the shared deadline");
+                Object context=call(session,"combatContext");
+                Long held=respawns.remove(first.id);
+                Location firstBefore=first.location.clone();
+                GameMode modeBefore=first.mode;
+                try {
+                    first.mode=GameMode.SURVIVAL;
+                    first.location=((Map<UUID,Location>)get(session,"deathLocations")).get(second.id).clone();
+                    require(!(boolean)call(context,"revive",second.player,first.player),
+                            "The production defibrillator context cannot bypass a pending wipe even with an active reviver");
+                } finally { respawns.put(first.id,held);first.location=firstBefore;first.mode=modeBefore; }
+                if(wave==1) {
+                    nativeAccess(()->{call(session,"onParticipantQuit",third.player);return null;});
+                    require(Objects.equals(respawns.get(third.id),deadline),
+                            "Temporary disconnect preserves a dead cohort member's shared deadline");
+                }
+                set(session,"tick",deadline);
+                nativeAccess(()->{call(session,"prepareTeamRespawns");return null;});
+                Location chosen=positions.get(first.id).clone();
+                require(positions.size()==3&&positions.values().stream().allMatch(chosen::equals),
+                        "Deadline resolution chooses and clones exactly one spawn for the whole team");
+                for(FakePlayer player:wave==0?cohort:List.of(first,second))
+                    nativeAccess(()->{call(session,"spawn",player.player);return null;});
+                if(wave==1) {
+                    require(positions.containsKey(third.id)&&Objects.equals(respawns.get(third.id),deadline),
+                            "An offline teammate retains its completed cohort anchor until returning");
+                    nativeAccess(()->{call(session,"onParticipantRejoin",third.player);return null;});
+                    require(Objects.equals(respawns.get(third.id),deadline),
+                            "Late rejoin cannot replace the completed wipe with a fresh five-second wait");
+                    nativeAccess(()->{call(session,"spawn",third.player);return null;});
+                }
+                for(FakePlayer player:cohort) {
+                    require(player.location.equals(chosen)&&player.mode==GameMode.SURVIVAL,
+                            "Actual equipped respawns place every teammate at the same complete Location");
+                    require(player.storage.getItem(0)!=null&&player.storage.getItem(4)!=null,
+                            "Group respawns reinstall primary weapons and class specialization");
+                    require(player.attribute.getHealth()==player.attribute.getAttribute(Attribute.MAX_HEALTH).getValue(),
+                            "Group respawns restore full class health");
+                }
+                require(respawns.isEmpty()&&positions.isEmpty(),
+                        "Completed native waves consume every timer and cached anchor before the next wipe");
+            }
+        } finally {
+            roster.clear();roster.putAll(previousRoster);
+            set(session,"state",previousState);
+        }
+    }
+
+    @SuppressWarnings("unchecked") private void downedSpaceChecks(FakePlayer target,FakePlayer ally)throws Exception {
+        long start=(long)get(session,"tick");
+        Map<UUID,Long> respawns=(Map<UUID,Long>)get(session,"respawnAt");
+        nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+        require(respawns.get(target.id)==start+160,"A real three-v-three death records an eight-second Space unlock");
+        Object revival=get(session,"revives");
+        Object statue=((Map<?,?>)get(revival,"statues")).get(target.id);
+        require(statue!=null&&((Entity)get(statue,"item")).isValid(),"A real elimination creates its native teammate statue");
+        set(session,"tick",start+159);
+        nativeAccess(()->{call(session,"requestRespawn",target.id);return null;});
+        require(respawns.containsKey(target.id),"Space before the eighth second cannot respawn the eliminated player");
+        // These helpers mutate native entities. Pause them only while the lookup transport
+        // drives the real tick; player spawning must never execute under that proxy.
+        Object cashouts=get(session,"cashouts");
+        target.mode=GameMode.SPECTATOR;
+        set(session,"revives",null);set(session,"cashouts",null);
+        try {
+            withPlayerLookup(session,"tick");
+            require((long)get(session,"tick")==start+160&&respawns.containsKey(target.id),
+                    "The actual eighth-second tick unlocks Space without automatically spawning");
+            set(session,"tick",start+400);
+            withPlayerLookup(session,"tick");
+            require(respawns.containsKey(target.id),"An eliminated player remains downed well after eight seconds without pressing Space");
+        } finally {set(session,"revives",revival);set(session,"cashouts",cashouts);}
+        require(((Entity)get(statue,"item")).isValid(),"The statue remains revivable indefinitely after Space unlocks");
+        withNativePlayerLookup(session,"requestRespawn",target,target.id);
+        require(!respawns.containsKey(target.id)&&target.mode==GameMode.SURVIVAL,
+                "The actual ready Space callback performs the equipped native respawn");
+        require(!((Map<?,?>)get(revival,"statues")).containsKey(target.id),"Space consumes the player's statue and pending revive state");
+
+        set(session,"tick",(long)get(session,"tick")+100);
+        nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+        Object context=call(session,"reviveContext");
+        Location point=(Location)call(revival,"location",target.id);
+        require((boolean)withNativePlayerLookup(context,"complete",target,target.id,ally.player,point,true),
+                "The accepted defibrillator rebuild callback reaches the real Session completion path");
+        close(target.attribute.getHealth(),target.attribute.getAttribute(Attribute.MAX_HEALTH).getValue()/2,
+                "A completed defibrillator rebuild restores exactly half class health");
+        Object combat=call(session,"combatContext");
+        require((boolean)call(combat,"gadgetsBlocked",target.player)&&!(boolean)call(combat,"weaponBlocked",target.player),
+                "Defibrillator sickness blocks gadgets while preserving primary weapons");
+        long sickness=(long)get(session,"tick")+100;
+        set(session,"tick",sickness-1);
+        require((boolean)call(combat,"gadgetsBlocked",target.player),"Gadget sickness lasts its complete five seconds");
+        set(session,"tick",sickness);
+        require(!(boolean)call(combat,"gadgetsBlocked",target.player),"Gadget sickness ends on the exact five-second boundary");
+
+        set(session,"revivalMode",false);
+        Location allyBefore=ally.location.clone();
+        try {
+            nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
+                    DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));return null;});
+            ally.location=target.location.clone();
+            require((boolean)nativeAccess(()->call(combat,"revive",target.player,ally.player)),
+                    "Other match sizes retain the original instant Defibrillator completion path");
+            require(!respawns.containsKey(target.id),"The legacy instant revive consumes its ordinary respawn timer");
+            close(target.attribute.getHealth(),target.attribute.getAttribute(Attribute.MAX_HEALTH).getValue(),
+                    "The legacy instant revive retains full class health");
+        } finally {set(session,"revivalMode",true);ally.location=allyBefore;}
+
+        Object geometry=get(session,"arena");
+        Location cell=(Location)call(geometry,"spawn",0,0);
+        World world=cell.getWorld();int x=cell.getBlockX(),y=cell.getBlockY(),z=cell.getBlockZ();
+        var wall=world.getBlockAt(x+1,y,z).getState();
+        var ceiling=world.getBlockAt(x,y+2,z).getState();
+        try {
+            nativeAccess(()->{wall.getBlock().setType(Material.STONE,false);ceiling.getBlock().setType(Material.STONE,false);return null;});
+            Location edge=new Location(world,x+.95,y+.75,z+.5);
+            Location safe=(Location)nativeAccess(()->call(session,"safeRevivePoint",target.id,edge));
+            close(safe.getX(),x+.5,"Revival centers the complete player body away from an adjacent wall");
+            close(safe.getY(),y,"Revival removes fractional height before checking ceiling clearance");
+            require(safe.getX()+.3<x+1&&safe.getY()+1.8<y+2,
+                    "The actual returned standing position clears both the wall and low ceiling");
+        } finally {nativeAccess(()->{wall.update(true,false);ceiling.update(true,false);return null;});}
+    }
+
+    /** Resolve one fake player, then restore CraftServer before native equipment/world access. */
+    private Object withNativePlayerLookup(Object owner,String method,FakePlayer target,Object... args)throws Exception {
+        Server previous=Bukkit.getServer();
+        Server oneShot=(Server)Proxy.newProxyInstance(Server.class.getClassLoader(),new Class<?>[]{Server.class},(receiver,operation,values)->{
+            if(operation.getName().equals("getPlayer")&&values[0].equals(target.id)) {
+                serverField.set(null,originalServer);return target.player;
+            }
+            try{return operation.invoke(originalServer,values);}
+            catch(InvocationTargetException failure){throw failure.getCause();}
+        });
+        serverField.set(null,oneShot);
+        try{return call(owner,method,args);}finally{serverField.set(null,previous);}
+    }
+
     private String nativeText(ItemStack item){
         require(item!=null&&item.hasItemMeta()&&item.getItemMeta().displayName()!=null,"Native item name exists");
         var meta=item.getItemMeta();List<Component> components=new ArrayList<>();components.add(meta.displayName());
@@ -286,7 +676,7 @@ public final class FinalsLoadoutSmoke {
         final InventoryView view;
         final Player player;
         Inventory top=fallback;Locale locale=Locale.ENGLISH;
-        Location location;GameMode mode=GameMode.SURVIVAL;float walkSpeed,flySpeed;int held;
+        Location location;GameMode mode=GameMode.SURVIVAL;float walkSpeed,flySpeed;int held,menuOpens;
         ItemStack offhand=new ItemStack(Material.AIR),chest;
         Scoreboard scoreboard=Bukkit.getScoreboardManager().getMainScoreboard();
         FakePlayer(String name,World world,double originalHealth,float originalWalk,float originalFly){
@@ -317,6 +707,7 @@ public final class FinalsLoadoutSmoke {
                 case "getWalkSpeed"->walkSpeed;case "getFlySpeed"->flySpeed;
                 case "setWalkSpeed"->{walkSpeed=(float)a[0];yield null;}case "setFlySpeed"->{flySpeed=(float)a[0];yield null;}
                 case "isOnline"->true;case "isDead","isSneaking"->false;
+                case "getKiller"->null;
                 case "getAttribute"->attribute.getAttribute((Attribute)a[0]);case "getHealth"->attribute.getHealth();
                 case "setHealth"->{attribute.setHealth((double)a[0]);yield null;}
                 case "getActivePotionEffects"->List.copyOf(effects.values());
@@ -325,7 +716,7 @@ public final class FinalsLoadoutSmoke {
                 case "getMaximumAir"->300;
                 case "teleport"->{location=((Location)a[0]).clone();yield true;}
                 case "getScoreboard"->scoreboard;case "setScoreboard"->{scoreboard=(Scoreboard)a[0];yield null;}
-                case "openInventory"->{top=(Inventory)a[0];yield view();}
+                case "openInventory"->{top=(Inventory)a[0];menuOpens++;yield view();}
                 case "getOpenInventory"->view();case "closeInventory"->{top=fallback;yield null;}
                 default->zero(m.getReturnType());
             });

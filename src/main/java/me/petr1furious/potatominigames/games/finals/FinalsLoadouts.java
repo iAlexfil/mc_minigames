@@ -9,6 +9,7 @@ import io.papermc.paper.command.brigadier.Commands;
 import me.petr1furious.potatominigames.core.command.CommandFailure;
 import me.petr1furious.potatominigames.core.command.GameCommands;
 import me.petr1furious.potatominigames.core.command.Suggest;
+import me.petr1furious.potatominigames.games.finals.FinalsGadgetState.Kind;
 import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.text.Component;
@@ -30,12 +31,53 @@ import java.util.function.Consumer;
 
 /** Persistent personal choices; a session applies them only at its next safe spawn. */
 final class FinalsLoadouts implements Listener {
-    record Choice(FinalsClass playerClass, FinalsWeapon weapon) {
+    record Choice(
+            FinalsClass playerClass, FinalsWeapon weapon, Kind specialization, List<Kind> gadgets) {
         Choice {
             Objects.requireNonNull(playerClass);
             Objects.requireNonNull(weapon);
             if (weapon.playerClass() != playerClass)
                 throw new IllegalArgumentException("Weapon class mismatch");
+            Objects.requireNonNull(specialization);
+            gadgets = List.copyOf(gadgets);
+            if (!specialization.specialization() || !specialization.allowed(playerClass))
+                throw new IllegalArgumentException("Specialization class mismatch");
+            if (gadgets.size() != 3
+                    || new HashSet<>(gadgets).size() != 3
+                    || gadgets.stream()
+                            .anyMatch(kind -> kind.specialization() || !kind.allowed(playerClass)))
+                throw new IllegalArgumentException(
+                        "Choose three distinct class-appropriate gadgets");
+        }
+
+        Choice(FinalsClass playerClass, FinalsWeapon weapon) {
+            this(
+                    playerClass,
+                    weapon,
+                    Kind.defaultSpecialization(playerClass),
+                    Kind.defaultGadgets(playerClass));
+        }
+
+        Choice withClass(FinalsClass type) {
+            return type == playerClass
+                    ? this
+                    : new Choice(type, FinalsWeapon.byClass(type).getFirst());
+        }
+
+        Choice withWeapon(FinalsWeapon next) {
+            return next.playerClass() == playerClass
+                    ? new Choice(playerClass, next, specialization, gadgets)
+                    : new Choice(next.playerClass(), next);
+        }
+
+        Choice withSpecialization(Kind next) {
+            return new Choice(playerClass, weapon, next, gadgets);
+        }
+
+        Choice withGadget(int slot, Kind next) {
+            List<Kind> selected = new ArrayList<>(gadgets);
+            selected.set(slot, next);
+            return new Choice(playerClass, weapon, specialization, selected);
         }
 
         static Choice defaults() {
@@ -57,10 +99,7 @@ final class FinalsLoadouts implements Listener {
             for (String key : yaml.getKeys(false)) {
                 try {
                     UUID id = UUID.fromString(key);
-                    FinalsClass type = FinalsClass.parse(yaml.getString(key + ".class"));
-                    FinalsWeapon weapon = FinalsWeapon.parse(yaml.getString(key + ".weapon"));
-                    if (type != null && weapon != null && weapon.playerClass() == type)
-                        choices.put(id, new Choice(type, weapon));
+                    choices.put(id, readChoice(yaml, key));
                 } catch (IllegalArgumentException ignored) {
                 }
             }
@@ -72,16 +111,50 @@ final class FinalsLoadouts implements Listener {
         return choices.getOrDefault(id, Choice.defaults());
     }
 
+    static Choice readChoice(YamlConfiguration yaml, String key) {
+        FinalsClass type = FinalsClass.parse(yaml.getString(key + ".class"));
+        if (type == null) return Choice.defaults();
+        FinalsWeapon weapon = FinalsWeapon.parse(yaml.getString(key + ".weapon"));
+        if (weapon == null || weapon.playerClass() != type)
+            weapon = FinalsWeapon.byClass(type).getFirst();
+        Kind specialization = Kind.defaultSpecialization(type);
+        List<Kind> gadgets = Kind.defaultGadgets(type);
+        try {
+            Kind stored =
+                    Kind.valueOf(
+                            yaml.getString(key + ".specialization", "").toUpperCase(Locale.ROOT));
+            if (stored.specialization() && stored.allowed(type)) specialization = stored;
+        } catch (IllegalArgumentException ignored) {
+        }
+        try {
+            List<Kind> stored =
+                    yaml.getStringList(key + ".gadgets").stream()
+                            .map(value -> Kind.valueOf(value.toUpperCase(Locale.ROOT)))
+                            .toList();
+            if (stored.size() == 3
+                    && new HashSet<>(stored).size() == 3
+                    && stored.stream()
+                            .allMatch(kind -> !kind.specialization() && kind.allowed(type)))
+                gadgets = stored;
+        } catch (IllegalArgumentException ignored) {
+        }
+        return new Choice(type, weapon, specialization, gadgets);
+    }
+
+    static void writeChoice(YamlConfiguration yaml, String key, Choice value) {
+        yaml.set(key + ".class", value.playerClass().id());
+        yaml.set(key + ".weapon", value.weapon().id());
+        yaml.set(key + ".specialization", value.specialization().id());
+        yaml.set(key + ".gadgets", value.gadgets().stream().map(Kind::id).toList());
+    }
+
     private void choose(Player player, Choice choice) throws CommandFailure {
         UUID id = player.getUniqueId();
         Choice previous = choices.put(id, choice);
         try {
             Files.createDirectories(file.getParent());
             YamlConfiguration yaml = new YamlConfiguration();
-            choices.forEach((owner, value) -> {
-                yaml.set(owner + ".class", value.playerClass().id());
-                yaml.set(owner + ".weapon", value.weapon().id());
-            });
+            choices.forEach((owner, value) -> writeChoice(yaml, owner.toString(), value));
             Path temp = Files.createTempFile(file.getParent(), "loadouts-", ".yml");
             try {
                 yaml.save(temp.toFile());
@@ -109,6 +182,7 @@ final class FinalsLoadouts implements Listener {
                         choice.playerClass().display(),
                         choice.weapon().display()));
         changed.accept(player);
+        if (viewing(player)) paint(player, player.getOpenInventory().getTopInventory());
     }
 
     void register(LiteralArgumentBuilder<CommandSourceStack> root) {
@@ -143,18 +217,7 @@ final class FinalsLoadouts implements Listener {
                                                                                 "finals.loadout.unknown_class"));
                                                             Choice current =
                                                                     choice(player.getUniqueId());
-                                                            choose(
-                                                                    player,
-                                                                    new Choice(
-                                                                            type,
-                                                                            current.playerClass()
-                                                                                            == type
-                                                                                    ? current
-                                                                                            .weapon()
-                                                                                    : FinalsWeapon
-                                                                                            .byClass(
-                                                                                                    type)
-                                                                                            .getFirst()));
+                                                            choose(player, current.withClass(type));
                                                         }))));
         root.then(
                 Commands.literal("weapon")
@@ -183,18 +246,23 @@ final class FinalsLoadouts implements Listener {
                                                                                 "finals.loadout.unknown_weapon"));
                                                             choose(
                                                                     player,
-                                                                    new Choice(
-                                                                            weapon.playerClass(),
-                                                                            weapon));
+                                                                    choice(player.getUniqueId())
+                                                                            .withWeapon(weapon));
                                                         }))));
     }
 
     private static final class Menu implements InventoryHolder {
         final UUID owner;
+        final int gadgetSlot;
         Inventory inventory;
 
         Menu(UUID owner) {
+            this(owner, -1);
+        }
+
+        Menu(UUID owner, int gadgetSlot) {
             this.owner = owner;
+            this.gadgetSlot = gadgetSlot;
         }
 
         @Override
@@ -221,10 +289,20 @@ final class FinalsLoadouts implements Listener {
     }
 
     void open(Player player) {
-        Menu holder = new Menu(player.getUniqueId());
+        open(player, -1);
+    }
+
+    private void open(Player player, int gadgetSlot) {
+        Menu holder = new Menu(player.getUniqueId(), gadgetSlot);
         holder.inventory =
                 Bukkit.createInventory(
-                        holder, 54, I18n.render(I18n.tr("finals.loadout.title"), player));
+                        holder,
+                        54,
+                        I18n.render(
+                                gadgetSlot < 0
+                                        ? I18n.tr("finals.loadout.title")
+                                        : I18n.tr("finals.loadout.gadgets_title", gadgetSlot + 1),
+                                player));
         paint(player, holder.inventory);
         player.openInventory(holder.inventory);
     }
@@ -232,6 +310,11 @@ final class FinalsLoadouts implements Listener {
     private void paint(Player player, Inventory inventory) {
         inventory.clear();
         Choice selected = choice(player.getUniqueId());
+        if (((Menu) inventory.getHolder(false)).gadgetSlot >= 0) {
+            paintGadgets(
+                    player, inventory, selected, ((Menu) inventory.getHolder(false)).gadgetSlot);
+            return;
+        }
         for (FinalsClass type : FinalsClass.values()) {
             Material icon =
                     switch (type) {
@@ -250,9 +333,23 @@ final class FinalsLoadouts implements Listener {
                                             "finals.loadout.stats",
                                             type.health(),
                                             Math.round(type.walkSpeed() * 500)),
-                                    I18n.tr("finals.loadout.kit." + type.id()),
+                                    I18n.tr("finals.loadout.custom_kit"),
                                     I18n.tr("finals.loadout.select_class")),
                             type == selected.playerClass()));
+        }
+        List<Kind> specializations = Kind.specializations(selected.playerClass());
+        for (int i = 0; i < specializations.size(); i++) {
+            Kind kind = specializations.get(i);
+            inventory.setItem(
+                    20 + i * 2,
+                    item(
+                            player,
+                            kind.material(),
+                            kind.display(),
+                            List.of(
+                                    I18n.tr("finals.gadget." + kind.id() + ".lore"),
+                                    I18n.tr("finals.loadout.select_specialization")),
+                            kind == selected.specialization()));
         }
         List<FinalsWeapon> weapons = FinalsWeapon.byClass(selected.playerClass());
         for (int i = 0; i < weapons.size(); i++) {
@@ -290,6 +387,43 @@ final class FinalsLoadouts implements Listener {
         inventory.setItem(
                 49,
                 item(player, Material.BARRIER, I18n.tr("finals.loadout.close"), List.of(), false));
+        for (int i = 0; i < 3; i++) {
+            Kind kind = selected.gadgets().get(i);
+            inventory.setItem(
+                    38 + i * 2,
+                    item(
+                            player,
+                            kind.material(),
+                            I18n.tr("finals.loadout.gadget_slot", i + 1, kind.display()),
+                            List.of(
+                                    I18n.tr("finals.gadget." + kind.id() + ".lore"),
+                                    I18n.tr("finals.loadout.change_gadget")),
+                            false));
+        }
+    }
+
+    private void paintGadgets(Player player, Inventory inventory, Choice selected, int slot) {
+        List<Kind> options = Kind.gadgets(selected.playerClass());
+        for (int i = 0; i < options.size(); i++) {
+            Kind kind = options.get(i);
+            boolean elsewhere =
+                    selected.gadgets().contains(kind) && selected.gadgets().get(slot) != kind;
+            inventory.setItem(
+                    i,
+                    item(
+                            player,
+                            kind.material(),
+                            kind.display(),
+                            List.of(
+                                    I18n.tr("finals.gadget." + kind.id() + ".lore"),
+                                    I18n.tr(
+                                            elsewhere
+                                                    ? "finals.loadout.already_equipped"
+                                                    : "finals.loadout.select_gadget")),
+                            selected.gadgets().get(slot) == kind));
+        }
+        inventory.setItem(
+                49, item(player, Material.ARROW, I18n.tr("finals.loadout.back"), List.of(), false));
     }
 
     private static ItemStack item(
@@ -323,30 +457,49 @@ final class FinalsLoadouts implements Listener {
                             () -> {
                                 if (player.isOnline()
                                         && player.getOpenInventory().getTopInventory()
-                                                == menu.inventory) player.closeInventory();
+                                                == menu.inventory) {
+                                    if (menu.gadgetSlot >= 0) open(player);
+                                    else player.closeInventory();
+                                }
                             });
             return;
         }
         Choice previous = choice(player.getUniqueId());
         Choice next = null;
-        if (slot == 11 || slot == 13 || slot == 15) {
+        if (menu.gadgetSlot >= 0) {
+            List<Kind> options = Kind.gadgets(previous.playerClass());
+            if (slot < 0 || slot >= options.size()) return;
+            Kind selected = options.get(slot);
+            if (previous.gadgets().contains(selected)
+                    && previous.gadgets().get(menu.gadgetSlot) != selected) {
+                player.sendMessage(I18n.tr("finals.loadout.already_equipped"));
+                return;
+            }
+            next = previous.withGadget(menu.gadgetSlot, selected);
+        } else if (slot == 38 || slot == 40 || slot == 42) {
+            int selectedSlot = (slot - 38) / 2;
+            Bukkit.getScheduler()
+                    .runTask(
+                            plugin,
+                            () -> {
+                                if (player.isOnline()
+                                        && player.getOpenInventory().getTopInventory()
+                                                == menu.inventory) open(player, selectedSlot);
+                            });
+            return;
+        } else if (slot == 20 || slot == 22 || slot == 24) {
+            List<Kind> options = Kind.specializations(previous.playerClass());
+            int index = (slot - 20) / 2;
+            if (index < options.size()) next = previous.withSpecialization(options.get(index));
+        } else if (slot == 11 || slot == 13 || slot == 15) {
             FinalsClass type = FinalsClass.values()[(slot - 11) / 2];
-            next =
-                    new Choice(
-                            type,
-                            type == previous.playerClass()
-                                    ? previous.weapon()
-                                    : FinalsWeapon.byClass(type).getFirst());
+            next = previous.withClass(type);
         } else if (slot >= 28 && slot <= 32) {
-            next =
-                    new Choice(
-                            previous.playerClass(),
-                            FinalsWeapon.byClass(previous.playerClass()).get(slot - 28));
+            next = previous.withWeapon(FinalsWeapon.byClass(previous.playerClass()).get(slot - 28));
         }
         if (next != null) {
             try {
                 choose(player, next);
-                paint(player, event.getInventory());
             } catch (CommandFailure error) {
                 player.sendMessage(error.text());
             }

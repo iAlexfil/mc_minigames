@@ -109,6 +109,7 @@ final class FinalsWeapons {
     private boolean usable(Player player, Equipped held) {
         return held != null
                 && context.canAct(player)
+                && !context.weaponBlocked(player)
                 && context.active(player)
                 && context.inside(player.getLocation())
                 && context.playerClass(player) == held.weapon.playerClass()
@@ -194,6 +195,13 @@ final class FinalsWeapons {
             RayTraceResult hit = trace(source, eye, direction, weapon.range(), .04);
             double distance =
                     hit == null ? weapon.range() : eye.toVector().distance(hit.getHitPosition());
+            double device = context.deviceDistance(source, eye, direction, distance);
+            if (Double.isFinite(device) && device <= distance) {
+                context.attackDevice(
+                        source, eye, direction, device + .001, weapon.damageAt(device, false));
+                if (pellet == 0) tracer(eye, direction, device);
+                continue;
+            }
             // One tracer per shot keeps the LMG/shotgun effect bounded.
             if (pellet == 0) tracer(eye, direction, distance);
             if (hit != null
@@ -215,7 +223,8 @@ final class FinalsWeapons {
         // A shotgun deals one attributed damage event per target, avoiding per-pellet immunity
         // artifacts.
         for (var hit : hits.entrySet()) {
-            if (enemy(source, hit.getKey())) context.damage(hit.getKey(), source, hit.getValue());
+            if (enemy(source, hit.getKey()))
+                context.damage(hit.getKey(), source, hit.getValue(), eye);
         }
         if (!hits.isEmpty())
             source.playSound(source.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .35f, 1.7f);
@@ -281,10 +290,8 @@ final class FinalsWeapons {
         Equipped held = equipped.get(source.getUniqueId());
         if (held == null) return;
         event.setCancelled(true);
-        if (!(event.getEntity() instanceof Player target)
-                || held.weapon.isGun()
-                || !usable(source, held)) return;
-        swing(source, held, target);
+        if (held.weapon.isGun() || !usable(source, held)) return;
+        swing(source, held, event.getEntity() instanceof Player target ? target : null);
     }
 
     private void swing(Player source, Equipped held, Player expected) {
@@ -305,6 +312,15 @@ final class FinalsWeapons {
                         Sound.ENTITY_PLAYER_ATTACK_SWEEP,
                         .6f,
                         held.weapon == FinalsWeapon.SLEDGEHAMMER ? .65f : 1.3f);
+        Location eye = source.getEyeLocation();
+        double reach =
+                hit == null ? held.weapon.range() : eye.toVector().distance(hit.getHitPosition());
+        double device = context.deviceDistance(source, eye, eye.getDirection(), reach);
+        if (Double.isFinite(device)
+                && device <= reach
+                && context.attackDevice(
+                        source, eye, eye.getDirection(), device + .001, held.weapon.damage()))
+            return;
         if (hit == null
                 || !(hit.getHitEntity() instanceof Player target)
                 || expected != null && !expected.getUniqueId().equals(target.getUniqueId())
@@ -315,7 +331,7 @@ final class FinalsWeapons {
                         target.getLocation().getDirection(),
                         source.getLocation().toVector().subtract(target.getLocation().toVector())))
             damage *= 4;
-        context.damage(target, source, damage);
+        context.damage(target, source, damage, eye);
         source.playSound(source.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .35f, 1.7f);
     }
 

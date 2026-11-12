@@ -15,6 +15,8 @@ public final class FinalsStateCheck {
     private static int checks;
 
     public static void main(String[] args) {
+        thrownCashoutLifecycle();
+        thrownCashoutEligibilityAndDeadlines();
         vaultAndCashboxLifecycle();
         cashoutScoresOnceAndResets();
         targetVictory();
@@ -25,6 +27,100 @@ public final class FinalsStateCheck {
         skippedTicksRespectTimeout();
         invalidInputsAndImmutableViews();
         System.out.println("FinalsStateCheck: " + checks + " checks passed");
+    }
+
+    private static void thrownCashoutLifecycle() {
+        FinalsState state = new FinalsState(ROSTER, 0);
+        check(!depositThrown(state, RED, 0, 0), "a thrown deposit cannot bypass a closed vault");
+        state.activateVault(RED, 0);
+        check(!depositThrown(state, RED, 0, 99), "a thrown deposit cannot bypass vault opening");
+        state.pickUp(RED, 100);
+        check(!depositThrown(state, BLUE, 0, 100), "a thrown deposit cannot consume another player's carried cashbox");
+        state.drop(RED, 100);
+        check(!depositThrown(state, RED, -1, 100) && !depositThrown(state, RED, 2, 100),
+                "thrown cashboxes reject invalid cashout indices");
+        check(!depositThrown(state, UNKNOWN, 0, 100) && !depositThrown(state, null, 0, 100),
+                "only a known thrower can own a thrown cashout");
+        check(state.phase() == FinalsState.Phase.CASHBOX_AVAILABLE && state.ownerTeam() == -1,
+                "rejected throws leave the loose cashbox and ownership intact");
+        check(depositThrown(state, RED, 1, 101), "a loose thrown cashbox deposits atomically on arrival");
+        check(state.phase() == FinalsState.Phase.CASHOUT && state.carrier() == null
+                        && state.ownerTeam() == 0 && state.station() == 1,
+                "thrown deposit credits the thrower's team and station without an intermediate carrier");
+        check(state.phaseDeadline() == 901 && state.score(0) == 0 && state.stealDeadlines().isEmpty(),
+                "arrival starts a complete cashout duration and awards no immediate cash");
+        check(!depositThrown(state, BLUE, 0, 102) && !state.deposit(RED, 0, 102),
+                "duplicate collision and normal deposit cannot replace an ongoing thrown cashout");
+        check(state.ownerTeam() == 0 && state.station() == 1 && state.phaseDeadline() == 901,
+                "duplicate arrivals preserve ownership, destination and original payout deadline");
+        check(state.beginSteal(BLUE, 200) && state.completeSteal(BLUE, 300),
+                "a thrown cashout uses normal enemy steal rules");
+        check(state.ownerTeam() == 1 && state.phaseDeadline() == 901,
+                "stealing a thrown cashout never resets its arrival deadline");
+        state.tick(900);
+        check(state.score(1) == 0, "a thrown cashout never pays early");
+        state.tick(901);
+        check(state.score(1) == 10_000 && state.phase() == FinalsState.Phase.VAULT_CLOSED,
+                "a thrown cashout pays its final owner once and resets the objective");
+        state.tick(902);
+        check(state.score(1) == 10_000, "a completed thrown cashout cannot pay twice");
+
+        FinalsState simultaneous = launched(RED, FinalsState.Rules.defaults());
+        check(depositThrown(simultaneous, RED, 0, 100), "fixture deposits a thrown cashbox");
+        simultaneous.beginSteal(BLUE, 800);
+        check(!simultaneous.completeSteal(BLUE, 900) && simultaneous.score(0) == 10_000,
+                "payout still wins an exact simultaneous steal after a thrown deposit");
+    }
+
+    private static void thrownCashoutEligibilityAndDeadlines() {
+        FinalsState disconnected = launched(BLUE, FinalsState.Rules.defaults());
+        disconnected.disconnect(BLUE, 100);
+        check(!disconnected.isActive(BLUE) && depositThrown(disconnected, BLUE, 1, 101),
+                "an already launched cashbox retains credit after temporary disconnection");
+        check(disconnected.ownerTeam() == 1 && disconnected.carrier() == null,
+                "disconnected throwers are credited without reconnecting or picking up the box");
+        FinalsState dead = launched(RED, FinalsState.Rules.defaults());
+        dead.death(RED, 100);
+        check(depositThrown(dead, RED, 0, 101), "thrower death never cancels an already launched cashbox");
+        FinalsState withdrawn = launched(RED, FinalsState.Rules.defaults());
+        withdrawn.withdraw(RED, 100);
+        check(!depositThrown(withdrawn, RED, 0, 101)
+                        && withdrawn.phase() == FinalsState.Phase.CASHBOX_AVAILABLE,
+                "permanently withdrawn throwers cannot start a cashout");
+
+        FinalsState beforeDeadline = launched(RED, rules(150));
+        check(depositThrown(beforeDeadline, RED, 0, 149), "arrival immediately before match timeout is valid");
+        beforeDeadline.tick(150);
+        check(beforeDeadline.isFinished() && beforeDeadline.score(0) == 0,
+                "a late thrown deposit cannot extend the match to reach its payout");
+        FinalsState exactDeadline = launched(RED, rules(150));
+        check(!depositThrown(exactDeadline, RED, 0, 150) && exactDeadline.isFinished(),
+                "match timeout is processed before a simultaneous thrown arrival");
+        check(!depositThrown(exactDeadline, RED, 1, 151), "finished matches reject later thrown collisions");
+        throwsType(IllegalArgumentException.class, () -> depositThrown(exactDeadline, RED, 0, 149),
+                "thrown arrival timestamps obey the existing monotonic clock");
+    }
+
+    private static FinalsState launched(UUID thrower, FinalsState.Rules rules) {
+        FinalsState state = new FinalsState(ROSTER, 0, rules);
+        check(state.activateVault(thrower, 0) && state.pickUp(thrower, 100) && state.drop(thrower, 100),
+                "fixture launches the actual carrier's opened cashbox");
+        return state;
+    }
+
+    private static boolean depositThrown(FinalsState state, UUID thrower, int station, long now) {
+        try {
+            return (Boolean) FinalsState.class.getMethod("depositThrown", UUID.class, int.class, long.class)
+                    .invoke(state, thrower, station, now);
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError("FinalsState must atomically accept a thrown cashbox at a cashout", missing);
+        } catch (java.lang.reflect.InvocationTargetException failure) {
+            if (failure.getCause() instanceof RuntimeException cause) throw cause;
+            if (failure.getCause() instanceof Error cause) throw cause;
+            throw new AssertionError("Unexpected thrown-deposit failure", failure.getCause());
+        } catch (IllegalAccessException failure) {
+            throw new AssertionError("Thrown deposits must be available to the session", failure);
+        }
     }
 
     private static void vaultAndCashboxLifecycle() {

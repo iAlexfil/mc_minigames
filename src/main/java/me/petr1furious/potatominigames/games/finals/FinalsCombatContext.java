@@ -6,6 +6,7 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
 
 import java.util.Collection;
 import java.util.UUID;
@@ -39,6 +40,35 @@ interface FinalsCombatContext {
     void track(Entity entity);
 
     void damage(Player target, Player source, double amount);
+
+    default void damage(Player target, Player source, double amount, Location origin) {
+        damage(target, source, amount);
+    }
+
+    default boolean weaponBlocked(Player player) {
+        return false;
+    }
+
+    default boolean gadgetsBlocked(Player player) {
+        return false;
+    }
+
+    default double deviceDistance(Player source, Location eye, Vector direction, double reach) {
+        return Double.POSITIVE_INFINITY;
+    }
+
+    default boolean attackDevice(
+            Player source, Location eye, Vector direction, double reach, double damage) {
+        return false;
+    }
+
+    default boolean tryPullCashout(Player source, Location eye, Vector direction, double reach) {
+        return false;
+    }
+
+    default boolean tryPullCashbox(Player source, Location eye, Vector direction, double reach) {
+        return false;
+    }
 
     void reveal(Player player);
 

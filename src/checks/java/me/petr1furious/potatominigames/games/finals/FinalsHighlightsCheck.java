@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Server-independent objective and teammate visibility regressions. */
 public final class FinalsHighlightsCheck {
@@ -51,7 +52,101 @@ public final class FinalsHighlightsCheck {
         phaseVisibility();
         viewerAndTeammateVisibility();
         movingGeometryAndSourceSafety();
+        fractionalCashoutOutlineAlignment();
+        timedObjectiveLabels();
+        downedTeammateLabels();
         System.out.println("FinalsHighlightsCheck: " + checks + " checks passed");
+    }
+
+    private static void timedObjectiveLabels() throws Exception {
+        Method timed;
+        try {
+            timed = markers.getDeclaringClass().getDeclaredMethod("markers", FinalsMapArena.class,
+                    FinalsState.Phase.class, int.class, long.class, long.class, Player.class,
+                    Collection.class, Map.class, Function.class);
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError("Objective labels need remaining-time descriptors", missing);
+        }
+        timed.setAccessible(true);
+        Fixture f = new Fixture();
+        Function<Player, Location> positions = player -> f.locations.get(player.getUniqueId());
+        var opening = keyed((List<?>) timed.invoke(null, f.arena, FinalsState.Phase.VAULT_OPENING,
+                -1, 4L, 40L, f.viewer, f.players, f.teams, positions));
+        Component vault = (Component) value(opening.get("vault"), "label");
+        String english = plain(vault, Locale.ENGLISH);
+        require(english.contains("Vault") && english.contains("4"), "Opening vault labels show their remaining seconds");
+        require(plain(vault, Locale.forLanguageTag("ru")).contains("4")
+                        && plain(vault, Locale.forLanguageTag("ru")).contains("Хранилище"),
+                "Vault names and timers are rendered in Russian for Russian viewers");
+        var available = keyed((List<?>) timed.invoke(null, f.arena, FinalsState.Phase.CASHBOX_AVAILABLE,
+                -1, 5L, 40L, f.viewer, f.players, f.teams, positions));
+        for (String key : List.of("cashout-0", "cashout-1"))
+            require(plain((Component) value(available.get(key), "label"), Locale.ENGLISH).contains("40"),
+                    "Both available cashout labels show the configured cashout duration");
+        var active = keyed((List<?>) timed.invoke(null, f.arena, FinalsState.Phase.CASHOUT,
+                1, 5L, 0L, f.viewer, f.players, f.teams, positions));
+        require(active.keySet().equals(Set.of("cashout-1"))
+                        && plain((Component) value(active.get("cashout-1"), "label"), Locale.ENGLISH).contains("0"),
+                "The active station keeps the zero-second endpoint without revealing inactive objectives");
+    }
+
+    private static String plain(Component text, Locale locale) {
+        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(me.petr1furious.potatominigames.i18n.I18n.render(text, locale));
+    }
+
+    private static void downedTeammateLabels() throws Exception {
+        Method downedMarkers = markers.getDeclaringClass().getDeclaredMethod("markers",
+                FinalsMapArena.class, FinalsState.Phase.class, int.class, long.class, long.class,
+                Player.class, Collection.class, Map.class, Function.class, Predicate.class);
+        downedMarkers.setAccessible(true);
+        Fixture f = new Fixture();
+        Player ally = f.player("fallen-ally", f.arena.world, 3, 4);
+        Player enemy = f.player("fallen-enemy", f.arena.world, 5, 6);
+        f.players = List.of(f.viewer, ally, enemy);
+        f.teams.put(ally.getUniqueId(), 0);
+        f.teams.put(enemy.getUniqueId(), 1);
+        Location statue = new Location(f.arena.world, 30.25, 66.5, 40.75);
+        Location source = statue.clone();
+        Function<Player, Location> positions = player -> {
+            require(player == ally, "Enemy and self positions are never queried for allied downed markers");
+            return statue;
+        };
+        Set<UUID> downed = new HashSet<>(Set.of(ally.getUniqueId(), enemy.getUniqueId()));
+        Predicate<Player> isDowned = player -> {
+            require(player == ally, "Enemy and self downed states are never queried for private labels");
+            return downed.contains(player.getUniqueId());
+        };
+        String allyKey = "teammate-" + ally.getUniqueId();
+        var view = keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                f.viewer, f.players, f.teams, positions, isDowned));
+        require(view.keySet().equals(Set.of("vault", allyKey)),
+                "Downed status never reveals an enemy or self marker");
+        Object marker = view.get(allyKey);
+        Component label = (Component) value(marker, "label");
+        require(plain(label, Locale.ENGLISH).equals("✚ fallen-ally • Downed"),
+                "English downed labels contain only the teammate name and localized status, without health");
+        require(plain(label, Locale.forLanguageTag("ru")).equals("✚ fallen-ally • Повержен"),
+                "Russian downed labels localize the status without exposing health");
+        require(value(marker, "location").equals(source) && statue.equals(source),
+                "Downed markers use the supplied statue position without mutating it");
+        statue.add(2.5, -.5, -3.25);
+        var moved = keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                f.viewer, f.players, f.teams, positions, isDowned));
+        require(value(moved.get(allyKey), "location").equals(statue),
+                "Downed markers follow a carried or thrown statue instead of the spectator camera");
+        require(value(marker, "location").equals(source),
+                "An earlier marker retains an independent snapshot of the statue position");
+        downed.clear();
+        var revived = keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                f.viewer, f.players, f.teams, positions, isDowned));
+        require(plain((Component) value(revived.get(allyKey), "label"), Locale.ENGLISH)
+                        .equals("◆ fallen-ally"),
+                "Revival changes the existing teammate key back to the ordinary name-only label");
+        f.players = List.of(f.viewer, enemy);
+        require(keyed((List<?>) downedMarkers.invoke(null, f.arena, null, -1, -1L, -1L,
+                        f.viewer, f.players, f.teams, positions, isDowned)).keySet().equals(Set.of("vault")),
+                "Removing a downed contestant removes their descriptor while keeping enemies private");
     }
 
     private static void phaseVisibility() throws Exception {
@@ -197,6 +292,30 @@ public final class FinalsHighlightsCheck {
         require(
                 fixture.arena.vault.equals(vaultSource.clone().add(20, 0, 30)),
                 "A returned marker location cannot mutate the arena geometry");
+    }
+
+    private static void fractionalCashoutOutlineAlignment() throws Exception {
+        Fixture fixture = new Fixture();
+        Location input = new Location(fixture.arena.world, 8.2, 65.5, -4.1, 37, 80);
+        Location unchanged = input.clone();
+        fixture.arena.stations[0] = input;
+        fixture.arena.vault = input;
+        Object cashout = keyed(fixture.view(FinalsState.Phase.CARRIED)).get("cashout-0");
+        Method blockPosition = cashout.getClass().getEnclosingClass()
+                .getDeclaredMethod("blockPosition", cashout.getClass());
+        blockPosition.setAccessible(true);
+        Location outline = (Location) blockPosition.invoke(null, cashout);
+        require(Math.abs(outline.getX() - 7.7) < 0.000001
+                        && Math.abs(outline.getY() - 65.5) < 0.000001
+                        && Math.abs(outline.getZ() + 4.6) < 0.000001,
+                "Cashout outlines use the exact body corner at center minus half a block");
+        require(outline.getYaw() == 0 && outline.getPitch() == 0,
+                "Saved player facing cannot rotate the cashout outline model");
+        Object vault = keyed(fixture.view(null)).get("vault");
+        Location vaultOutline = (Location) blockPosition.invoke(null, vault);
+        require(vaultOutline.getX() == 8 && vaultOutline.getY() == 65.5 && vaultOutline.getZ() == -5,
+                "Vault outlines retain block-cell anchoring independently of cashout geometry");
+        require(input.equals(unchanged), "Outline anchoring never mutates saved objective position or facing");
     }
 
     private static Map<String, Object> allObjectives(Fixture fixture) throws Exception {

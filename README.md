@@ -34,7 +34,7 @@ a gravity-driven arc; death still drops it normally.
 Throw the cashbox into either cashout to deposit it automatically for the thrower's
 team. Fast throws are checked along their full path, and walls block insertion.
 Right-click gold cashout A or B
-to deposit it. After 40 seconds the current owner banks $10,000. To steal an
+to deposit it. After 90 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
 blocks for five seconds**. Damage, death, leaving the area or releasing sneak
 interrupts the steal. The action bar shows progress, and the boss bar shows the
@@ -43,6 +43,10 @@ is in progress, stopping when it succeeds or is interrupted. Stealing never rese
 that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
 destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
+Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 15%
+volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
+within 16 blocks; it follows a falling station and stops when the payout or match
+ends. The old saved 40-second default is upgraded once; other custom timings remain.
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
 a draw. Death normally has a five-second automatic respawn delay. Matches that
@@ -154,7 +158,13 @@ respawns have sound cues.
 **Custom maps:** the generated arena is a fallback. You can import a vanilla Java
 overworld folder or ZIP, or register an existing persistent world. Put imports in
 `plugins/PotatoMinigames/finals/imports/`; use quotes around a filename with spaces.
-Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
+You can also give a direct public HTTP/HTTPS download URL:
+`/finals map import rooftop https://example.com/maps/rooftop.zip`.
+The ZIP downloads in the background and imports automatically; wait for the
+completion message before using `goto`. Redirects are supported, but login pages,
+map listing pages, and private-network URLs are not. Failed downloads leave no map
+entry or partial archive. Imports create an editor copy, and matches use a fresh
+copy of a saved snapshot.
 
 1. `/finals map import rooftop "Rooftop.zip"`, then `/finals map goto rooftop`.
    Alternatively, stand in an existing world and run `/finals map create rooftop`.
@@ -175,6 +185,23 @@ Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
 5. `/finals map save rooftop`, wait for the saved message, then `/finals map use rooftop`.
    Use `/finals map info rooftop` or `/finals map list` to inspect setup.
    Select `generated` to return to the fallback arena.
+
+To make several playable areas from one city, import the city once, then create
+additional maps in its editor world:
+
+```text
+/finals map create city_north city
+/finals map create city_south city
+/finals map goto city_north
+```
+
+Here `city` is the existing imported map name. Each new map starts with empty
+setup: select its own `pos1`/`pos2`, add its own spawns, vaults and cashouts, then
+save it. `/finals map create <name>` while standing in the city also reuses that
+world. Both forms retain the imported-world information across server restarts.
+Terrain edits are shared in the editor; each area's saved snapshot and playable
+bounds stay independent until that map is saved again. No second world import or
+city copy is needed. `/finals map use city_north` selects the saved northern area.
 
 Remove one draft point by its preview number with `/finals map vaultremove rooftop 2`,
 `/finals map cashoutremove rooftop 3`, or `/finals map spawnremove rooftop red 1`.
@@ -225,11 +252,19 @@ headroom and objective spacing. Native snapshots retain block data, chest
 contents and sign text, but exclude entities. Draft edits do not change the
 last saved snapshot until another successful save. Match destruction never edits
 the imported source or saved template. There are no plugin-imposed map dimensions,
-volume, import size or file-count caps. ZIP64 imports are supported. Saves and match
-preparation process small native structure sections over multiple server ticks;
-large maps take longer and need sufficient disk space. Existing single-NBT snapshots
-remain usable; saving again converts them to full-height section snapshots. Only the
-overworld is imported. Command blocks and portal blocks are rejected in playable snapshots.
+volume, import size or file-count caps. ZIP64 imports are supported. Saves capture
+native chunk data into a single `.slime` world template and report progress while
+preparing it. Matches use the same disposable AdvancedSlimePaper world clones as
+War: template reading and decompression happen off-thread, then the ready world is
+loaded on the server thread. Empty air does not become thousands of structure files.
+Full-height selections, exact horizontal boundaries, and configured objectives/spawns
+are preserved. Large maps still require sufficient memory and disk space.
+Existing `.nbt` and `.tiles` snapshots are automatically converted once during their
+first load, which can take longer; subsequent matches use the prepared template.
+Alternatively, `/finals map save <name>` captures the editor's current contents directly
+in the new format. Failed or cancelled saves leave the previous saved map usable.
+Only the overworld is imported. Command blocks and portal blocks are rejected in
+playable snapshots.
 
 Admins can use `/finals test` for solo practice, `/finals start @a` to launch a
 match, or `/finals start @a rooftop` to force a saved map. `/finals stop` ends it.

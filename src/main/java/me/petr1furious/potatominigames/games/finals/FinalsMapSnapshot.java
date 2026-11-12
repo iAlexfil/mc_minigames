@@ -28,6 +28,11 @@ final class FinalsMapSnapshot {
         /** Processes one bounded piece. Returns true when all work is complete. */
         boolean step();
 
+        /** True when only background work can advance this operation. */
+        default boolean waiting() {
+            return false;
+        }
+
         default void cancel() {}
 
         default void finish() {

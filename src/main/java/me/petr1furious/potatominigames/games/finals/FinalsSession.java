@@ -49,6 +49,7 @@ final class FinalsSession implements GameSession {
     private final Map<UUID, OriginalVitals> originalVitals = new HashMap<>();
     private final Map<UUID, FinalsClass> classes = new HashMap<>();
     private final FinalsKills kills = new FinalsKills();
+    private final FinalsCashoutMusic cashoutMusic = new FinalsCashoutMusic();
     private final FinalsTeamWipes teamWipes = new FinalsTeamWipes();
     private final Map<UUID, Location> teamRespawnPositions = new HashMap<>();
     private final Map<UUID, Long> gadgetSicknessUntil = new HashMap<>();
@@ -164,6 +165,7 @@ final class FinalsSession implements GameSession {
     }
 
     private void spawnGameMaster(Player player) {
+        if (preparing || world == null) return;
         forceRespawn(player);
         release(player);
         if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
@@ -576,17 +578,6 @@ final class FinalsSession implements GameSession {
                 maps == null
                         ? new FinalsArena(services.worlds().createVoid("finals"))
                         : maps.open(services, services.option("map"));
-        world = arena.world();
-        services.arena().applyStandardGameRules(world);
-        world.setDifficulty(Difficulty.NORMAL);
-        world.setTime(6000);
-        world.setStorm(false);
-        world.setGameRule(GameRules.PVP, true);
-        world.setGameRule(GameRules.IMMEDIATE_RESPAWN, false);
-        world.setGameRule(GameRules.ADVANCE_TIME, false);
-        world.setGameRule(GameRules.ADVANCE_WEATHER, false);
-        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, true);
-        world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         preparing = true;
         services.messages().broadcast(text("map.preparing"));
         arena.buildAsync(services.plugin(), this::prepared, this::preparationFailed);
@@ -598,6 +589,17 @@ final class FinalsSession implements GameSession {
             services.session().endGame(EndReason.ALL_PLAYERS_LEFT);
             return;
         }
+        world = arena.world();
+        services.arena().applyStandardGameRules(world);
+        world.setDifficulty(Difficulty.NORMAL);
+        world.setTime(6000);
+        world.setStorm(false);
+        world.setGameRule(GameRules.PVP, true);
+        world.setGameRule(GameRules.IMMEDIATE_RESPAWN, false);
+        world.setGameRule(GameRules.ADVANCE_TIME, false);
+        world.setGameRule(GameRules.ADVANCE_WEATHER, false);
+        world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, true);
+        world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         preparing = false;
         FinalsCombatContext combat = combatContext();
         weapons = new FinalsWeapons(combat);
@@ -939,6 +941,7 @@ final class FinalsSession implements GameSession {
     }
 
     private void announceDeposit(UUID player, int station) {
+        updateCashoutMusic();
         services.messages().broadcast(text("deposited", teamName(roster.get(player)), station == 0 ? "A" : "B"));
         var title = net.kyori.adventure.title.Title.title(
                 text("cashout.started.title", teamName(roster.get(player))),
@@ -955,6 +958,17 @@ final class FinalsSession implements GameSession {
         return services.participants() == null ? List.of()
                 : services.participants().onlinePlayers().stream()
                         .filter(player -> connected.contains(player.getUniqueId())).toList();
+    }
+
+    private void updateCashoutMusic() {
+        if (done || cashouts == null || state == null || state.phase() != FinalsState.Phase.CASHOUT) {
+            cashoutMusic.clear();
+            return;
+        }
+        cashoutMusic.update(cashouts.soundSource(state.station()),
+                services.participants().onlinePlayers().stream()
+                        .filter(player -> connected.contains(player.getUniqueId()) || isGameMaster(player))
+                        .toList());
     }
 
     private void objectiveSound(Location location, String sound, float pitch) {
@@ -1046,6 +1060,7 @@ final class FinalsSession implements GameSession {
             return;
         }
         advanceObjective();
+        updateCashoutMusic();
         if (state.isFinished()) {
             finish();
             return;
@@ -1242,6 +1257,7 @@ final class FinalsSession implements GameSession {
     public void onEnd(EndReason reason) {
         if (done) return;
         done = true;
+        cashoutMusic.clear();
         updateStealSiren();
         if (arena != null) arena.cancelBuild();
         if (ticker != null) ticker.cancel();
@@ -1670,7 +1686,7 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        if (running() && (connected.contains(event.getPlayer().getUniqueId()) || isGameMaster(event.getPlayer())))
+        if (running() && !preparing && (connected.contains(event.getPlayer().getUniqueId()) || isGameMaster(event.getPlayer())))
             event.setRespawnLocation(arena.center().add(0, 10, 0));
     }
 
@@ -1867,6 +1883,7 @@ final class FinalsSession implements GameSession {
     private void disconnect(Player player, boolean permanent) {
         UUID id = player.getUniqueId();
         if (done) return;
+        cashoutMusic.remove(player);
         if (id.equals(gameMaster)) {
             gameMasterOnline = false;
             if (permanent) withdrawn.add(id);

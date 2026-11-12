@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.games.finals;
 
 import static me.petr1furious.potatominigames.games.finals.FinalsMapData.*;
 
+import me.petr1furious.potatominigames.i18n.I18n;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -20,6 +21,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
@@ -31,7 +33,9 @@ import java.util.zip.ZipOutputStream;
  */
 public final class FinalsMapsCheck {
     public static void main(String[] args) throws Exception {
+        outsidePoints();
         geometry();
+        fullHeight();
         vaultPersistence();
         cashoutPersistence();
         arenaCopies();
@@ -214,11 +218,38 @@ public final class FinalsMapsCheck {
         Draft overlap = draft();
         overlap.blue.set(0, overlap.red.getFirst());
         fails(() -> Saved.from(overlap, "test.nbt"), "Opposing spawns cannot overlap");
-        fails(() -> new Bounds(0, 0, 0, 512, 4, 5), "Per-axis bound enforced");
-        fails(() -> new Bounds(0, 0, 0, 100, 100, 100), "Million-block limit enforced");
+        require(
+                new Bounds(0, 0, 0, 512, 4, 5).volume() == 15_390,
+                "Maps can exceed the old 512-block axis limit");
+        require(
+                new Bounds(0, 0, 0, 100, 100, 100).volume() == 1_030_301,
+                "Maps can exceed the old million-block volume limit");
+        require(
+                new Bounds(-1, -1, -1, -1, -1, -1).volume() == 1,
+                "A single selected block has valid geometry");
+        Bounds wide = new Bounds(Integer.MIN_VALUE, 0, 0, -2, 0, 0);
+        require(
+                wide.volume() == 2_147_483_647L
+                        && wide.size().getBlockX() == Integer.MAX_VALUE,
+                "Representable axes preserve their exact size without integer overflow");
+        require(
+                new Bounds(0, 0, 0, Integer.MAX_VALUE - 1, Integer.MAX_VALUE - 1, 0).volume()
+                        == 4_611_686_014_132_420_609L,
+                "Large valid volumes retain long precision");
+        fails(() -> new Bounds(1, 0, 0, 0, 0, 0), "Inverted X bounds are rejected");
+        fails(() -> new Bounds(0, 1, 0, 0, 0, 0), "Inverted Y bounds are rejected");
+        fails(() -> new Bounds(0, 0, 1, 0, 0, 0), "Inverted Z bounds are rejected");
         fails(
                 () -> new Bounds(Integer.MIN_VALUE, 0, 0, Integer.MAX_VALUE, 5, 5),
-                "Bounds arithmetic cannot overflow");
+                "Axes wider than the native integer size are rejected");
+        fails(
+                () -> new Bounds(0, 0, 0, Integer.MAX_VALUE - 1, Integer.MAX_VALUE - 1, 2),
+                "Volumes larger than a long are rejected before multiplication overflows");
+        require(
+                Bounds.between(new Point(16, 80, 16, 0, 0), new Point(-16, 64, -16, 0, 0))
+                        .equals(saved.bounds()),
+                "Reversing selection points preserves inclusive bounds");
+        fails(() -> Bounds.between(null, draft.second), "Missing selection points are rejected");
         fails(() -> new Point(Double.NaN, 65, 0, 0, 0), "Non-finite position rejected");
         Draft multiple = draft();
         multiple.addVault(new Point(5.5, 65, .5, 0, 0));
@@ -276,6 +307,73 @@ public final class FinalsMapsCheck {
                 "Unconfigured cashout slots cannot reach a saved match");
     }
 
+    private static void outsidePoints() {
+        Draft draft = draft();
+        draft.red.add(new Point(-17.5, 65, .5, 0, 0));
+        draft.blue.set(0, new Point(12.5, 80, .5, 0, 0));
+        draft.vaults.add(new Point(.5, 64, .5, 0, 0));
+        draft.cashouts.add(new Point(.5, 65, 17.5, 0, 0));
+        try {
+            Saved.from(draft, "invalid.nbt");
+            throw new AssertionError("All invalid points must prevent saving");
+        } catch (IllegalArgumentException failure) {
+            String message = I18n.plain(I18n.message(failure), Locale.ENGLISH);
+            for (String coordinate : List.of("-18", "80", "64", "17"))
+                require(message.contains(coordinate), "Every invalid point appears in the error: " + coordinate);
+            for (String label : List.of("red_spawn:2", "blue_spawn:1", "vault:2", "cashout:3")) {
+                String[] parts = label.split(":");
+                require(
+                        message.contains(I18n.plain(I18n.tr("finals.map.point." + parts[0], parts[1]), Locale.ENGLISH)),
+                        "Invalid point labels retain their original 1-based indices: " + label);
+            }
+            require(message.lines().count() >= 5, "Invalid points are listed on separate lines");
+            String russian = I18n.plain(I18n.message(failure), Locale.forLanguageTag("ru"));
+            require(
+                    russian.contains(I18n.plain(I18n.tr("finals.map.point.red_spawn", 2), Locale.forLanguageTag("ru")))
+                            && !russian.contains("potatominigames."),
+                    "Nested point labels remain localized for the recipient");
+        }
+    }
+
+    private static void fullHeight() throws Exception {
+        Draft draft = draft();
+        draft.first = new Point(16.75, 65, -16.25, 45, -12);
+        draft.second = new Point(-16.25, 65, 16.75, -90, 20);
+        draft.fullHeight(-64, 320);
+        require(
+                draft.first.equals(new Point(16.75, -64, -16.25, 45, -12))
+                        && draft.second.equals(new Point(-16.25, 319, 16.75, -90, 20)),
+                "Full-height selection preserves each corner's X/Z and facing");
+        require(
+                Bounds.between(draft.first, draft.second).equals(new Bounds(-17, -64, -17, 16, 319, 16)),
+                "Same-height horizontal corners include every world layer in either X/Z order");
+        YamlConfiguration written = new YamlConfiguration();
+        draft.write(written);
+        YamlConfiguration loaded = new YamlConfiguration();
+        loaded.loadFromString(written.saveToString());
+        Draft restored = Draft.read(loaded);
+        require(
+                restored.first.equals(draft.first) && restored.second.equals(draft.second)
+                        && Saved.from(restored, "full-height.nbt").bounds().volume() == 443_904,
+                "Full-height corners and inclusive geometry survive YAML round trips");
+        Draft partial = new Draft();
+        partial.fullHeight(-64, 320);
+        require(partial.first == null && partial.second == null, "Height normalization cannot create missing corners");
+        partial.second = new Point(2.5, 64, 3.5, 20, 10);
+        partial.fullHeight(0, 256);
+        require(
+                partial.first == null && partial.second.equals(new Point(2.5, 255, 3.5, 20, 10)),
+                "A second-only draft retains its missing first corner");
+        partial.first = new Point(-2.5, 64, -3.5, 10, 20);
+        partial.second = null;
+        partial.fullHeight(0, 1);
+        require(
+                partial.first.equals(new Point(-2.5, 0, -3.5, 10, 20)) && partial.second == null,
+                "A first-only draft supports a one-layer world");
+        fails(() -> partial.fullHeight(1, 1), "An empty world height range is rejected");
+        fails(() -> partial.fullHeight(1, 0), "An inverted world height range is rejected");
+    }
+
     private static void arenaCopies() {
         Saved saved = Saved.from(draft(), "test.nbt");
         FakeWorld editor = new FakeWorld("editor");
@@ -329,6 +427,14 @@ public final class FinalsMapsCheck {
         require(!a.isCover(first.block(-13, 64, 0)), "Spawn support is protected");
         require(!a.isCover(first.block(0, 65, 0)), "Objective markers are protected");
         require(a.isCover(first.block(6, 66, 6)), "Interior cover is destructible");
+        first.blocks.put(new Cell(0, 66, -12), Material.STONE);
+        require(a.isCover(first.block(0, 66, -12)), "Cashout headroom can be destroyed");
+        require(first.block(0, 65, -12).getType() == Material.AIR,
+                "Cashout selection does not write a physical gold marker");
+        a.moveStation(0, new Location(first.world, .5, 67, -11.5));
+        require(a.stationAt(first.block(0, 67, -12)) == 0
+                        && a.stationAt(first.block(0, 65, -12)) == -1,
+                "Cashout interaction coordinates follow the simulated entity height");
         first.blocks.put(new Cell(6, 66, 6), Material.AIR);
         FinalsMapArena b = new FinalsImportedArena(second.world, saved, structure);
         b.build();
@@ -346,7 +452,7 @@ public final class FinalsMapsCheck {
 
     private static void atomicReplacementLocks() throws Exception {
         if (!System.getProperty("os.name", "").startsWith("Windows")) return;
-        Path temporary = Files.createTempDirectory("finals-atomic-lock-check-");
+        Path temporary = fixtureDirectory("atomic-lock-");
         try {
             Path registry = temporary.resolve("maps.yml"),
                     pending = temporary.resolve("pending.yml");
@@ -427,7 +533,7 @@ public final class FinalsMapsCheck {
     }
 
     private static void imports() throws Exception {
-        Path temporary = Files.createTempDirectory("finals-map-check-");
+        Path temporary = fixtureDirectory("imports-");
         try {
             Path imports = Files.createDirectory(temporary.resolve("imports"));
             Path source = Files.createDirectory(imports.resolve("original"));
@@ -548,6 +654,13 @@ public final class FinalsMapsCheck {
                     Files.deleteIfExists(path);
             }
         }
+    }
+
+    private static Path fixtureDirectory(String prefix) throws IOException {
+        // Exercise replacement on the project's filesystem. Sandboxed Windows Temp can
+        // deny atomic replacement even after every file handle has been closed.
+        Path root = Files.createDirectories(Path.of("build", "tmp", "finals-map-checks"));
+        return Files.createTempDirectory(root, prefix);
     }
 
     private static void zip(Path path, String... entries) throws IOException {

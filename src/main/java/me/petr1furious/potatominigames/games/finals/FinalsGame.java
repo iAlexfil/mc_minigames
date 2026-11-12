@@ -17,6 +17,9 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 import org.bukkit.Material;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
@@ -33,6 +36,12 @@ public final class FinalsGame implements Minigame {
     public FinalsGame(JavaPlugin plugin, ConfigRegistry configs) {
         config = new FinalsConfig(configs);
         maps = new FinalsMaps(plugin);
+        plugin.getServer().getPluginManager().registerEvents(new Listener() {
+            @EventHandler
+            public void onDisable(PluginDisableEvent event) {
+                if (event.getPlugin() == plugin) maps.close();
+            }
+        }, plugin);
         previews = new FinalsMapPreview(plugin, maps);
         loadouts =
                 new FinalsLoadouts(

@@ -59,7 +59,7 @@ public final class FinalsMapsSmoke extends JavaPlugin {
     private void stage(String label) { stages.add(label); getLogger().info("MAP_STAGE_PASS: " + label); }
     private Location at(World world, double x, double y, double z) { return new Location(world,x,y,z); }
     private void configure(FinalsMaps maps, String name, World world) {
-        maps.corner(name, 0, at(world,84,64,184)); maps.corner(name,1,at(world,116,80,216));
+        maps.corner(name, 0, at(world,84,65,184)); maps.corner(name,1,at(world,116,65,216));
         maps.spawn(name,0,new Location(world,88.5,65,200.5,-90,0));
         maps.spawn(name,0,new Location(world,88.5,65,202.5,-90,0));
         maps.spawn(name,1,new Location(world,112.5,65,200.5,90,0));
@@ -154,7 +154,7 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         for(Location candidate:arena.cashoutLocations()) {
             Block head=candidate.getBlock().getRelative(BlockFace.UP); var originalData=head.getBlockData();
             head.setType(Material.WHITE_CONCRETE,false);
-            require(!arena.isCover(head),"Future cashout headroom is protected while the candidate is inactive");
+            require(arena.isCover(head),"Terrain near cashout candidates remains destructible");
             head.setBlockData(originalData,false);
         }
         for(int cycle=0;cycle<20;cycle++) {
@@ -167,19 +167,20 @@ public final class FinalsMapsSmoke extends JavaPlugin {
             int active=0;
             for(Location candidate:arena.cashoutLocations()) {
                 Block block=candidate.getBlock(); int recognized=arena.stationAt(block);
-                require(!arena.isCover(block) && !arena.isCover(block.getRelative(BlockFace.DOWN)),
-                        "Every cashout candidate and support remain protected");
+                require(arena.isCover(block.getRelative(BlockFace.DOWN)),
+                        "Cashout support can be destroyed so the simulated body can fall");
                 if(recognized>=0) {
                     active++;
-                    require(block.getType()==Material.GOLD_BLOCK && candidate.equals(arena.station(recognized)),
-                            "Only active cashout candidates contain an interactive gold marker");
-                } else {
+                    require(candidate.equals(arena.station(recognized)),
+                            "Only active cashout candidates accept objective interactions");
+                }
+                {
                     Block original=source.getBlockAt(block.getX(),block.getY(),block.getZ());
-                    require(block.getBlockData().equals(original.getBlockData()),"Retired cashout restores exact source block data");
+                    require(block.getBlockData().equals(original.getBlockData()),"Cashout rotation never changes source block data");
                     if(original.getState() instanceof Sign sign)
                         require(block.getState() instanceof Sign restored
                                 && restored.getSide(Side.FRONT).line(0).equals(sign.getSide(Side.FRONT).line(0)),
-                                "Retired cashout restores native sign text");
+                                "Cashout rotation leaves native sign text untouched");
                 }
             }
             require(active==2,"Exactly two cashout candidates are active after every replacement");
@@ -222,6 +223,8 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         editor.setGameRule(GameRules.SPAWN_MOBS,false); editor.setSpawnLocation(88,65,200);
         for(int x=84;x<=116;x++)for(int z=184;z<=216;z++)editor.getBlockAt(x,64,z).setType(Material.STONE,false);
         editor.getBlockAt(106,66,206).setType(Material.WHITE_CONCRETE,false);
+        editor.getBlockAt(106,editor.getMinHeight(),206).setType(Material.COPPER_BLOCK,false);
+        editor.getBlockAt(106,editor.getMaxHeight()-1,206).setType(Material.LAPIS_BLOCK,false);
         editor.getBlockAt(94,65,206).setType(Material.CHEST,false);
         Chest chest=(Chest)editor.getBlockAt(94,65,206).getState();
         chest.customName(Component.text("Native cargo")); chest.update(true,false);
@@ -260,18 +263,30 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         Path snapshot;
         try(var paths=Files.list(finals.resolve("templates"))) { snapshot=paths.filter(p->p.getFileName().toString().startsWith("native-")).findFirst().orElseThrow(); }
         String snapshotHash=hash(snapshot);
-        var structure=Bukkit.getStructureManager().loadStructure(snapshot.toFile());
-        require(structure.getSize().getBlockX()==33 && structure.getSize().getBlockY()==17 && structure.getSize().getBlockZ()==33,
-                "Native structure snapshot has inclusive bounds");
-        require(structure.getEntityCount()==0,"Native structure excludes source entities");
+        require(Files.isDirectory(snapshot) && snapshot.getFileName().toString().endsWith(".tiles"),
+                "Saved maps use a tiled native structure template");
+        var manifest=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(snapshot.resolve("manifest.yml").toFile());
+        require(manifest.getIntegerList("bounds").equals(List.of(84,editor.getMinHeight(),184,116,editor.getMaxHeight()-1,216)),
+                "Same-height horizontal corners snapshot the full native world height");
+        var savedRegistry=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(finals.resolve("maps.yml").toFile());
+        require(savedRegistry.getDoubleList("maps.native.draft.pos1").get(1)==editor.getMinHeight()
+                && savedRegistry.getDoubleList("maps.native.draft.pos2").get(1)==editor.getMaxHeight()-1,
+                "Draft corners persist the world's bottom and highest buildable block");
+        try(var tiles=Files.list(snapshot)) {
+            var pieces=tiles.filter(path->path.getFileName().toString().endsWith(".nbt")).toList();
+            require(!pieces.isEmpty(),"Tiled snapshot contains native structure pieces");
+            for(Path piece:pieces)
+                require(Bukkit.getStructureManager().loadStructure(piece.toFile()).getEntityCount()==0,
+                        "Native structure tiles exclude source entities");
+        }
         require(actor.isValid(),"Saving leaves source entity intact");
         stage("Native structure saved block states, inventory, sign data and source coordinates without entities");
 
-        maps.corner("native",1,at(editor,800,80,216));
+        maps.vaultClear("native");
         byte[] beforeFailure=Files.readAllBytes(finals.resolve("maps.yml"));
         boolean rejected=false;
         try{maps.save("native");}catch(IllegalArgumentException expected){rejected=true;}
-        require(rejected,"Oversized draft save is rejected");
+        require(rejected,"A draft missing required vault candidates cannot replace a saved map");
         require(Arrays.equals(beforeFailure,Files.readAllBytes(finals.resolve("maps.yml"))),"Failed save preserves persisted registry");
         maps=new FinalsMaps(main);
         require(maps.selected().equals("native") && maps.names().contains("native"),"Saved map and selected choice survive reload with invalid draft");
@@ -282,10 +297,15 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         SessionServices services=new SessionServices(main,null,null,null,null,null,null,null,worlds,null,null,null);
         FinalsMapArena first=maps.open(services,null); first.build(); World match=first.world();
         require(match!=editor && match.getName().startsWith("potato_tmp_"),"Match uses a disposable world");
+        require(match.getBlockAt(106,editor.getMinHeight(),206).getType()==Material.COPPER_BLOCK
+                && match.getBlockAt(106,editor.getMaxHeight()-1,206).getType()==Material.LAPIS_BLOCK,
+                "The bottom and highest native world layers survive save, reload and match placement");
         require(first.center().getX()==100.5 && first.center().getZ()==200.5 && first.borderSize()==33,"Border geometry preserves source offset");
         require(first.spawn(0,0).getYaw()==-90 && first.spawn(0,1).getZ()==202.5,"Multiple spawns and facing persist");
         require(first.vault().getBlock().getType()==Material.EMERALD_BLOCK,"Vault marker exists only in match copy");
-        require(first.station(0).getBlock().getType()==Material.GOLD_BLOCK && first.station(1).getBlock().getType()==Material.GOLD_BLOCK,"Both cashout markers exist");
+        require(first.station(0).getBlock().getBlockData().equals(editor.getBlockAt(first.station(0).getBlockX(),first.station(0).getBlockY(),first.station(0).getBlockZ()).getBlockData())
+                && first.station(1).getBlock().getBlockData().equals(editor.getBlockAt(first.station(1).getBlockX(),first.station(1).getBlockY(),first.station(1).getBlockZ()).getBlockData()),
+                "Cashout selection leaves the native anchor blocks untouched");
         require(!first.isCover(match.getBlockAt(100,64,200)) && !first.isCover(first.vault().getBlock()),"Floor and objectives are protected");
         require(!first.isCover(first.spawn(0,0).clone().subtract(0,1,0).getBlock()),"Spawn support is protected");
         require(first.isCover(match.getBlockAt(106,66,206)),"Interior cover is destructible");
@@ -302,6 +322,7 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         require(second.world().getBlockAt(106,66,206).getType()==Material.WHITE_CONCRETE,"Fresh match restores destroyed cover");
         checkMetadata(second.world(),stairData);
         require(hash(snapshot).equals(snapshotHash),"Multiple matches never rewrite the saved template");
+        checkLegacySnapshot(main,editor,services,finals);
         checkVaultSetup(main,editor,services);
         checkCashoutSetup(main,editor,services);
         worlds.destroyVoid("finals");
@@ -368,7 +389,29 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         Files.createDirectories(evidence.getParent()); Files.writeString(evidence,result);
         getLogger().info("FINALS_MAPS_SMOKE_PASS: "+assertions+" assertions");
     }
-    private static String hash(Path path)throws Exception { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))); }
+    private void checkLegacySnapshot(JavaPlugin main, World editor, SessionServices services, Path finals)throws Exception {
+        Path registry=finals.resolve("maps.yml"), legacy=finals.resolve("templates/native-legacy-fixture.nbt");
+        byte[] original=Files.readAllBytes(registry);
+        var structure=Bukkit.getStructureManager().createStructure();
+        structure.fill(at(editor,84,64,184),new org.bukkit.util.BlockVector(33,17,33),false);
+        Bukkit.getStructureManager().saveStructure(legacy.toFile(),structure);
+        try {
+            var yaml=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(registry.toFile());
+            yaml.set("maps.native.saved.template",legacy.getFileName().toString());
+            yaml.set("maps.native.saved.pos1",List.of(84d,64d,184d,0d,0d));
+            yaml.set("maps.native.saved.pos2",List.of(116d,80d,216d,0d,0d));
+            yaml.save(registry.toFile());
+            FinalsMapArena restored=new FinalsMaps(main).open(services,"native"); restored.build();
+            checkMetadata(restored.world(),editor.getBlockAt(94,65,196).getBlockData().getAsString());
+            require(restored.world().getBlockAt(106,66,206).getType()==Material.WHITE_CONCRETE,
+                    "Existing single-file native snapshots retain cover and metadata compatibility");
+            stage("Legacy single-file NBT snapshots still load and place alongside tiled snapshots");
+        } finally { Files.write(registry,original); }
+    }
+    private static String hash(Path path)throws Exception {
+        byte[] bytes=Files.isDirectory(path) ? hashes(path).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8) : Files.readAllBytes(path);
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
     private static Map<String,String> hashes(Path root)throws Exception {
         Map<String,String> result=new TreeMap<>();
         try(var paths=Files.walk(root)){for(Path path:paths.filter(Files::isRegularFile).toList())result.put(root.relativize(path).toString(),hash(path));}

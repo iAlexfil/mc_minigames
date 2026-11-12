@@ -29,6 +29,7 @@ public final class FinalsArena implements FinalsMapArena {
     };
     private int activeVault = -1;
     private int[] activeCashouts;
+    private final Location[] stationPositions = new Location[2];
     private boolean built;
 
     private record Position(int x, int y, int z) {
@@ -96,15 +97,14 @@ public final class FinalsArena implements FinalsMapArena {
         }
 
         for (int x : VAULT_X) objective(x, 0, Material.AIR, Material.LIME_CONCRETE);
-        for (Position point : CASHOUTS)
+        for (Position point : CASHOUTS) {
             objective(point.x(), point.z(), Material.AIR, Material.YELLOW_CONCRETE);
+            // The body can drop through its pad onto the protected bedrock below.
+            cover.add(new Position(point.x(), FLOOR_Y, point.z()));
+        }
         built = true;
         nextVault();
         activeCashouts = FinalsCashoutLocations.initial(CASHOUTS.length, random);
-        for (int index : activeCashouts) {
-            Position point = CASHOUTS[index];
-            set(point.x(), point.y(), point.z(), Material.GOLD_BLOCK);
-        }
         // Keep fallback teleports clear of every possible vault marker.
         world.setSpawnLocation(0, FLOOR_Y + 1, 2);
     }
@@ -215,8 +215,14 @@ public final class FinalsArena implements FinalsMapArena {
             throw new IllegalArgumentException("Station must be 0 or 1");
         if (activeCashouts == null)
             throw new IllegalStateException("Build the arena before using its cashouts");
+        if (stationPositions[station] != null) return stationPositions[station].clone();
         Position point = CASHOUTS[activeCashouts[station]];
         return new Location(world, point.x() + .5, point.y(), point.z() + .5);
+    }
+
+    public void moveStation(int station, Location position) {
+        if (station < 0 || station > 1) throw new IllegalArgumentException("Station must be 0 or 1");
+        stationPositions[station] = position.clone();
     }
 
     public List<Location> cashoutLocations() {
@@ -234,11 +240,8 @@ public final class FinalsArena implements FinalsMapArena {
         int next =
                 FinalsCashoutLocations.nextIndex(
                         CASHOUTS.length, current, activeCashouts[1 - station], random);
-        Position old = CASHOUTS[current];
-        set(old.x(), old.y(), old.z(), Material.AIR);
         activeCashouts[station] = next;
-        Position point = CASHOUTS[next];
-        set(point.x(), point.y(), point.z(), Material.GOLD_BLOCK);
+        stationPositions[station] = null;
     }
 
     public boolean contains(Location location) {
@@ -263,10 +266,12 @@ public final class FinalsArena implements FinalsMapArena {
 
     public int stationAt(Block block) {
         if (block == null || !world.equals(block.getWorld()) || activeCashouts == null) return -1;
-        Position point = Position.of(block);
-        return CASHOUTS[activeCashouts[0]].equals(point)
-                ? 0
-                : CASHOUTS[activeCashouts[1]].equals(point) ? 1 : -1;
+        for (int slot = 0; slot < 2; slot++) {
+            Location point = station(slot);
+            if (block.getX() == point.getBlockX() && block.getY() == point.getBlockY()
+                    && block.getZ() == point.getBlockZ()) return slot;
+        }
+        return -1;
     }
 
     public boolean isVault(Block block) {

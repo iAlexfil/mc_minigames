@@ -14,7 +14,6 @@ import org.bukkit.WorldCreator;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.structure.Structure;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,9 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-/**
- * Draft setup plus immutable structure snapshots. Matches only ever use disposable world copies.
- */
+/** Draft setup plus immutable tiled snapshots. Matches only ever use disposable world copies. */
 public final class FinalsMaps {
     private record Entry(Draft draft, Saved saved) {}
 
@@ -84,13 +81,13 @@ public final class FinalsMaps {
             return new FinalsArena(services.worlds().createVoid("finals"));
         Entry entry = entry(name);
         if (entry.saved == null) throw failure("not_saved", name);
-        Structure structure = loadTemplate(entry.saved);
+        FinalsMapSnapshot snapshot = loadTemplate(entry.saved);
         World world = services.worlds().createVoid("finals");
         world.setGameRule(org.bukkit.GameRules.COMMAND_BLOCKS_WORK, false);
         world.setGameRule(org.bukkit.GameRules.SPAWNER_BLOCKS_WORK, false);
         if (entry.saved.bounds().minY() < world.getMinHeight()
                 || entry.saved.bounds().maxY() >= world.getMaxHeight()) throw failure("height");
-        return new FinalsImportedArena(world, entry.saved, structure);
+        return new FinalsImportedArena(world, entry.saved, snapshot);
     }
 
     public void create(String name, Location location) {
@@ -188,6 +185,8 @@ public final class FinalsMaps {
                 draft -> {
                     if (index == 0) draft.first = Point.of(location);
                     else draft.second = Point.of(location);
+                    draft.fullHeight(
+                            location.getWorld().getMinHeight(), location.getWorld().getMaxHeight());
                 });
     }
 
@@ -209,6 +208,11 @@ public final class FinalsMaps {
         update(name, null, draft -> (team == 0 ? draft.red : draft.blue).clear());
     }
 
+    public void spawnRemove(String name, int team, int number) {
+        if (team < 0 || team > 1) throw new IllegalArgumentException("Team must be 0 or 1");
+        update(name, null, draft -> removePoint(team == 0 ? draft.red : draft.blue, number));
+    }
+
     public void vault(String name, Location location) {
         update(name, location, draft -> draft.setVault(Point.of(location).centered()));
     }
@@ -219,6 +223,10 @@ public final class FinalsMaps {
 
     public void vaultClear(String name) {
         update(name, null, draft -> draft.vaults.clear());
+    }
+
+    public void vaultRemove(String name, int number) {
+        update(name, null, draft -> removePoint(draft.vaults, number));
     }
 
     public void station(String name, int station, Location location) {
@@ -233,54 +241,173 @@ public final class FinalsMaps {
         update(name, null, draft -> draft.cashouts.clear());
     }
 
+    public void cashoutRemove(String name, int number) {
+        update(name, null, draft -> removePoint(draft.cashouts, number));
+    }
+
+    private static void removePoint(List<Point> points, int number) {
+        if (number < 1 || number > points.size())
+            throw failure("point_number", number, points.size());
+        points.remove(number - 1);
+    }
+
     public void save(String name) {
+        SaveWork work = beginSave(name);
+        try {
+            work.capture.finish();
+            work.commit();
+        } catch (RuntimeException error) {
+            work.cancel();
+            throw error;
+        }
+    }
+
+    /** Captures bounded pieces on the main thread, yielding between ticks. */
+    public void saveAsync(String name, Runnable success, Consumer<RuntimeException> failure) {
+        SaveWork work = beginSave(name);
+        try {
+            work.task =
+                    new org.bukkit.scheduler.BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                long deadline = System.nanoTime() + 4_000_000L;
+                                do {
+                                    if (work.capture.step()) {
+                                        cancel();
+                                        work.commit();
+                                        success.run();
+                                        return;
+                                    }
+                                } while (System.nanoTime() < deadline);
+                            } catch (RuntimeException error) {
+                                cancel();
+                                work.cancel();
+                                failure.accept(error);
+                            }
+                        }
+                    }.runTaskTimer(plugin, 1, 1);
+        } catch (RuntimeException error) {
+            work.cancel();
+            throw error;
+        }
+    }
+
+    private final java.util.Set<String> saving = new java.util.HashSet<>();
+    private final java.util.Set<SaveWork> captures = new java.util.HashSet<>();
+
+    /** Releases in-progress snapshot work when the plugin shuts down. */
+    public void close() {
+        for (SaveWork work : List.copyOf(captures)) work.cancel();
+    }
+
+    private SaveWork beginSave(String name) {
         Entry previous = entry(name);
-        Draft draft = previous.draft;
-        String filename = name + "-" + UUID.randomUUID() + ".nbt";
-        Saved saved = Saved.from(draft, filename);
-        World world = editor(draft);
-        if (saved.bounds().minY() < world.getMinHeight()
-                || saved.bounds().maxY() >= world.getMaxHeight()) throw failure("height");
-        for (Point point : concat(saved.red(), saved.blue())) validateStanding(world, point);
-        for (Point point : concat(saved.vaults(), saved.cashouts())) validateStanding(world, point);
-        // Commands, structure loaders, and portals would make the match copy capable of affecting
-        // other worlds.
-        for (int x = saved.bounds().minX(); x <= saved.bounds().maxX(); x++) {
-            for (int y = saved.bounds().minY(); y <= saved.bounds().maxY(); y++) {
-                for (int z = saved.bounds().minZ(); z <= saved.bounds().maxZ(); z++) {
-                    switch (world.getBlockAt(x, y, z).getType()) {
-                        case COMMAND_BLOCK,
-                                CHAIN_COMMAND_BLOCK,
-                                REPEATING_COMMAND_BLOCK,
-                                STRUCTURE_BLOCK,
-                                JIGSAW,
-                                NETHER_PORTAL,
-                                END_PORTAL,
-                                END_GATEWAY ->
-                                throw failure("unsafe_block");
-                        default -> {}
-                    }
-                }
+        if (!saving.add(name)) throw failure("saving");
+        try {
+            Draft draft = previous.draft.copy();
+            World world = editor(draft);
+            if (captures.stream().anyMatch(work -> work.worldId.equals(world.getUID())))
+                throw failure("saving");
+            draft.fullHeight(world.getMinHeight(), world.getMaxHeight());
+            String filename = name + "-" + UUID.randomUUID() + ".tiles";
+            Saved saved = Saved.from(draft, filename);
+            validateStandingPoints(world, saved);
+            Path target = templates.resolve(filename);
+            Path temporary = templates.resolve(filename + ".tmp");
+            SaveWork work =
+                    new SaveWork(
+                            name,
+                            world.getUID(),
+                            saved,
+                            target,
+                            temporary,
+                            FinalsMapSnapshot.capture(plugin, world, saved.bounds(), temporary));
+            captures.add(work);
+            return work;
+        } catch (RuntimeException error) {
+            saving.remove(name);
+            throw error;
+        }
+    }
+
+    private final class SaveWork {
+        final String name;
+        final UUID worldId;
+        final Saved saved;
+        final Path target, temporary;
+        final FinalsMapSnapshot.Work capture;
+        org.bukkit.scheduler.BukkitTask task;
+        boolean committed;
+
+        SaveWork(
+                String name,
+                UUID worldId,
+                Saved saved,
+                Path target,
+                Path temporary,
+                FinalsMapSnapshot.Work capture) {
+            this.name = name;
+            this.worldId = worldId;
+            this.saved = saved;
+            this.target = target;
+            this.temporary = temporary;
+            this.capture = capture;
+        }
+
+        void commit() {
+            try {
+                FinalsMapFiles.replace(temporary, target);
+                Map<String, Entry> next = new LinkedHashMap<>(entries);
+                // Keep any draft edits made while this immutable snapshot was captured.
+                Draft latest = entry(name).draft.copy();
+                latest.fullHeight(saved.bounds().minY(), saved.bounds().maxY() + 1);
+                next.put(name, new Entry(latest, saved));
+                FinalsMaps.this.commit(next, selected);
+                committed = true;
+            } catch (IOException error) {
+                plugin.getLogger().warning("Finals snapshot failed: " + error.getMessage());
+                throw failure("io");
+            } finally {
+                saving.remove(name);
+                captures.remove(this);
             }
         }
-        Structure structure = Bukkit.getStructureManager().createStructure();
-        structure.fill(saved.bounds().origin(world), saved.bounds().size(), false);
-        Path snapshot = templates.resolve(filename);
-        Path temporary = templates.resolve(filename + ".tmp");
+
+        void cancel() {
+            if (task != null) task.cancel();
+            capture.cancel();
+            saving.remove(name);
+            captures.remove(this);
+            removeSnapshot(temporary);
+            if (!committed) removeSnapshot(target);
+        }
+    }
+
+    private void removeSnapshot(Path directory) {
+        if (!Files.isDirectory(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
         try {
-            Bukkit.getStructureManager().saveStructure(temporary.toFile(), structure);
-            FinalsMapFiles.replace(temporary, snapshot);
-            Map<String, Entry> next = new LinkedHashMap<>(entries);
-            next.put(name, new Entry(draft, saved));
-            commit(next, selected);
+            Files.walkFileTree(
+                    directory,
+                    new java.nio.file.SimpleFileVisitor<>() {
+                        @Override
+                        public java.nio.file.FileVisitResult visitFile(
+                                Path path, java.nio.file.attribute.BasicFileAttributes attributes)
+                                throws IOException {
+                            Files.delete(path);
+                            return java.nio.file.FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public java.nio.file.FileVisitResult postVisitDirectory(
+                                Path path, IOException error) throws IOException {
+                            if (error != null) throw error;
+                            Files.delete(path);
+                            return java.nio.file.FileVisitResult.CONTINUE;
+                        }
+                    });
         } catch (IOException error) {
-            plugin.getLogger().warning("Finals snapshot failed: " + error.getMessage());
-            throw failure("io");
-        } finally {
-            try {
-                Files.deleteIfExists(temporary);
-            } catch (IOException ignored) {
-            }
+            plugin.getLogger().warning("Cannot remove incomplete Finals snapshot: " + directory);
         }
     }
 
@@ -298,6 +425,39 @@ public final class FinalsMaps {
                 || hazardous(feet.getType())
                 || hazardous(head.getType())
                 || hazardous(below.getType())) throw failure("standable");
+    }
+
+    private static void validateStandingPoints(World world, Saved saved) {
+        List<Component> invalid = new ArrayList<>();
+        invalidStandingPoints(world, saved.red(), "red_spawn", invalid);
+        invalidStandingPoints(world, saved.blue(), "blue_spawn", invalid);
+        invalidStandingPoints(world, saved.vaults(), "vault", invalid);
+        invalidStandingPoints(world, saved.cashouts(), "cashout", invalid);
+        if (!invalid.isEmpty())
+            throw failure(
+                    "unsafe_points",
+                    Component.join(
+                            net.kyori.adventure.text.JoinConfiguration.separator(
+                                    Component.newline()),
+                            invalid));
+    }
+
+    private static void invalidStandingPoints(
+            World world, List<Point> points, String label, List<Component> invalid) {
+        for (int index = 0; index < points.size(); index++) {
+            Point point = points.get(index);
+            try {
+                validateStanding(world, point);
+            } catch (IllegalArgumentException error) {
+                invalid.add(
+                        I18n.tr(
+                                "finals.map.point.invalid",
+                                I18n.tr("finals.map.point." + label, index + 1),
+                                point.bx(),
+                                point.by(),
+                                point.bz()));
+            }
+        }
     }
 
     private static boolean hazardous(org.bukkit.Material material) {
@@ -400,21 +560,8 @@ public final class FinalsMaps {
         world.setGameRule(org.bukkit.GameRules.RANDOM_TICK_SPEED, 0);
     }
 
-    private Structure loadTemplate(Saved saved) {
-        if (!saved.template().matches("[a-z0-9_-]+\\.nbt")) throw failure("template");
-        Path path = templates.resolve(saved.template());
-        try {
-            if (Files.isSymbolicLink(path)
-                    || !Files.isRegularFile(path)
-                    || Files.size(path) > FinalsMapFiles.MAX_FILE_BYTES) throw failure("template");
-            Structure structure = Bukkit.getStructureManager().loadStructure(path.toFile());
-            if (structure == null
-                    || !structure.getSize().equals(saved.bounds().size())
-                    || structure.getEntityCount() != 0) throw failure("template");
-            return structure;
-        } catch (IOException error) {
-            throw failure("template");
-        }
+    private FinalsMapSnapshot loadTemplate(Saved saved) {
+        return FinalsMapSnapshot.open(templates, saved);
     }
 
     private void commit(Map<String, Entry> next, String selection) {

@@ -1,5 +1,8 @@
 package me.petr1furious.potatominigames.games.finals;
 
+import me.petr1furious.potatominigames.i18n.I18n;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.JoinConfiguration;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -10,8 +13,6 @@ import java.util.List;
 
 /** Serializable positions and bounded geometry; snapshots never depend on the editor world. */
 final class FinalsMapData {
-    static final long MAX_BLOCKS = 1_000_000;
-    static final int MAX_AXIS = 512;
     static final int MAX_VAULTS = 16;
     static final int MAX_CASHOUTS = 16;
 
@@ -87,14 +88,14 @@ final class FinalsMapData {
             long sx = (long) maxX - minX + 1,
                     sy = (long) maxY - minY + 1,
                     sz = (long) maxZ - minZ + 1;
-            if (sx < 5
-                    || sy < 4
-                    || sz < 5
-                    || sx > MAX_AXIS
-                    || sy > MAX_AXIS
-                    || sz > MAX_AXIS
-                    || sx * sy * sz > MAX_BLOCKS)
-                throw FinalsMaps.failure("bounds", MAX_AXIS, MAX_BLOCKS);
+            if (sx <= 0
+                    || sy <= 0
+                    || sz <= 0
+                    || sx > Integer.MAX_VALUE
+                    || sy > Integer.MAX_VALUE
+                    || sz > Integer.MAX_VALUE
+                    || sx > Long.MAX_VALUE / sy / sz)
+                throw FinalsMaps.failure("bounds");
         }
 
         static Bounds between(Point first, Point second) {
@@ -123,7 +124,9 @@ final class FinalsMapData {
         }
 
         long volume() {
-            return (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+            return ((long) maxX - minX + 1)
+                    * ((long) maxY - minY + 1)
+                    * ((long) maxZ - minZ + 1);
         }
 
         BlockVector size() {
@@ -143,6 +146,20 @@ final class FinalsMapData {
         List<Point> vaults = new ArrayList<>();
         List<Point> cashouts = new ArrayList<>();
         List<Point> red = new ArrayList<>(), blue = new ArrayList<>();
+
+        void fullHeight(int minY, int maxYExclusive) {
+            if (maxYExclusive <= minY) throw FinalsMaps.failure("bounds");
+            if (first != null)
+                first = new Point(first.x(), minY, first.z(), first.yaw(), first.pitch());
+            if (second != null)
+                second =
+                        new Point(
+                                second.x(),
+                                maxYExclusive - 1,
+                                second.z(),
+                                second.yaw(),
+                                second.pitch());
+        }
 
         Draft copy() {
             Draft result = new Draft();
@@ -292,8 +309,15 @@ final class FinalsMapData {
                 throw FinalsMaps.failure("cashout_limit", MAX_CASHOUTS);
             List<Point> stations = draft.cashouts;
             List<Point> objectives = concat(draft.vaults, stations);
-            for (Point point : objectives)
-                if (!bounds.standingRoom(point)) throw FinalsMaps.failure("outside");
+            List<Component> invalid = new ArrayList<>();
+            invalidPoints(bounds, draft.red, "red_spawn", invalid);
+            invalidPoints(bounds, draft.blue, "blue_spawn", invalid);
+            invalidPoints(bounds, draft.vaults, "vault", invalid);
+            invalidPoints(bounds, stations, "cashout", invalid);
+            if (!invalid.isEmpty())
+                throw FinalsMaps.failure(
+                        "outside",
+                        Component.join(JoinConfiguration.separator(Component.newline()), invalid));
             for (int i = 0; i < stations.size(); i++)
                 for (int j = 0; j < i; j++) {
                     if (stations.get(i).sameBlock(stations.get(j)))
@@ -311,7 +335,6 @@ final class FinalsMapData {
                         throw FinalsMaps.failure("vault_duplicate");
             }
             for (Point spawn : concat(draft.red, draft.blue)) {
-                if (!bounds.standingRoom(spawn)) throw FinalsMaps.failure("outside");
                 for (Point point : objectives)
                     if (spawn.distanceSquared(point) < 9) throw FinalsMaps.failure("spawn_close");
             }
@@ -320,6 +343,21 @@ final class FinalsMapData {
                     if (red.distanceSquared(blue) < 16) throw FinalsMaps.failure("teams_close");
                 }
             return new Saved(bounds, draft.red, draft.blue, draft.vaults, draft.cashouts, template);
+        }
+
+        private static void invalidPoints(
+                Bounds bounds, List<Point> points, String label, List<Component> invalid) {
+            for (int i = 0; i < points.size(); i++) {
+                Point point = points.get(i);
+                if (!bounds.standingRoom(point))
+                    invalid.add(
+                            I18n.tr(
+                                    "finals.map.point.invalid",
+                                    I18n.tr("finals.map.point." + label, i + 1),
+                                    point == null ? "?" : point.bx(),
+                                    point == null ? "?" : point.by(),
+                                    point == null ? "?" : point.bz()));
+            }
         }
     }
 

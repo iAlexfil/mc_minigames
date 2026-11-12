@@ -254,7 +254,9 @@ for ((taskName, checkClass) in mapOf(
     "checkFinalsWeapons" to "FinalsWeaponsCheck",
     "checkFinalsGadgets" to "FinalsGadgetsCheck",
     "checkFinalsMaps" to "FinalsMapsCheck",
-    "checkFinalsMapPreview" to "FinalsMapPreviewCheck")) {
+    "checkFinalsMapPreview" to "FinalsMapPreviewCheck",
+    "checkFinalsHighlights" to "FinalsHighlightsCheck",
+    "checkFinalsCashoutPhysics" to "FinalsCashoutPhysicsCheck")) {
     val finalsCheck = tasks.register<JavaExec>(taskName) {
         dependsOn(checks.classesTaskName)
         classpath = checks.runtimeClasspath
@@ -262,6 +264,14 @@ for ((taskName, checkClass) in mapOf(
     }
     tasks.check { dependsOn(finalsCheck) }
 }
+
+val checkFinalsMapImport by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.finals.FinalsMapImportCheck")
+    maxHeapSize = "64m"
+}
+tasks.check { dependsOn(checkFinalsMapImport) }
 
 val checkMagicBattle by tasks.registering(JavaExec::class) {
     dependsOn(checks.classesTaskName)

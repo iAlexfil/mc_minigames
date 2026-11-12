@@ -7,29 +7,34 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
-import org.bukkit.block.structure.Mirror;
-import org.bukkit.block.structure.StructureRotation;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.structure.Structure;
 
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 
-/** A saved structure placed in a session-owned void world, with protected setup anchors. */
+/** A saved snapshot placed in a session-owned void world, with protected setup anchors. */
 final class FinalsImportedArena implements FinalsMapArena {
     private final World world;
     private final Saved map;
-    private final Structure structure;
+    private final FinalsMapSnapshot snapshot;
+    private FinalsMapSnapshot.Work buildWork;
+    private org.bukkit.scheduler.BukkitTask buildTask;
     private List<BlockState> vaultBlocks;
-    private List<BlockState> cashoutBlocks;
     private int activeVault = -1;
     private int[] activeCashouts;
+    private final Location[] stationPositions = new Location[2];
     private boolean built;
 
     FinalsImportedArena(World world, Saved map, Structure structure) {
+        this(world, map, FinalsMapSnapshot.legacy(map.bounds(), structure));
+    }
+
+    FinalsImportedArena(World world, Saved map, FinalsMapSnapshot snapshot) {
         this.world = world;
         this.map = map;
-        this.structure = structure;
+        this.snapshot = snapshot;
     }
 
     @Override
@@ -40,27 +45,73 @@ final class FinalsImportedArena implements FinalsMapArena {
     @Override
     public void build() {
         if (built) return;
-        structure.place(
-                map.bounds().origin(world),
-                false,
-                StructureRotation.NONE,
-                Mirror.NONE,
-                0,
-                1f,
-                new Random(0));
+        cancelBuild();
+        buildWork = snapshot.placement(null, world);
+        try {
+            buildWork.finish();
+            finishBuild();
+        } finally {
+            buildWork.cancel();
+            buildWork = null;
+        }
+    }
+
+    @Override
+    public void buildAsync(
+            JavaPlugin plugin, Runnable success, Consumer<RuntimeException> failure) {
+        if (built) {
+            success.run();
+            return;
+        }
+        cancelBuild();
+        buildWork = snapshot.placement(plugin, world);
+        try {
+            buildTask =
+                    new org.bukkit.scheduler.BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                long deadline = System.nanoTime() + 4_000_000L;
+                                do {
+                                    if (buildWork.step()) {
+                                        cancelBuild();
+                                        finishBuild();
+                                        success.run();
+                                        return;
+                                    }
+                                } while (System.nanoTime() < deadline);
+                            } catch (RuntimeException error) {
+                                cancelBuild();
+                                failure.accept(error);
+                            }
+                        }
+                    }.runTaskTimer(plugin, 1, 1);
+        } catch (RuntimeException error) {
+            cancelBuild();
+            throw error;
+        }
+    }
+
+    @Override
+    public void cancelBuild() {
+        if (buildTask != null) {
+            buildTask.cancel();
+            buildTask = null;
+        }
+        if (buildWork != null) {
+            buildWork.cancel();
+            buildWork = null;
+        }
+    }
+
+    private void finishBuild() {
         vaultBlocks =
                 map.vaults().stream()
                         .map(point ->
                                 world.getBlockAt(point.bx(), point.by(), point.bz()).getState())
                         .toList();
-        cashoutBlocks =
-                map.cashouts().stream()
-                        .map(point ->
-                                world.getBlockAt(point.bx(), point.by(), point.bz()).getState())
-                        .toList();
         activeCashouts =
                 FinalsCashoutLocations.initial(map.cashouts().size(), ThreadLocalRandom.current());
-        for (int index : activeCashouts) marker(map.cashouts().get(index), Material.GOLD_BLOCK);
         Point spawn = map.red().getFirst();
         world.setSpawnLocation(spawn.bx(), spawn.by(), spawn.bz());
         built = true;
@@ -123,7 +174,15 @@ final class FinalsImportedArena implements FinalsMapArena {
         if (index < 0 || index > 1) throw new IllegalArgumentException("Station must be 0 or 1");
         if (activeCashouts == null)
             throw new IllegalStateException("Build the arena before using its cashouts");
+        if (stationPositions[index] != null) return stationPositions[index].clone();
         return map.cashouts().get(activeCashouts[index]).at(world);
+    }
+
+    @Override
+    public void moveStation(int station, Location position) {
+        if (station < 0 || station > 1)
+            throw new IllegalArgumentException("Station must be 0 or 1");
+        stationPositions[station] = position.clone();
     }
 
     @Override
@@ -144,10 +203,8 @@ final class FinalsImportedArena implements FinalsMapArena {
                         current,
                         activeCashouts[1 - station],
                         ThreadLocalRandom.current());
-        if (next == current) return;
-        cashoutBlocks.get(current).update(true, false);
         activeCashouts[station] = next;
-        marker(map.cashouts().get(next), Material.GOLD_BLOCK);
+        stationPositions[station] = null;
     }
 
     @Override
@@ -171,7 +228,7 @@ final class FinalsImportedArena implements FinalsMapArena {
         if (block == null || !contains(block.getLocation()) || block.getY() <= map.bounds().minY())
             return false;
         for (Point spawn : concat(map.red(), map.blue())) if (protects(block, spawn)) return false;
-        for (Point objective : concat(map.vaults(), map.cashouts())) {
+        for (Point objective : map.vaults()) {
             if (protects(block, objective)) return false;
         }
         return switch (block.getType()) {
@@ -188,10 +245,14 @@ final class FinalsImportedArena implements FinalsMapArena {
 
     @Override
     public int stationAt(Block block) {
-        if (activeCashouts == null) return -1;
-        return matches(block, map.cashouts().get(activeCashouts[0]))
-                ? 0
-                : matches(block, map.cashouts().get(activeCashouts[1])) ? 1 : -1;
+        if (activeCashouts == null || block == null || !world.equals(block.getWorld())) return -1;
+        for (int slot = 0; slot < 2; slot++) {
+            Location point = station(slot);
+            if (block.getX() == point.getBlockX()
+                    && block.getY() == point.getBlockY()
+                    && block.getZ() == point.getBlockZ()) return slot;
+        }
+        return -1;
     }
 
     @Override

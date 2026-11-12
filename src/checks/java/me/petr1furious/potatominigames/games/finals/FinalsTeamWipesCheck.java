@@ -72,6 +72,31 @@ public final class FinalsTeamWipesCheck {
         require((Long) call(wave, "deadline") == Long.MAX_VALUE, "Wipe deadlines saturate rather than overflowing");
         call(wipes, "clear");
         require(((List<?>) call(wipes, "due", Long.MAX_VALUE)).isEmpty(), "Match cleanup forgets all pending cohorts");
+        Map<UUID, Integer> duos = Map.of(a, 0, b, 0, c, 1, enemy, 1);
+        require(call(wipes, "death", a, 100L, duos, Set.of()) == null,
+                "The first duo death stays revivable and does not trigger a team wipe");
+        wave = call(wipes, "death", b, 180L, duos, Set.of());
+        require(wave != null && (Long) call(wave, "deadline") == 500L
+                        && call(wave, "members").equals(Set.of(a, b)),
+                "Both duo deaths create one shared sixteen-second wave excluding opponents and any game master");
+        require((Boolean) call(wipes, "locked", a, 499L)
+                        && !(Boolean) call(wipes, "locked", a, 500L),
+                "The duo wipe has the same exact sixteen-second boundary as a trio wipe");
+        call(wipes, "release", wave);
+        call(wipes, "death", a, 600L, duos, Set.of());
+        call(wipes, "spawn", a);
+        require(call(wipes, "death", b, 601L, duos, Set.of()) == null,
+                "Reviving or manually respawning one duo teammate prevents a stale team wipe");
+        call(wipes, "clear");
+        require(call(wipes, "death", a, 700L, Map.of(a, 0, b, 1), Set.of()) == null,
+                "Solo teams never gain a duo wipe penalty");
+        for (Map<UUID, Integer> uneven : List.of(
+                Map.of(a, 0, b, 0, c, 1), Map.of(a, 0, b, 0, c, 1, enemy, 1, fourth, 1))) {
+            call(wipes, "clear");
+            call(wipes, "death", a, 800L, uneven, Set.of());
+            require(call(wipes, "death", b, 810L, uneven, Set.of()) == null,
+                    "Two-person sides of two-v-one or two-v-three matches retain ordinary respawning");
+        }
         System.out.println("FinalsTeamWipesCheck: " + checks + " checks passed");
     }
 

@@ -62,6 +62,17 @@ final class FinalsTabList {
             Map<UUID, FinalsClass> classes,
             Map<UUID, Integer> kills,
             Set<UUID> respawning) {
+        update(world, players, teams, classes, kills, respawning, null);
+    }
+
+    void update(
+            World world,
+            Collection<Player> players,
+            Map<UUID, Integer> teams,
+            Map<UUID, FinalsClass> classes,
+            Map<UUID, Integer> kills,
+            Set<UUID> respawning,
+            UUID gameMaster) {
         if (failed) {
             clear();
             return;
@@ -69,9 +80,11 @@ final class FinalsTabList {
         Set<UUID> present = new HashSet<>();
         for (Player viewer : players) {
             UUID viewerId = viewer.getUniqueId();
-            Integer viewerTeam = teams.get(viewerId);
-            if (viewerTeam == null || !viewer.isOnline() || !world.equals(viewer.getWorld()))
-                continue;
+            boolean masterViewer = viewerId.equals(gameMaster);
+            Integer viewerTeam = masterViewer ? null : teams.get(viewerId);
+            if ((!masterViewer && viewerTeam == null)
+                    || !viewer.isOnline()
+                    || !world.equals(viewer.getWorld())) continue;
             present.add(viewerId);
             View view = views.get(viewerId);
             if (view != null && view.viewer != viewer) {
@@ -83,29 +96,37 @@ final class FinalsTabList {
             Set<UUID> wanted = new HashSet<>();
             for (Player target : players) {
                 UUID targetId = target.getUniqueId();
-                Integer team = teams.get(targetId);
-                if (team == null || !target.isOnline() || !world.equals(target.getWorld()))
-                    continue;
-                FinalsClass build = classes.getOrDefault(targetId, FinalsClass.MEDIUM);
-                boolean ally = viewerTeam.equals(team);
-                boolean waiting = ally && (respawning.contains(targetId) || target.isDead());
-                Double health = null, maximum = null;
-                if (ally && !waiting) {
-                    // Keep these reads inside the ally branch: enemy health never enters a row.
-                    health = target.getHealth();
-                    var attribute = target.getAttribute(Attribute.MAX_HEALTH);
-                    maximum = attribute == null ? build.health() : attribute.getValue();
+                boolean masterTarget = targetId.equals(gameMaster);
+                Integer team = masterTarget ? null : teams.get(targetId);
+                if ((!masterTarget && team == null)
+                        || !target.isOnline()
+                        || !world.equals(target.getWorld())) continue;
+                Component text;
+                if (masterTarget) {
+                    // The game master has a role, not a combat loadout or team health row.
+                    text = gameMasterEntry(viewer.locale(), target.getName());
+                } else {
+                    FinalsClass build = classes.getOrDefault(targetId, FinalsClass.MEDIUM);
+                    boolean ally = viewerTeam != null && viewerTeam.equals(team);
+                    boolean waiting = ally && (respawning.contains(targetId) || target.isDead());
+                    Double health = null, maximum = null;
+                    if (ally && !waiting) {
+                        // Keep these reads inside the ally branch: enemy health never enters a row.
+                        health = target.getHealth();
+                        var attribute = target.getAttribute(Attribute.MAX_HEALTH);
+                        maximum = attribute == null ? build.health() : attribute.getValue();
+                    }
+                    text =
+                            entry(
+                                    viewer.locale(),
+                                    target.getName(),
+                                    team,
+                                    build,
+                                    kills.getOrDefault(targetId, 0),
+                                    health,
+                                    maximum,
+                                    waiting);
                 }
-                Component text =
-                        entry(
-                                viewer.locale(),
-                                target.getName(),
-                                team,
-                                build,
-                                kills.getOrDefault(targetId, 0),
-                                health,
-                                maximum,
-                                waiting);
                 Row previous = view.rows.get(targetId);
                 if (refresh
                         || previous == null
@@ -132,6 +153,13 @@ final class FinalsTabList {
             iterator.remove();
         }
         if (failed) clear();
+    }
+
+    static Component gameMasterEntry(Locale locale, String name) {
+        return I18n.render(
+                I18n.tr("finals.tab.game_master", Component.text(name, NamedTextColor.GOLD))
+                        .color(NamedTextColor.GRAY),
+                locale);
     }
 
     static Component entry(

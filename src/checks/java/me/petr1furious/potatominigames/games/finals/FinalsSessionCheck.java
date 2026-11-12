@@ -72,6 +72,7 @@ public final class FinalsSessionCheck {
         creditedEnemyKills();
         teamWipeDeadlines();
         downedModeAndEligibility();
+        gameMasterRole();
         legacyItemsAndNativeMutation();
         customDamageAndActionGates();
         menuAndEquipmentSlotGates();
@@ -346,12 +347,17 @@ public final class FinalsSessionCheck {
 
     private static void downedModeAndEligibility() throws Exception {
         FinalsSession exact = sessionFromStart(5, 6);
-        check((Boolean) field(exact, "threeVsThree").get(exact),
-                "only the actual six-player three-per-team start enables downed statues");
-        FinalsSession uneven = sessionFromStart(5, 5);
+        check((Boolean) field(exact, "revivalMode").get(exact),
+                "the actual six-player three-per-team start enables downed statues");
+        FinalsSession duos = sessionFromStart(5, 4);
+        FinalsSession hosted = sessionFromStart(5, 5);
+        check((Boolean) field(duos, "revivalMode").get(duos)
+                        && (Boolean) field(hosted, "revivalMode").get(hosted),
+                "four-player and five-player hosted matches both enable two-v-two revivals");
+        FinalsSession uneven = sessionFromStart(5, 3);
         FinalsSession larger = sessionFromStart(5, 8);
-        check(!(Boolean) field(uneven, "threeVsThree").get(uneven)
-                        && !(Boolean) field(larger, "threeVsThree").get(larger),
+        check(!(Boolean) field(uneven, "revivalMode").get(uneven)
+                        && !(Boolean) field(larger, "revivalMode").get(larger),
                 "uneven and larger initial rosters retain normal respawn behavior");
         Fixture normal = new Fixture();
         normal.session.onPlayerDeath(death(normal.blue.player));
@@ -364,7 +370,7 @@ public final class FinalsSessionCheck {
         check(!context(normal.session).awaitingRespawn(normal.red.player),
                 "a reconnect-only recovery timer never creates a revivable corpse");
         Fixture downed = new Fixture();
-        set(downed.session, "threeVsThree", true);
+        set(downed.session, "revivalMode", true);
         downed.session.onPlayerDeath(death(downed.blue.player));
         check(downed.respawns().get(BLUE) == 260L, "a three-v-three death unlocks Space exactly eight seconds later");
         var request = FinalsSession.class.getDeclaredMethod("requestRespawn", UUID.class);
@@ -378,6 +384,43 @@ public final class FinalsSessionCheck {
         actualDowned.setAccessible(true);
         check((Boolean) actualDowned.invoke(downed.session, BLUE),
                 "a corpse remains revivable indefinitely after the Space unlock time");
+    }
+
+    private static void gameMasterRole() throws Exception {
+        FinalsSession hosted = sessionFromStart(5, 5);
+        Map<UUID, Integer> teams = map(hosted, "roster");
+        UUID master = new UUID(99, 5);
+        check(master.equals(field(hosted, "gameMaster").get(hosted))
+                        && teams.size() == 4 && !teams.containsKey(master),
+                "the fifth participant is game master outside the four-contestant roster");
+        check(teams.values().stream().filter(team -> team == 0).count() == 2
+                        && teams.values().stream().filter(team -> team == 1).count() == 2,
+                "a five-player start produces exactly two combatants on each team");
+        SessionServices services = (SessionServices) field(hosted, "services").get(hosted);
+        check(services.participants().find(master).orElseThrow().team() == null,
+                "the game master has no core team assignment");
+        FakePlayer observer = new FakePlayer(master, new FakeWorld().world);
+        check(hosted.isGameMaster(observer.player) && !hosted.isInGame(observer.player)
+                        && hosted.mayFollowPlayers(observer.player),
+                "the game master may spectate but is never treated as a live contestant");
+        check(!hosted.gameEventsReady(), "the game master cannot start events during map preparation/countdown");
+        hosted.onTeamChange(observer.player, me.petr1furious.potatominigames.core.team.TeamColor.RED);
+        check(services.participants().find(master).orElseThrow().team() == null,
+                "team commands cannot move the game master onto a fighting team");
+        set(hosted, "preparing", true);
+        hosted.onParticipantQuit(observer.player);
+        check(!hosted.isGameMaster(observer.player) && teams.size() == 4,
+                "a disconnected game master loses controls without changing the teams");
+        hosted.onParticipantRejoin(observer.player);
+        check(hosted.isGameMaster(observer.player) && teams.size() == 4,
+                "a returning game master retains the spectator role without becoming a contestant");
+        hosted.onParticipantLeave(observer.player);
+        hosted.onParticipantRejoin(observer.player);
+        check(!hosted.isGameMaster(observer.player),
+                "a permanent game-master departure cannot regain event controls by reconnecting");
+        FinalsSession six = sessionFromStart(5, 6);
+        check(field(six, "gameMaster").get(six) == null && map(six, "roster").size() == 6,
+                "six participants remain ordinary three-v-three with no game master");
     }
 
     private static PlayerDeathEvent death(Player player) {
@@ -1089,6 +1132,7 @@ public final class FinalsSessionCheck {
                                         case "getEyeLocation" -> location.clone().add(0, 1.6, 0);
                                         case "getInventory" -> inventory;
                                         case "getOpenInventory" -> view;
+                                        case "closeInventory" -> { openHolder = null; yield null; }
                                         case "getWalkSpeed" -> walkSpeed;
                                         case "getFlySpeed" -> flySpeed;
                                         case "setWalkSpeed" -> {

@@ -59,6 +59,19 @@ public final class FinalsTabListCheck {
         String fallback = row(viewer, target, FinalsClass.MEDIUM, 0, false, false);
         require(fallback.contains("Medium (M)") && fallback.contains("0 kills"),
                 "Other client languages fall back to English");
+        Method gameMaster = type.getDeclaredMethod("gameMasterEntry", Locale.class, String.class);
+        gameMaster.setAccessible(true);
+        String master = PlainTextComponentSerializer.plainText().serialize(
+                (Component) gameMaster.invoke(null, Locale.ENGLISH, "Director"));
+        require(master.contains("Director") && master.contains("Game Master"),
+                "The fifth player is labeled by role rather than a contestant class");
+        require(!master.contains("HP") && !master.contains("kills") && !master.contains("Medium"),
+                "The game master has no combat stats in their Tab row");
+        String localizedMaster = PlainTextComponentSerializer.plainText().serialize(
+                (Component) gameMaster.invoke(null, Locale.forLanguageTag("ru-RU"), "Director"));
+        require(localizedMaster.contains("Director") && localizedMaster.matches("(?s).*[А-Яа-яЁё].*")
+                        && !localizedMaster.contains("Game Master"),
+                "The game master role uses the viewer's locale");
         I18n.validateCatalogs();
         System.out.println("FinalsTabListCheck: " + checks + " checks passed");
     }

@@ -31,6 +31,7 @@ public final class FinalsGame implements Minigame {
     private final FinalsMaps maps;
     private final FinalsMapPreview previews;
     private final FinalsLoadouts loadouts;
+    private final FinalsEventCommands events;
     private FinalsSession current;
 
     public FinalsGame(JavaPlugin plugin, ConfigRegistry configs) {
@@ -50,6 +51,7 @@ public final class FinalsGame implements Minigame {
                             if (current != null && current.isInGame(player))
                                 current.loadoutChanged(player);
                         });
+        events = new FinalsEventCommands(plugin, () -> current);
     }
 
     @Override
@@ -67,6 +69,7 @@ public final class FinalsGame implements Minigame {
     @Override
     public void extendCommands(LiteralArgumentBuilder<CommandSourceStack> root) {
         loadouts.register(root);
+        events.register(root);
         new FinalsMapCommands(maps, previews).register(root);
     }
 

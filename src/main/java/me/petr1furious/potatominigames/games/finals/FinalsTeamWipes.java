@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Three actual deaths form one immutable respawn cohort; reconnect delays are not deaths. */
+/** Two or three actual deaths form one immutable respawn cohort; reconnect delays are not deaths. */
 final class FinalsTeamWipes {
     record Wave(int team, Set<UUID> members, long deadline) {
         Wave { members = Set.copyOf(members); }
@@ -24,7 +24,10 @@ final class FinalsTeamWipes {
         roster.forEach((id, assigned) -> {
             if (assigned.equals(team) && !withdrawn.contains(id)) members.add(id);
         });
-        if (members.size() != 3 || !dead.containsAll(members)) return null;
+        long initialSize = roster.values().stream().filter(team::equals).count();
+        if ((initialSize != 2 && initialSize != 3)
+                || (initialSize == 2 && roster.size() != 4)
+                || members.size() != initialSize || !dead.containsAll(members)) return null;
         Wave wave = new Wave(team, members, now > Long.MAX_VALUE - 320 ? Long.MAX_VALUE : now + 320);
         waves.put(team, wave);
         return wave;

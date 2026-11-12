@@ -90,7 +90,10 @@ final class FinalsSession implements GameSession {
     private int protectionTicks;
     private boolean done;
     private boolean preparing;
-    private boolean threeVsThree;
+    private boolean revivalMode;
+    private UUID gameMaster;
+    private boolean gameMasterOnline;
+    private FinalsGameEvents gameEvents;
     private boolean internalTeleport;
     private List<Component> result = List.of();
 
@@ -114,6 +117,82 @@ final class FinalsSession implements GameSession {
         if (preparing) return;
         if (state == null) spawn(player);
         else player.sendMessage(text("loadout.next_spawn"));
+    }
+
+    boolean isGameMaster(Player player) {
+        return running() && gameMasterOnline && player.getUniqueId().equals(gameMaster)
+                && !withdrawn.contains(gameMaster);
+    }
+
+    FinalsGameEvents gameEvents() {
+        return gameEvents;
+    }
+
+    boolean gameEventsReady() {
+        return running() && !preparing && gameMasterOnline && state != null && !state.isFinished();
+    }
+
+    private FinalsGameEvents.Context gameEventsContext() {
+        FinalsCombatContext combat = combatContext();
+        return new FinalsGameEvents.Context() {
+            public org.bukkit.plugin.java.JavaPlugin plugin() { return services.plugin(); }
+            public World world() { return world; }
+            public long tick() { return tick; }
+            public Collection<Player> players() { return combat.players(); }
+            public boolean active(Player player) { return fighting(player) && !protectedSpawn(player); }
+            public boolean inside(Location point) { return combat.inside(point); }
+            public boolean destructible(Block block) { return combat.destructible(block); }
+            public void breakBlock(Block block) { combat.breakBlock(block); }
+            public void damage(Player target, double amount, Location origin) {
+                if (!gameEventsReady() || !active(target) || amount <= 0) return;
+                boolean previous = applyingCombatDamage;
+                Location previousOrigin = damageOrigin;
+                applyingCombatDamage = true;
+                damageOrigin = origin == null ? target.getLocation() : origin.clone();
+                try {
+                    target.setNoDamageTicks(0);
+                    target.damage(amount);
+                } finally {
+                    applyingCombatDamage = previous;
+                    damageOrigin = previousOrigin;
+                }
+            }
+            public void announce(String key, Object... arguments) {
+                services.messages().broadcast(text(key, arguments));
+            }
+        };
+    }
+
+    private void spawnGameMaster(Player player) {
+        forceRespawn(player);
+        release(player);
+        if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
+        services.playerState().resetForRound(player, GameMode.SPECTATOR);
+        player.setFlying(true);
+        player.setGlowing(false);
+        teleport(player, arena.center().add(0, 12, 0));
+        if (bar != null) player.showBossBar(bar);
+        player.sendMessage(text("gm.instructions"));
+        updateGameMasterHud();
+    }
+
+    private void updateGameMasterHud() {
+        if (!gameMasterOnline || gameMaster == null || arena == null || preparing || done) return;
+        Player player = Bukkit.getPlayer(gameMaster);
+        if (player == null) return;
+        List<Component> lines = new ArrayList<>();
+        lines.add(text("gm.role"));
+        for (int team = 0; team < 2; team++)
+            lines.add(text("score", teamName(team), state == null ? 0 : state.score(team)));
+        if (state != null) {
+            lines.add(text("match_time", TimeFormat.clock(Math.max(0, (state.matchDeadline() - tick + 19) / 20))));
+            lines.add(text("phase." + state.phase().name().toLowerCase(Locale.ROOT)));
+        }
+        if (gameEvents != null && gameEvents.activeKind() != null)
+            lines.add(text("event.status", I18n.tr(gameEvents.activeKind().nameKey()), gameEvents.remainingSeconds()));
+        lines.add(text("gm.sidebar"));
+        services.sidebar().update(player, text("name"), lines);
+        if (bar != null) player.showBossBar(bar);
     }
 
     private FinalsCombatContext combatContext() {
@@ -273,7 +352,7 @@ final class FinalsSession implements GameSession {
             }
 
             public boolean revive(Player teammate, Player reviver) {
-                if (threeVsThree)
+                if (revivalMode)
                     return revives != null && revives.defibrillate(reviver, teammate.getUniqueId());
                 UUID id = teammate.getUniqueId();
                 Location point = deathLocation(id);
@@ -297,7 +376,7 @@ final class FinalsSession implements GameSession {
     }
 
     private boolean downed(UUID id) {
-        return threeVsThree && teamWipes.dead(id) && teamWipes.wave(id) == null
+        return revivalMode && teamWipes.dead(id) && teamWipes.wave(id) == null
                 && respawnAt.containsKey(id) && !withdrawn.contains(id);
     }
 
@@ -368,7 +447,7 @@ final class FinalsSession implements GameSession {
     }
 
     private void requestRespawn(UUID id) {
-        if (!running() || !threeVsThree || state == null || state.isFinished()
+        if (!running() || !revivalMode || state == null || state.isFinished()
                 || !connected.contains(id) || withdrawn.contains(id) || !teamWipes.dead(id)) return;
         FinalsTeamWipes.Wave wave = teamWipes.wave(id);
         if (wave != null) {
@@ -446,6 +525,7 @@ final class FinalsSession implements GameSession {
             if (dropInput != null) dropInput.clear();
             if (revives != null) revives.clear();
             if (respawnInput != null) respawnInput.clear();
+            if (gameEvents != null) gameEvents.clear();
             teamWipes.clear();
             teamRespawnPositions.clear();
             releaseAll();
@@ -460,6 +540,12 @@ final class FinalsSession implements GameSession {
         var participants = new ArrayList<>(services.participants().all());
         if (participants.isEmpty() || participants.size() > 12)
             throw new CommandFailure(text("players_required"));
+        if (participants.size() == 5) {
+            var master = participants.removeLast();
+            gameMaster = master.id();
+            gameMasterOnline = true;
+            master.setTeam(null);
+        }
         // Preserve valid preferences where possible, but never start with an empty opposing team.
         int[] sizes = new int[2];
         int capacity = (participants.size() + 1) / 2;
@@ -471,9 +557,9 @@ final class FinalsSession implements GameSession {
             connected.add(participant.id());
             participant.setTeam(color(team));
         }
-        threeVsThree = roster.size() == 6
-                && roster.values().stream().filter(team -> team == 0).count() == 3
-                && roster.values().stream().filter(team -> team == 1).count() == 3;
+        revivalMode = (roster.size() == 4 || roster.size() == 6)
+                && roster.values().stream().filter(team -> team == 0).count() == roster.size() / 2
+                && roster.values().stream().filter(team -> team == 1).count() == roster.size() / 2;
         countdownEnd = Math.clamp(config.countdownSeconds.get(), 18, 60) * 20L;
         respawnTicks = Math.clamp(config.respawnSeconds.get(), 3, 15) * 20;
         protectionTicks = Math.clamp(config.protectionSeconds.get(), 1, 5) * 20;
@@ -519,7 +605,8 @@ final class FinalsSession implements GameSession {
         cashouts = new FinalsCashoutPhysics(arena);
         highlights = new FinalsHighlights(services.plugin());
         tabList = new FinalsTabList(services.plugin());
-        if (threeVsThree) {
+        if (gameMaster != null) gameEvents = new FinalsGameEvents(gameEventsContext());
+        if (revivalMode) {
             revives = new FinalsRevives(reviveContext());
             respawnInput = new FinalsRespawnInput(services.plugin(), this::requestRespawn);
         }
@@ -540,7 +627,7 @@ final class FinalsSession implements GameSession {
             if (connected.contains(player.getUniqueId())) {
                 spawn(player);
                 if (loadouts != null) loadouts.open(player);
-            }
+            } else if (isGameMaster(player)) spawnGameMaster(player);
         }
         services.messages()
                 .broadcast(
@@ -629,7 +716,14 @@ final class FinalsSession implements GameSession {
         if (tabList == null) return;
         List<Player> players =
                 connected.stream().map(Bukkit::getPlayer).filter(Objects::nonNull).toList();
-        tabList.update(world, players, roster, classes, kills.snapshot(), respawnAt.keySet());
+        if (gameMasterOnline) {
+            Player master = Bukkit.getPlayer(gameMaster);
+            if (master != null) {
+                players = new ArrayList<>(players);
+                players.add(master);
+            }
+        }
+        tabList.update(world, players, roster, classes, kills.snapshot(), respawnAt.keySet(), gameMaster);
     }
 
     private boolean canObjective(Player player) {
@@ -671,7 +765,7 @@ final class FinalsSession implements GameSession {
 
     private void spawn(Player player) {
         UUID id = player.getUniqueId();
-        if (preparing || teamWipes.locked(id, tick)) return;
+        if (preparing || !roster.containsKey(id) || teamWipes.locked(id, tick)) return;
         if (teamWipes.wave(id) != null) prepareTeamRespawns();
         boolean respawning = respawnAt.containsKey(id);
         forceRespawn(player);
@@ -934,7 +1028,7 @@ final class FinalsSession implements GameSession {
                         player.closeInventory();
                 }
             services.messages().broadcast(text("go"));
-            if (threeVsThree) services.messages().broadcast(text("revive.instructions"));
+            if (revivalMode) services.messages().broadcast(text("revive.instructions"));
             announceVault();
             announceCashout(0);
             announceCashout(1);
@@ -960,7 +1054,7 @@ final class FinalsSession implements GameSession {
         for (UUID id : List.copyOf(respawnAt.keySet())) {
             Player player = Bukkit.getPlayer(id);
             if (player == null || !connected.contains(id)) continue;
-            if (threeVsThree && teamWipes.dead(id)) {
+            if (revivalMode && teamWipes.dead(id)) {
                 boolean wasDead = player.isDead();
                 forceRespawn(player);
                 if (player.getGameMode() != GameMode.SPECTATOR) waitForRespawn(player);
@@ -988,6 +1082,7 @@ final class FinalsSession implements GameSession {
         if (weapons != null) weapons.tick();
         if (revives != null) revives.tick();
         if (gadgets != null) gadgets.tick();
+        if (gameEvents != null) gameEvents.tick();
         updateStealSiren();
         ensureCashbox();
         if (tick % 2 == 0) updateHighlights();
@@ -1156,6 +1251,7 @@ final class FinalsSession implements GameSession {
         if (dropInput != null) dropInput.clear();
         if (revives != null) revives.clear();
         if (respawnInput != null) respawnInput.clear();
+        if (gameEvents != null) gameEvents.clear();
         releaseAll();
         if (weapons != null) weapons.clear();
         if (gadgets != null) gadgets.clear();
@@ -1165,6 +1261,11 @@ final class FinalsSession implements GameSession {
                 Player viewer = Bukkit.getPlayer(id);
                 if (viewer != null && FinalsLoadouts.viewing(viewer)) viewer.closeInventory();
             }
+        if (gameMasterOnline) {
+            Player master = Bukkit.getPlayer(gameMaster);
+            if (master != null && FinalsEventCommands.isMenu(master.getOpenInventory().getTopInventory()))
+                master.closeInventory();
+        }
         removeCashbox();
         for (Entity entity : ordnance.values()) entity.remove();
         ordnance.clear();
@@ -1269,6 +1370,7 @@ final class FinalsSession implements GameSession {
             services.sidebar().update(player, text("name"), lines);
             player.showBossBar(bar);
         }
+        updateGameMasterHud();
     }
 
     private void interruptSteal(Player player) {
@@ -1552,7 +1654,7 @@ final class FinalsSession implements GameSession {
         if (gadgets != null) gadgets.forget(id);
         clearOrdnance(id);
         gadgetSicknessUntil.remove(id);
-        respawnAt.put(id, tick + (threeVsThree ? 160 : respawnTicks));
+        respawnAt.put(id, tick + (revivalMode ? 160 : respawnTicks));
         if (state != null && !state.isFinished()) {
             FinalsTeamWipes.Wave wave = teamWipes.death(id, tick, roster, withdrawn);
             if (wave != null) {
@@ -1561,20 +1663,21 @@ final class FinalsSession implements GameSession {
                 for (Player teammate : feedbackPlayers()) {
                     if (wave.members().contains(teammate.getUniqueId())) teammate.sendMessage(text("team_wipe", 16));
                 }
-            } else if (threeVsThree && revives != null) revives.down(player, deathLocations.get(id));
+            } else if (revivalMode && revives != null) revives.down(player, deathLocations.get(id));
         }
         player.sendMessage(respawnStatus(id));
     }
 
     @Override
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        if (running() && connected.contains(event.getPlayer().getUniqueId()))
+        if (running() && (connected.contains(event.getPlayer().getUniqueId()) || isGameMaster(event.getPlayer())))
             event.setRespawnLocation(arena.center().add(0, 10, 0));
     }
 
     @Override
     public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
-        if (running() && respawnAt.containsKey(event.getPlayer().getUniqueId()))
+        if (isGameMaster(event.getPlayer())) spawnGameMaster(event.getPlayer());
+        else if (running() && respawnAt.containsKey(event.getPlayer().getUniqueId()))
             waitForRespawn(event.getPlayer());
     }
 
@@ -1676,7 +1779,7 @@ final class FinalsSession implements GameSession {
     @Override
     public void onInventoryOpen(InventoryOpenEvent event) {
         if (revives != null && event.getPlayer() instanceof Player player) revives.interrupt(player.getUniqueId());
-        if (!FinalsLoadouts.isMenu(event.getInventory())) event.setCancelled(true);
+        if (!FinalsLoadouts.isMenu(event.getInventory()) && !FinalsEventCommands.isMenu(event.getInventory())) event.setCancelled(true);
         else if (weapons != null) weapons.stopFiring(event.getPlayer().getUniqueId());
     }
 
@@ -1718,8 +1821,10 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onPlayerTeleport(PlayerTeleportEvent event) {
-        if (!internalTeleport && running() && connected.contains(event.getPlayer().getUniqueId()))
-            event.setCancelled(true);
+        if (internalTeleport || !running()) return;
+        if (isGameMaster(event.getPlayer())) {
+            if (preparing || event.getTo() == null || !arena.contains(event.getTo())) event.setCancelled(true);
+        } else if (connected.contains(event.getPlayer().getUniqueId())) event.setCancelled(true);
     }
 
     @Override
@@ -1735,7 +1840,7 @@ final class FinalsSession implements GameSession {
 
     @Override
     public boolean mayFollowPlayers(Player participant) {
-        return false;
+        return isGameMaster(participant);
     }
 
     @Override
@@ -1745,6 +1850,11 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onTeamChange(Player player, TeamColor ignored) {
+        if (isGameMaster(player)) {
+            services.participants().find(player.getUniqueId()).ifPresent(p -> p.setTeam(null));
+            player.sendMessage(text("gm.instructions"));
+            return;
+        }
         Integer team = roster.get(player.getUniqueId());
         if (team != null) {
             services.participants()
@@ -1756,7 +1866,17 @@ final class FinalsSession implements GameSession {
 
     private void disconnect(Player player, boolean permanent) {
         UUID id = player.getUniqueId();
-        if (!roster.containsKey(id) || done) return;
+        if (done) return;
+        if (id.equals(gameMaster)) {
+            gameMasterOnline = false;
+            if (permanent) withdrawn.add(id);
+            if (gameEvents != null) gameEvents.stop();
+            if (tabList != null) tabList.remove(id);
+            if (highlights != null) highlights.remove(id);
+            player.closeInventory();
+            return;
+        }
+        if (!roster.containsKey(id)) return;
         dropCashbox(player);
         connected.remove(id);
         if (revives != null) revives.disconnected(id, permanent);
@@ -1802,7 +1922,13 @@ final class FinalsSession implements GameSession {
     @Override
     public void onParticipantRejoin(Player player) {
         UUID id = player.getUniqueId();
-        if (done || !roster.containsKey(id) || withdrawn.contains(id)) return;
+        if (done || withdrawn.contains(id)) return;
+        if (id.equals(gameMaster)) {
+            gameMasterOnline = true;
+            if (!preparing) spawnGameMaster(player);
+            return;
+        }
+        if (!roster.containsKey(id)) return;
         connected.add(id);
         if (preparing) return;
         if (dropInput != null) dropInput.track(player);

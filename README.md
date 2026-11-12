@@ -46,8 +46,8 @@ deposit/steal interactions and ongoing payout timers follow their current positi
 
 First to $20,000 wins; the richer team wins after six minutes, with equal cash
 a draw. Death normally has a five-second automatic respawn delay. Matches that
-start with exactly two teams of three use the downed/revival rules below.
-When all three members of a three-player team are dead together, their respawns
+start with exactly two teams of two or three use the downed/revival rules below.
+When all members of a two- or three-player team are dead together, their respawns
 switch to a shared 16-second
 team-wipe countdown. They return at the same randomly selected team spawn; a
 disconnected teammate keeps that location and timer. Defibrillators cannot bypass
@@ -56,7 +56,7 @@ during which combat and objectives are disabled. Teams remain fixed; a disconnec
 team has 15 seconds to return before the match ends without points. Connected
 winners receive three points; practice, draws and aborted matches award none.
 
-**3v3 revivals:** elimination leaves a revive statue. After eight seconds the
+**2v2 and 3v3 revivals:** elimination leaves a revive statue. After eight seconds the
 fallen player can press **Space** to respawn; reaching zero does not respawn them
 automatically. They remain available for revival until they actually respawn.
 Teammates see a downed marker at the statue, can right-click to carry or drop it,
@@ -67,7 +67,7 @@ opening the loadout menu or breaking the channel cancels it. Manual revives rest
 full health at a safe position beside the statue. A full wipe clears statues and
 pending revives, then automatically returns the team together after 16 seconds.
 
-In 3v3, Defibrillator activation charges for one second while held and aimed at
+In 2v2 and 3v3, Defibrillator activation charges for one second while held and aimed at
 the statue, then starts a three-second reconstruction. It restores half health
 and blocks gadgets and specializations for five seconds; weapons remain usable.
 An accepted activation uses a gadget charge even if its initial charge-up is
@@ -78,6 +78,30 @@ The original game's [revive-statue interaction](https://www.thefinals.wiki/wiki/
 [charge time](https://www.reachthefinals.com/patchnotes/760) and
 [revive sickness](https://www.reachthefinals.com/patchnotes/500) inform this adaptation;
 the eight-second Space unlock and 16-second wipe are this mode's custom timings.
+
+**Five-player matches:** the last player in the lobby's participant/join order
+becomes the **Game Master**. The first four form two teams of two, with the same
+revival rules. The Game Master flies in spectator mode, belongs to neither team,
+earns no match points, and can reconnect without becoming a contestant.
+
+The Game Master opens **`/finals events`** to choose a game-show event after the
+loadout countdown. Events last 30 seconds, one at a time. Commands also work
+directly from spectator mode:
+
+| Command | Effect |
+|---|---|
+| `/finals event low_gravity` | Classic Low Gravity: higher jumps and slower falls for contestants. |
+| `/finals event meteor_shower` | Marked impacts warn players before meteors damage contestants and destroy cover. |
+| `/finals event orbital_lasers` | Standing still attracts a warning beam and a delayed strike; move to evade it. |
+| `/finals event stop` | End the current event and clear pending strikes/effects. |
+| `/finals event status` | Show the active event and remaining time. |
+
+Only the assigned Game Master can operate these controls. Destruction stays within
+the match arena and respects its protected blocks. These are simplified adaptations
+of the original game's events: [Orbital Lasers target stationary contestants](https://www.reachthefinals.com/patchnotes/970),
+and [12.0 confirms Meteor Showers and removes Low Gravity from the rotation](https://www.reachthefinals.com/patchnotes/12-00).
+Low Gravity is included here as a classic event; the 30-second duration and manual
+Game Master controls are custom rules for this mode.
 
 **Loadouts:** `/finals loadout` opens the menu. You can also use
 `/finals class S|M|L` (or `light|medium|heavy`) and `/finals weapon <id>`.
@@ -110,7 +134,7 @@ reach, and the hammer's right-click destroys nearby cover. Hold right-click with
 the Riot Shield or Dual Blades to reduce frontal damage.
 
 Sonar reveals hidden enemies. Carrying a cashbox or attacking ends invisibility.
-The Healing Beam can heal allies (or the user more slowly); outside 3v3,
+The Healing Beam can heal allies (or the user more slowly); outside 2v2/3v3,
 Defibrillator instantly revives a nearby teammate at their death position during
 the respawn delay. Dome Shield
 blocks enemy attacks from outside while enemies can still enter it; cashbox
@@ -1688,14 +1712,18 @@ independent cloaks, on-hit wand cooldown and blocked-hit rejection, alongside al
 
 `checkFinals` checks cash-box ownership, deposits, theft, payouts and match results.
 `checkFinalsSession` exercises combat attribution, protection, interrupted steals,
-respawn/reconnect handling, three-player team wipes, frozen movement and TNT routing
+respawn/reconnect handling, game-master isolation, team wipes, frozen movement and TNT routing
 through event handlers. `checkFinalsEquipment` and `checkFinalsLoadouts` cover class
 restrictions, localized equipment and saved choices. `checkFinalsTeamWipes` covers
-shared deadlines; `checkFinalsRevives` covers persistent downed statues, manual
+shared deadlines and keeps duo wipes limited to 2v2; `checkFinalsRevives` covers persistent downed statues, manual
 channels and charged Defibrillator reconstruction. `checkFinalsCashboxFlight`
 checks swept throw-to-deposit collisions.
 `checkFinalsArena` checks the generated arena's protected objectives, safe spawns,
 traversable layout and destructible cover. All run as part of `build`.
+The live Paper fixtures in `native-checks/finals` additionally cover actual 2v2/3v3
+respawns, five-player spectator event controls, private Tab packets, and
+`FinalsGameEventsSmoke` checks gravity restoration, telegraphed impacts and protected
+map boundaries against native attributes, blocks and ray tracing.
 
 ## License
 

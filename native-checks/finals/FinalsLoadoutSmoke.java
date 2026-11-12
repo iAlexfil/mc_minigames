@@ -157,7 +157,7 @@ public final class FinalsLoadoutSmoke {
             call(ticker,"cancel");
             require((boolean)call(ticker,"isCancelled"),"Manual countdown checks disable the scheduled ticker to avoid interference");
             require(((Map<?,?>)get(session,"roster")).size()==players.size(),"Real onStart builds the full participant roster");
-            require((boolean)get(session,"threeVsThree"),"The actual initial six-player roster enables three-v-three revival rules");
+            require((boolean)get(session,"revivalMode"),"The actual initial six-player roster enables three-v-three revival rules");
             require(get(session,"world") instanceof World,"Real onStart creates the native match world");
             // These packet/display helpers have independent native coverage. Do not create
             // world entities while the scoped lookup-only Server proxy drives manual ticks.
@@ -253,6 +253,7 @@ public final class FinalsLoadoutSmoke {
             restored(medium);restored(heavy);
             require(((Map<?,?>)get(session,"originalVitals")).isEmpty(),"Session end clears captured original vitals");
             require(((Map<?,?>)get(session,"classes")).isEmpty(),"Session end clears retained match class entries");
+            hostedMatchChecks(services,config,registry,loadouts);
             smoke.getLogger().info("FINALS_LOADOUT_SMOKE_PASS: "+assertions+" native lifecycle, GUI, health, speed and restoration assertions");
             return assertions;
         } finally {
@@ -260,6 +261,116 @@ public final class FinalsLoadoutSmoke {
             serverField.set(null,originalServer);
             if(worlds!=null)call(worlds,"destroyVoid","finals");
             for(FakePlayer player:players.values())player.attribute.remove();
+        }
+    }
+
+    @SuppressWarnings("unchecked") private void hostedMatchChecks(Object services,Object config,Object registry,Object loadouts)throws Exception {
+        nativeAccess(()->{call(worlds,"destroyVoid","finals");return null;});
+        call(registry,"clear");
+        List<FakePlayer> hosted=players.values().stream().limit(5).toList();
+        for(FakePlayer player:hosted)call(registry,"add",player.player);
+        FakePlayer master=hosted.getLast(),first=hosted.get(0),second=hosted.get(1);
+        session=make("FinalsSession",services,config,null,loadouts);
+        call(session,"onStart");
+        call(get(session,"ticker"),"cancel");
+        for(String helper:List.of("highlights","tabList")) {
+            call(get(session,helper),"clear");set(session,helper,null);
+        }
+        Map<UUID,Integer> roster=(Map<UUID,Integer>)get(session,"roster");
+        require(roster.size()==4&&!roster.containsKey(master.id)&&master.id.equals(get(session,"gameMaster")),
+                "Actual five-player startup reserves the final participant as a teamless game master");
+        require(Collections.frequency(new ArrayList<>(roster.values()),0)==2
+                        &&Collections.frequency(new ArrayList<>(roster.values()),1)==2,
+                "The real hosted startup balances exactly two teams of two");
+        require((boolean)get(session,"revivalMode")&&get(session,"revives")!=null&&get(session,"respawnInput")!=null,
+                "Hosted two-v-two installs the actual statue and Space-input helpers");
+        for(FakePlayer player:hosted.subList(0,4))call(session,"spawn",player.player);
+        master.storage.setItem(0,new ItemStack(Material.DIAMOND_SWORD));
+        call(session,"spawnGameMaster",master.player);
+        require(master.mode==GameMode.SPECTATOR&&master.storage.isEmpty()
+                        &&!((Map<?,?>)get(session,"classes")).containsKey(master.id),
+                "The game master spawns in spectator mode without combat gear or a class");
+        require(!(boolean)call(session,"isInGame",master.player)&&(boolean)call(session,"mayFollowPlayers",master.player),
+                "The game master is excluded from fighting and enabled for the spectator camera");
+        require(master.walkSpeed>0&&master.flySpeed>0&&!((Map<?,?>)get(session,"frozen")).containsKey(master.id),
+                "The game master can move during the contestants' loadout countdown");
+        Object commands=make("FinalsEventCommands",main,(Supplier<Object>)()->session);
+        try {
+            commandDenied(commands,first,"low_gravity","A contestant cannot use game-master event commands");
+            commandDenied(commands,master,"low_gravity","The game master cannot start an event before GO");
+            call(commands,"open",master.player);
+            require((boolean)call(type("FinalsEventCommands"),"isMenu",master.top)
+                            &&master.top.getSize()==27&&nativeText(master.top.getItem(10)).length()>0,
+                    "The game master's event menu renders real localized native item controls");
+            InventoryOpenEvent open=new InventoryOpenEvent(master.view);
+            call(session,"onInventoryOpen",open);
+            require(!open.isCancelled(),"Session inventory rules permit the spectator event menu");
+            master.player.closeInventory();
+            set(session,"tick",360L);
+            set(session,"state",make("FinalsState",new LinkedHashMap<>(roster),360L,get(session,"rules")));
+            withPlayerLookup(session,"releaseAll");
+            require((boolean)call(session,"gameEventsReady"),"The GM controls become ready only after the match begins");
+            Object events=get(session,"gameEvents");
+            call(commands,"execute",master.player,"low_gravity");
+            require(call(events,"activeKind").toString().equals("LOW_GRAVITY")&&(int)call(events,"remainingSeconds")==30,
+                    "The authorized GM command starts a thirty-second event");
+            commandDenied(commands,master,"meteor_shower","A second event cannot overlap an already active event");
+            call(commands,"execute",master.player,"stop");
+            require(call(events,"activeKind")==null,"The GM stop command ends the active event");
+            call(commands,"open",master.player);
+            InventoryClickEvent click=new InventoryClickEvent(master.view,InventoryType.SlotType.CONTAINER,13,ClickType.LEFT,InventoryAction.PICKUP_ALL);
+            call(commands,"onClick",click);
+            require(click.isCancelled()&&call(events,"activeKind").toString().equals("METEOR_SHOWER"),
+                    "Clicking the spectator menu starts the selected meteor event without moving its icon");
+            call(session,"onParticipantQuit",master.player);
+            require(call(events,"activeKind")==null&&!(boolean)call(session,"isGameMaster",master.player),
+                    "Disconnecting the game master stops the event and removes their control authority");
+            call(session,"onParticipantRejoin",master.player);
+            require((boolean)call(session,"isGameMaster",master.player)&&master.mode==GameMode.SPECTATOR
+                            &&!roster.containsKey(master.id),
+                    "Rejoining restores the same teamless spectator game-master role");
+            call(commands,"onClick",click);
+            require(call(events,"activeKind")==null,"A menu closed on disconnect cannot act as a new live control");
+
+            PlayerTeleportEvent follow=new PlayerTeleportEvent(master.player,master.location,first.location,PlayerTeleportEvent.TeleportCause.SPECTATE);
+            call(session,"onPlayerTeleport",follow);
+            require(!follow.isCancelled(),"The game master may use spectator follow teleports within the arena");
+            PlayerTeleportEvent escape=new PlayerTeleportEvent(master.player,master.location,Bukkit.getWorlds().getFirst().getSpawnLocation(),PlayerTeleportEvent.TeleportCause.COMMAND);
+            call(session,"onPlayerTeleport",escape);
+            require(escape.isCancelled(),"The session keeps game-master teleports inside the match world");
+            set(session,"tick",500L);
+            downedSpaceChecks(first,second);
+            long start=(long)get(session,"tick")+100;
+            Map<UUID,Long> respawns=(Map<UUID,Long>)get(session,"respawnAt");
+            for(int index=0;index<2;index++) {
+                FakePlayer victim=hosted.get(index);set(session,"tick",start+index*10);
+                call(session,"onPlayerDeath",new PlayerDeathEvent(victim.player,DamageSource.builder(DamageType.GENERIC).build(),new ArrayList<>(),0,Component.empty(),true));
+            }
+            long deadline=start+330;
+            require(respawns.size()==2&&respawns.values().stream().allMatch(at->at==deadline)
+                            &&!respawns.containsKey(master.id),
+                    "Both duo deaths start one sixteen-second wipe without involving the spectator game master");
+            require(((Map<?,?>)get(get(session,"revives"),"statues")).isEmpty(),
+                    "A duo wipe clears both old revive statues");
+            set(session,"tick",deadline);call(session,"prepareTeamRespawns");
+            call(session,"spawn",first.player);call(session,"spawn",second.player);
+            require(first.location.equals(second.location)&&respawns.isEmpty(),
+                    "Both duo teammates return equipped to the identical shared spawn location");
+            call(session,"onParticipantLeave",master.player);
+            call(session,"onParticipantRejoin",master.player);
+            require(!(boolean)call(session,"isGameMaster",master.player),
+                    "A GM who permanently leaves cannot recover control by reconnecting");
+        } finally {
+            org.bukkit.event.HandlerList.unregisterAll((org.bukkit.event.Listener)commands);
+            withPlayerLookup(session,"onEnd",value("me.petr1furious.potatominigames.core.game.EndReason","ABORTED"));
+        }
+    }
+
+    private void commandDenied(Object commands,FakePlayer player,String action,String label)throws Exception {
+        try {call(commands,"execute",player.player,action);throw new AssertionError(label);}
+        catch(Exception expected) {
+            if(!expected.getClass().getSimpleName().equals("CommandFailure"))throw expected;
+            assertions++;
         }
     }
     @SuppressWarnings("unchecked") private void equipmentChecks(Object loadouts,FakePlayer source,FakePlayer victim)throws Exception {
@@ -494,7 +605,7 @@ public final class FinalsLoadoutSmoke {
         set(session,"tick",sickness);
         require(!(boolean)call(combat,"gadgetsBlocked",target.player),"Gadget sickness ends on the exact five-second boundary");
 
-        set(session,"threeVsThree",false);
+        set(session,"revivalMode",false);
         Location allyBefore=ally.location.clone();
         try {
             nativeAccess(()->{call(session,"onPlayerDeath",new PlayerDeathEvent(target.player,
@@ -505,7 +616,7 @@ public final class FinalsLoadoutSmoke {
             require(!respawns.containsKey(target.id),"The legacy instant revive consumes its ordinary respawn timer");
             close(target.attribute.getHealth(),target.attribute.getAttribute(Attribute.MAX_HEALTH).getValue(),
                     "The legacy instant revive retains full class health");
-        } finally {set(session,"threeVsThree",true);ally.location=allyBefore;}
+        } finally {set(session,"revivalMode",true);ally.location=allyBefore;}
 
         Object geometry=get(session,"arena");
         Location cell=(Location)call(geometry,"spawn",0,0);

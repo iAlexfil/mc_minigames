@@ -10,6 +10,7 @@ final class PartyGamesState {
                     "pvp",
                     "sumo",
                     "arms_race",
+                    "one_shot",
                     "tnt_run",
                     "mob_count",
                     "rhino",
@@ -19,6 +20,7 @@ final class PartyGamesState {
                     "anvils",
                     "build_memory",
                     "tool_race",
+                    "parkour_race",
                     "hole_in_the_wall");
     private final List<String> schedule;
     private final Set<UUID> roster,

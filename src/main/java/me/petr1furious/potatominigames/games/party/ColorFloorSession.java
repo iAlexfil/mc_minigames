@@ -6,6 +6,7 @@ import me.petr1furious.potatominigames.i18n.I18n;
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
+import org.bukkit.inventory.ItemStack;
 
 final class ColorFloorSession extends PartySurvivalSession {
     private final int stages;
@@ -59,7 +60,10 @@ final class ColorFloorSession extends PartySurvivalSession {
         round = ColorFloorRound.generate(stage, random);
         arena.show(round, false);
         deadline = elapsed() + ColorFloorRound.choiceTicks(stage);
-        announceTitle(round.title(), I18n.tr("party.rounds.color_floor.find", stage), 2);
+        for (var player : alivePlayers()) {
+            player.getInventory().clear();
+            player.getInventory().setItemInMainHand(new ItemStack(round.target()));
+        }
         PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, 1.1f);
     }
 

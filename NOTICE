@@ -24,3 +24,11 @@ Source: https://github.com/NetherGamesMC/assets/tree/5cfda13ef2873c3a048d4a665fe
 Licensed separately under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 Converted from Bedrock blocks to Java palette/coordinates; see
 assets/maps/nethergames-lighthouse/SOURCE.md and LICENSE.txt for source and changes.
+
+Counter-Strike map asset: [LesRaisins | CSGO] Dust II
+Map by xjqsh / xjqshm and LesRaisinsStudio. Original map copyright Valve.
+Source: https://www.curseforge.com/minecraft/worlds/lesraisins-csgo-dust-ii
+Independently licensed under the author's non-commercial, attribution-required
+usage conditions; NOT Apache-2.0. See assets/maps/lesraisins-dust2/SOURCE-Dust2.md
+and LICENSE-Dust2.txt. The pinned Java world geometry is cropped, translated
+upward and converted to modern block identifiers; no source scripts are loaded.

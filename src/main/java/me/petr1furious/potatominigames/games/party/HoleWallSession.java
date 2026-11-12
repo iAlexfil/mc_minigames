@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
@@ -14,8 +15,9 @@ import java.util.*;
 final class HoleWallSession extends PartySurvivalSession {
     private final int seconds;
     private HoleWallArena arena;
+    private HoleWallLayout layout = HoleWallLayout.PLUS;
     private HoleWallFlow flow;
-    private final Map<HoleWallFlow.Wall, HoleWallDisplay> displays = new LinkedHashMap<>();
+    private HoleWallBlocks blocks;
     private final Map<UUID, BoundingBox> previous = new HashMap<>();
     private final Map<UUID, Long> nextHitSound = new HashMap<>();
     private int wallNumber, warnedRadius = 8, warnedArmRadius = 2;
@@ -26,9 +28,11 @@ final class HoleWallSession extends PartySurvivalSession {
     }
 
     void buildArena() {
-        arena = new HoleWallArena(world);
+        layout = HoleWallLayout.choose(random);
+        arena = new HoleWallArena(world, layout);
         arena.build();
-        flow = new HoleWallFlow(seconds * 20L, random);
+        flow = new HoleWallFlow(seconds * 20L, random, layout);
+        blocks = new HoleWallBlocks(world);
         world.setTime(6000);
     }
 
@@ -53,26 +57,29 @@ final class HoleWallSession extends PartySurvivalSession {
     }
 
     Component instructions() {
-        return I18n.tr("party.rounds.hole_wall.instructions");
+        return I18n.tr("party.rounds.hole_wall.instructions", layout.description());
     }
 
     void playTick(long elapsed) {
         var frame = flow.tick(elapsed);
-        for (var wall : frame.finished()) {
-            var display = displays.remove(wall);
-            if (display != null) display.clear();
-        }
         boolean newWarning =
                 frame.warningRadius() < warnedRadius || frame.warningArmRadius() < warnedArmRadius;
         boolean reshaping =
                 frame.radius() < arena.radius() || frame.armRadius() < arena.armRadius();
         if (newWarning) {
-            boolean narrowing = frame.warningArmRadius() < warnedArmRadius;
+            boolean narrowing =
+                    layout == HoleWallLayout.PLUS && frame.warningArmRadius() < warnedArmRadius;
             warnedRadius = frame.warningRadius();
             warnedArmRadius = frame.warningArmRadius();
             announceTitle(
-                    I18n.tr(narrowing ? "party.rounds.hole_wall.narrow" : "party.rounds.hole_wall.edge"),
-                    I18n.tr(narrowing ? "party.rounds.hole_wall.narrow_warning" : "party.rounds.hole_wall.edge_warning"),
+                    I18n.tr(
+                            narrowing
+                                    ? "party.rounds.hole_wall.narrow"
+                                    : "party.rounds.hole_wall.edge"),
+                    I18n.tr(
+                            narrowing
+                                    ? "party.rounds.hole_wall.narrow_warning"
+                                    : "party.rounds.hole_wall.edge_warning"),
                     2);
             PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, .6f);
         }
@@ -82,24 +89,43 @@ final class HoleWallSession extends PartySurvivalSession {
         }
         if (newWarning || reshaping) arena.warn(frame.warningRadius(), frame.warningArmRadius());
         for (var wall : frame.started()) {
-            displays.put(
-                    wall, new HoleWallDisplay(world, wall.pattern, wall.direction, wall.depth));
             wallNumber = wall.number;
-            if (!newWarning)
-                announceTitle(
-                        wall.direction.title, I18n.tr("party.rounds.hole_wall.wall", wall.pattern.title(), wallNumber), 1);
+            Component announcement =
+                    wall.direction
+                            .title
+                            .append(Component.text(" • "))
+                            .append(
+                                    I18n.tr(
+                                            "party.rounds.hole_wall.wall",
+                                            wall.pattern.title(),
+                                            wallNumber));
+            for (Player viewer : services.session().audiencePlayers())
+                viewer.sendActionBar(announcement);
             PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_PLING, .6f, 1.2f);
         }
         var walls = flow.active();
         var players = alivePlayers();
+        boolean changed = !frame.started().isEmpty() || !frame.finished().isEmpty();
         for (var wall : walls) {
-            if (elapsed >= wall.moveAt) displays.get(wall).move(wall.depth);
-            else PartySounds.countdown(players, wall.moveAt - elapsed);
+            if (wall.from != wall.depth) {
+                changed = true;
+                world.playSound(
+                        new Location(
+                                world,
+                                .5 + wall.direction.dx * wall.depth,
+                                83,
+                                .5 + wall.direction.dz * wall.depth),
+                        Sound.BLOCK_PISTON_EXTEND,
+                        .35f,
+                        .8f);
+            } else if (elapsed < wall.moveAt) PartySounds.countdown(players, wall.moveAt - elapsed);
         }
+        if (changed) blocks.render(walls);
         for (Player player : players) {
+            carry(player, walls);
             if (resolveContacts(player, walls, elapsed)
                     && elapsed >= nextHitSound.getOrDefault(player.getUniqueId(), 0L)) {
-                player.playSound(player.getLocation(), Sound.ENTITY_SLIME_JUMP, .7f, .7f);
+                player.playSound(player.getLocation(), Sound.ENTITY_IRON_GOLEM_ATTACK, .7f, .9f);
                 nextHitSound.put(player.getUniqueId(), elapsed + 10);
             }
             // All walls see the same previous tick, not the position after another wall's push.
@@ -107,9 +133,30 @@ final class HoleWallSession extends PartySurvivalSession {
         }
     }
 
+    void carry(Player player, List<HoleWallFlow.Wall> walls) {
+        if (player.getVelocity().getY() > .1) return; // Jumping off remains under player control.
+        var visible = HoleWallBlocks.visibleCells(walls, true);
+        for (var wall : walls) {
+            if (wall.from == wall.depth
+                    || !HoleWallPhysics.supports(
+                            visible.get(wall), wall.direction, wall.from, player.getBoundingBox()))
+                continue;
+            Vector velocity = player.getVelocity();
+            teleport(
+                    player,
+                    player.getLocation()
+                            .add(
+                                    wall.direction.dx * (wall.depth - wall.from),
+                                    0,
+                                    wall.direction.dz * (wall.depth - wall.from)));
+            player.setVelocity(velocity);
+            break;
+        }
+    }
+
     boolean resolveContacts(Player player, List<HoleWallFlow.Wall> walls, long elapsed) {
         BoundingBox before = previous.getOrDefault(player.getUniqueId(), player.getBoundingBox());
-        double speed = HoleWallPhysics.speed(elapsed, seconds * 20L);
+        var visible = HoleWallBlocks.visibleCells(walls, false);
         boolean hit = false;
         // A perpendicular push may leave an earlier hole. Resolve those new overlaps without
         // replaying the original swept motion on later passes.
@@ -119,14 +166,14 @@ final class HoleWallSession extends PartySurvivalSession {
                 if (elapsed < wall.moveAt) continue;
                 BoundingBox body = player.getBoundingBox();
                 if (HoleWallPhysics.collides(
-                        wall.pattern.cells(),
+                        visible.get(wall),
                         wall.direction,
                         pass == 0 ? wall.from : wall.depth,
                         wall.depth,
                         pass == 0 ? before : body,
                         body)) {
                     Location old = player.getLocation();
-                    push(player, wall, before, speed);
+                    push(player, wall, before);
                     hit = true;
                     moved |=
                             old.toVector().distanceSquared(player.getLocation().toVector()) > 1e-10;
@@ -137,7 +184,7 @@ final class HoleWallSession extends PartySurvivalSession {
         return hit;
     }
 
-    private void push(Player player, HoleWallFlow.Wall wall, BoundingBox before, double speed) {
+    private void push(Player player, HoleWallFlow.Wall wall, BoundingBox before) {
         Location location = player.getLocation();
         BoundingBox body = player.getBoundingBox();
         Vector velocity = player.getVelocity();
@@ -153,13 +200,16 @@ final class HoleWallSession extends PartySurvivalSession {
         if (nz > 0) location.setZ(Math.max(location.getZ(), z));
         if (nz < 0) location.setZ(Math.min(location.getZ(), z));
         teleport(player, location);
-        if (nx != 0) velocity.setX(nx * (speed + .08));
-        else velocity.setZ(nz * (speed + .08));
+        if (nx != 0) velocity.setX(nx * 1.1);
+        else velocity.setZ(nz * 1.1);
         player.setVelocity(velocity);
     }
 
     Component status() {
-        return I18n.tr("party.rounds.hole_wall.status", wallNumber, displays.size(),
+        return I18n.tr(
+                "party.rounds.hole_wall.status",
+                wallNumber,
+                flow.active().size(),
                 Math.max(0, seconds - elapsed() / 20));
     }
 
@@ -169,8 +219,7 @@ final class HoleWallSession extends PartySurvivalSession {
     }
 
     void cleanup() {
-        displays.values().forEach(HoleWallDisplay::clear);
-        displays.clear();
+        if (blocks != null) blocks.clear();
         if (flow != null) flow.clear();
         previous.clear();
         nextHitSound.clear();

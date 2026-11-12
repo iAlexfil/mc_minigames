@@ -25,6 +25,12 @@ public final class PartyConfig {
     public final Property<Integer> sumoIntermissionSeconds =
             bag.define("sumo.intermissionSeconds", PropertyCodec.INT, 5)
                     .validate(n -> n >= 2 && n <= 30);
+    public final Property<Integer> oneShotSeconds =
+            bag.define("oneShot.durationSeconds", PropertyCodec.INT, 180)
+                    .validate(n -> n >= 60 && n <= 1800);
+    public final Property<Integer> oneShotBonusSeconds =
+            bag.define("oneShot.bonusSeconds", PropertyCodec.INT, 6)
+                    .validate(n -> n >= 2 && n <= 30);
     public final Property<Integer> armsRaceSeconds =
             bag.define("armsRace.durationSeconds", PropertyCodec.INT, 600)
                     .validate(n -> n >= 60 && n <= 1800);
@@ -89,7 +95,7 @@ public final class PartyConfig {
     public final Property<Integer> anvilWaves =
             bag.define("anvils.waves", PropertyCodec.INT, 10).validate(n -> n >= 2 && n <= 20);
     public final Property<Integer> anvilPvpWave =
-            bag.define("anvils.pvpWave", PropertyCodec.INT, 4).validate(n -> n >= 1 && n <= 20);
+            bag.define("anvils.pvpWave", PropertyCodec.INT, 3).validate(n -> n >= 1 && n <= 20);
     public final Property<Integer> buildMemoryStages =
             bag.define("buildMemory.stages", PropertyCodec.INT, 8).validate(n -> n >= 1 && n <= 8);
     public final Property<Integer> toolRaceSeconds =
@@ -99,9 +105,9 @@ public final class PartyConfig {
             bag.define(
                     "partyGames.modes",
                     PropertyCodec.STRING,
-                    "pvp,sumo,arms_race,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race,hole_in_the_wall,magic_battle");
+                    "pvp,sumo,arms_race,one_shot,tnt_run,mob_count,rhino,miners,color_floor,anvils,build_memory,tool_race,hole_in_the_wall,magic_battle,parkour_race");
     public final Property<Integer> partyRounds =
-            bag.define("partyGames.rounds", PropertyCodec.INT, 6).validate(n -> n >= 1 && n <= 13);
+            bag.define("partyGames.rounds", PropertyCodec.INT, 6).validate(n -> n >= 1 && n <= 15);
     public final Property<Integer> partyIntermission =
             bag.define("partyGames.intermissionSeconds", PropertyCodec.INT, 4)
                     .validate(n -> n >= 3 && n <= 30);
@@ -118,12 +124,16 @@ public final class PartyConfig {
             bag.define("partyGames.minersFinaleSeconds", PropertyCodec.INT, 30)
                     .validate(n -> n >= 15 && n <= 120);
 
-    public final Property<Integer> pvpFfaOvertimeSeconds = bag.define("pvpFfa.overtimeSeconds", PropertyCodec.INT, 180)
-            .validate(n -> n >= 20 && n <= 600);
-    public final Property<Integer> sumoFfaOvertimeSeconds = bag.define("sumoFfa.overtimeSeconds", PropertyCodec.INT, 45)
-            .validate(n -> n >= 20 && n <= 300);
+    public final Property<Integer> pvpFfaOvertimeSeconds =
+            bag.define("pvpFfa.overtimeSeconds", PropertyCodec.INT, 180)
+                    .validate(n -> n >= 20 && n <= 600);
+    public final Property<Integer> sumoFfaOvertimeSeconds =
+            bag.define("sumoFfa.overtimeSeconds", PropertyCodec.INT, 45)
+                    .validate(n -> n >= 20 && n <= 300);
 
     public final Property<Integer> magicSeconds = bag.define("magicBattle.roundSeconds", PropertyCodec.INT, 180)
+            .validate(n -> n >= 60 && n <= 600);
+    public final Property<Integer> parkourRaceSeconds = bag.define("parkourRace.durationSeconds", PropertyCodec.INT, 240)
             .validate(n -> n >= 60 && n <= 600);
     public final Property<Integer> magicCountdown = bag.define("magicBattle.countdownSeconds", PropertyCodec.INT, 5)
             .validate(n -> n >= 3 && n <= 15);

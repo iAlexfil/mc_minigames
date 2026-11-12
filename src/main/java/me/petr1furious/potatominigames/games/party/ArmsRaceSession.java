@@ -164,8 +164,9 @@ final class ArmsRaceSession implements PartyRoundSession {
         world.setGameRule(GameRules.ADVANCE_WEATHER, false);
         world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, false);
         world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
-        arena = new ArmsRaceArena(world);
+        arena = new ArmsRaceArena(world, random);
         arena.build();
+        services.messages().broadcast(text("arena.selected", NamedTextColor.GRAY, arena.layout().title()));
         services.arena()
                 .applyBorder(world, arena.center(), PvpArena.BORDER_SIZE, PvpArena.BORDER_SIZE, 0);
         bar =

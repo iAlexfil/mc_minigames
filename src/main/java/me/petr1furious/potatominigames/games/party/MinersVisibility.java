@@ -10,12 +10,27 @@ import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
 
-/** Nametag masks on the round's sidebar boards; player models and combat stay native. */
+/** Private nametag masks and persistent native outlines for the finale. */
 final class MinersVisibility {
     private record Mask(Team team, Map<String, String> previous) {}
+    private record Outline(Player player, boolean previous) {}
 
     private final String teamName = "miners_" + UUID.randomUUID().toString().substring(0, 8);
     private final Map<Scoreboard, Mask> masks = new HashMap<>();
+    private final Map<UUID, Outline> outlines = new LinkedHashMap<>();
+
+    void reveal(Collection<Player> players) {
+        for (Player player : players) {
+            outlines.computeIfAbsent(player.getUniqueId(), ignored -> new Outline(player, player.isGlowing()));
+            // Entity metadata is independent of sneaking and cannot be cleared by milk.
+            player.setGlowing(true);
+        }
+    }
+
+    void stopReveal(Player player) {
+        Outline outline = outlines.remove(player.getUniqueId());
+        if (outline != null) outline.player().setGlowing(outline.previous());
+    }
 
     void hideNames(Collection<Player> viewers, Collection<String> names) {
         for (Player viewer : viewers) {
@@ -38,6 +53,7 @@ final class MinersVisibility {
 
     void clear() {
         for (Scoreboard board : List.copyOf(masks.keySet())) release(board);
+        for (Outline outline : List.copyOf(outlines.values())) stopReveal(outline.player());
     }
 
     void release(Scoreboard board) {

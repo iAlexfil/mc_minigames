@@ -2,7 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import java.util.*;
 
-/** Continuous wall stream with independently timed platform changes. */
+/** Frequent piston-step walls with independently timed platform changes. */
 final class HoleWallFlow {
     static final class Wall {
         final int number;
@@ -10,6 +10,7 @@ final class HoleWallFlow {
         final HoleWallPhysics.Direction direction;
         final long moveAt;
         double from = -16, depth = -16;
+        private double travel;
 
         Wall(
                 int number,
@@ -33,13 +34,22 @@ final class HoleWallFlow {
 
     private final long duration;
     private final Random random;
+    private final HoleWallLayout layout;
     private final List<Wall> walls = new ArrayList<>();
     private long nextSpawn;
-    private int radius = 8, number;
+    private int radius = 8, number, lateWalls;
     private HoleWallPhysics.Direction lastDirection;
     private final Deque<HoleWallPhysics.Direction> directions = new ArrayDeque<>();
+    private final Set<HoleWallPhysics.Direction> lateDirections =
+            EnumSet.noneOf(HoleWallPhysics.Direction.class);
+    private final Deque<Integer> patternStages = new ArrayDeque<>();
 
     HoleWallFlow(long duration, Random random) {
+        this(duration, random, HoleWallLayout.PLUS);
+    }
+
+    HoleWallFlow(long duration, Random random, HoleWallLayout layout) {
+        this.layout = layout;
         this.duration = duration;
         this.random = random;
     }
@@ -54,16 +64,23 @@ final class HoleWallFlow {
         for (var it = walls.iterator(); it.hasNext(); ) {
             var wall = it.next();
             wall.from = wall.depth;
-            if (tick >= wall.moveAt) wall.depth += speed;
+            if (tick >= wall.moveAt) {
+                wall.travel += speed;
+                if (wall.travel >= 1) {
+                    wall.depth++;
+                    wall.travel--;
+                }
+            }
             if (wall.depth > 16) {
                 finished.add(wall);
                 it.remove();
+                if (wall.pattern.requiresIslands()) nextSpawn = Math.max(nextSpawn, tick + 40);
             }
         }
         int target = tick >= duration * 2 / 3 ? 4 : tick >= duration / 3 ? 6 : 8;
         int warning = tick >= duration * 2 / 3 - 60 ? 4 : tick >= duration / 3 - 60 ? 6 : 8;
-        int armRadius = tick >= duration / 2 ? 1 : 2,
-                warningArmRadius = tick >= duration / 2 - 60 ? 1 : 2;
+        int armRadius = tick >= duration / 3 ? 1 : 2,
+                warningArmRadius = tick >= duration / 3 - 60 ? 1 : 2;
         radius = target;
         if (tick < duration && tick >= nextSpawn && walls.size() < 4) {
             if (directions.isEmpty()) {
@@ -73,21 +90,33 @@ final class HoleWallFlow {
                 if (shuffled.get(0).dx * shuffled.get(1).dx
                                 + shuffled.get(0).dz * shuffled.get(1).dz
                         == -1) Collections.swap(shuffled, 1, 2);
+                if (tick >= duration * 2 / 3)
+                    shuffled.sort(Comparator.comparing(lateDirections::contains));
                 directions.addAll(shuffled);
             }
             var direction = directions.getFirst();
-            if (canApproach(direction, tick, speed)) {
+            if (patternStages.isEmpty())
+                patternStages.addAll(layout.shuffledStages(random, number == 0));
+            // Delayed arrivals must still fit the narrowed arms when they eventually cross.
+            long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
+            int gateRadius = latestExit >= duration / 3 ? 1 : 2;
+            boolean islandWave =
+                    layout == HoleWallLayout.PLUS && tick >= duration * 2 / 3 && lateWalls % 3 == 0;
+            var pattern =
+                    islandWave
+                            ? HoleWallPattern.islands(random)
+                            : layout.pattern(patternStages.getFirst(), gateRadius, random);
+            if (canApproach(direction, pattern, tick, speed)) {
+                if (!islandWave) patternStages.removeFirst();
+                if (tick >= duration * 2 / 3) {
+                    lateWalls++;
+                    lateDirections.add(direction);
+                }
                 directions.removeFirst();
                 lastDirection = direction;
-                // A wall that might survive past halfway must already fit the narrower arms.
-                long latestExit = tick + 40 + (long) Math.ceil(32 / speed) + 1;
-                int gateRadius = latestExit >= duration / 2 ? 1 : 2;
-                var wall =
-                        new Wall(
-                                ++number,
-                                HoleWallPattern.generate(number, gateRadius, random),
-                                direction,
-                                tick + 40);
+                // A wall that might survive past the first shrink must already fit the narrower
+                // arms.
+                var wall = new Wall(++number, pattern, direction, tick + (islandWave ? 20 : 40));
                 walls.add(wall);
                 started.add(wall);
                 nextSpawn = tick + Math.round(80 - 40 * Math.clamp((double) tick / duration, 0, 1));
@@ -102,15 +131,21 @@ final class HoleWallFlow {
                 warningArmRadius);
     }
 
-    private boolean canApproach(HoleWallPhysics.Direction direction, long tick, double speed) {
+    private boolean canApproach(
+            HoleWallPhysics.Direction direction, HoleWallPattern pattern, long tick, double speed) {
+        // Give corner jumps a clear approach and return: ordinary walls must not seal their route.
+        if (walls.stream().anyMatch(w -> w.pattern.requiresIslands())) return false;
+        if (pattern.requiresIslands()) return walls.isEmpty();
         // Earliest arrival uses maximum speed; old-wall clearance uses its current minimum
         // speed. Two blocks of margin cover wall thickness and player footprint at the rim.
         // The first movement step happens on moveAt itself, so subtract that inclusive tick.
         double earliestEntry = 39 + Math.floor((16 - radius - 2) / .32);
         for (var wall : walls)
-            if (wall.direction.dx * direction.dx + wall.direction.dz * direction.dz == -1) {
+            if (wall.direction.dx * direction.dx + wall.direction.dz * direction.dz == -1
+                    || !layout.crossing(wall.pattern, wall.direction, pattern, direction)) {
                 double movement = Math.max(0, earliestEntry - Math.max(0, wall.moveAt - tick));
-                if (wall.depth + movement * speed <= radius + 2) return false;
+                if (wall.depth + Math.max(0, Math.floor(movement * speed) - 1) <= radius + 2)
+                    return false;
             }
         return true;
     }
@@ -118,5 +153,7 @@ final class HoleWallFlow {
     void clear() {
         walls.clear();
         directions.clear();
+        patternStages.clear();
+        lateDirections.clear();
     }
 }

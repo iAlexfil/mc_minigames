@@ -1,6 +1,7 @@
 package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.util.BoundingBox;
@@ -33,6 +34,28 @@ final class HoleWallPhysics {
         return new BoundingBox(x, 81 + cell.y(), z, x + 1, 82 + cell.y(), z + 1);
     }
 
+    static List<BoundingBox> shapes(HoleWallPattern.Cell cell, Direction direction, double depth) {
+        var origin = box(cell, direction, depth);
+        return cell.block().boxes(direction).stream()
+                .map(b -> b.shift(origin.getMinX(), origin.getMinY(), origin.getMinZ()))
+                .toList();
+    }
+
+    static boolean supports(
+            List<HoleWallPattern.Cell> cells, Direction direction, double depth, BoundingBox body) {
+        boolean supported = false;
+        for (var cell : cells)
+            for (var solid : shapes(cell, direction, depth)) {
+                if (solid.overlaps(body.clone().expand(-.001))) return false;
+                if (Math.abs(body.getMinY() - solid.getMaxY()) <= .08
+                        && body.getMaxX() > solid.getMinX()
+                        && body.getMinX() < solid.getMaxX()
+                        && body.getMaxZ() > solid.getMinZ()
+                        && body.getMinZ() < solid.getMaxZ()) supported = true;
+            }
+        return supported;
+    }
+
     static boolean collides(
             List<HoleWallPattern.Cell> cells,
             Direction direction,
@@ -40,11 +63,39 @@ final class HoleWallPhysics {
             double to,
             BoundingBox previous,
             BoundingBox current) {
+        // Sneaking shrinks the body to 1.5 blocks. Do not sweep the previous standing head
+        // through a ceiling after the player has already ducked on this server tick.
+        // Growing after exiting must not enlarge the old body back underneath the roof.
+        previous =
+                new BoundingBox(
+                        previous.getMinX(),
+                        previous.getMinY(),
+                        previous.getMinZ(),
+                        previous.getMinX() + Math.min(previous.getWidthX(), current.getWidthX()),
+                        previous.getMinY() + Math.min(previous.getHeight(), current.getHeight()),
+                        previous.getMinZ() + Math.min(previous.getWidthZ(), current.getWidthZ()));
         double vx = current.getMinX() - previous.getMinX() - direction.dx * (to - from);
         double vy = current.getMinY() - previous.getMinY();
         double vz = current.getMinZ() - previous.getMinZ() - direction.dz * (to - from);
         for (var cell : cells)
-            if (swept(previous, box(cell, direction, from), vx, vy, vz)) return true;
+            for (var solid : shapes(cell, direction, from)) {
+                // Landing or resting on a top face is safe; only side contacts launch the player.
+                if (previous.getMinY() >= solid.getMaxY() - .001
+                        && current.getMinY() >= solid.getMaxY() - .08) continue;
+                if (solid.clone()
+                        .shift(direction.dx * (to - from), 0, direction.dz * (to - from))
+                        .overlaps(current)) return true;
+                if (swept(previous, solid, vx, vy, vz)) return true;
+                // Native block collision stops an approaching player exactly at the side face.
+                // Include that contact, but do not launch an idle neighbor or a player on top.
+                boolean approaching =
+                        (previous.getMaxX() <= solid.getMinX() + .001 && vx > 1e-7)
+                                || (previous.getMinX() >= solid.getMaxX() - .001 && vx < -1e-7)
+                                || (previous.getMaxZ() <= solid.getMinZ() + .001 && vz > 1e-7)
+                                || (previous.getMinZ() >= solid.getMaxZ() - .001 && vz < -1e-7);
+                if (approaching && swept(previous, solid.clone().expand(.015, 0, .015), vx, vy, vz))
+                    return true;
+            }
         return false;
     }
 

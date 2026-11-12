@@ -7,8 +7,6 @@ import me.petr1furious.potatominigames.core.config.PropertyCodec;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.World;
-import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
@@ -20,9 +18,19 @@ public final class HoleWallCheck {
     public static void main(String[] args) throws Exception {
         centerRequiresAction();
         directionCoverage();
+        randomPatternOrder();
         openings();
+        var hurdle = HoleWallPattern.generate(4, 1, patternRandom(0));
+        check(
+                hurdle.cells().stream()
+                        .allMatch(c -> c.y() == 0 && c.block().shape() == HoleWallBlock.Shape.FULL),
+                "The shown hurdle has a full-block sill and no floating decorations");
+        crossingRoutes();
+        precisionPassages();
         collisions();
+        footholds();
         floor();
+        HoleWallLayoutCheck.run();
         displayLifecycle();
         pushingAndRouting();
         wallStream();
@@ -39,33 +47,68 @@ public final class HoleWallCheck {
                         + " passed");
     }
 
+    private static Random patternRandom(int orientation) {
+        return new Random(orientation) {
+            private boolean first = true;
+
+            @Override
+            public boolean nextBoolean() {
+                if (first) {
+                    first = false;
+                    return (orientation & 1) != 0;
+                }
+                return super.nextBoolean();
+            }
+        };
+    }
+
     private static void centerRequiresAction() {
         for (int radius : new int[] {1, 2})
-            for (int seed = 0; seed < 20; seed++) {
-                int mustMove = 0, canJump = 0;
-                for (int stage = 1; stage <= 10; stage++) {
-                    var pattern = HoleWallPattern.generate(stage, radius, new Random(seed));
-                    var standing = new BoundingBox(.2, 81, .2, .8, 82.8, .8);
-                    var jumping = standing.clone().shift(0, 1.05, 0);
-                    for (var dir : HoleWallPhysics.Direction.values())
-                        check(
-                                HoleWallPhysics.collides(
-                                        pattern.cells(), dir, -2, 2, standing, standing),
-                                "Every wall requires action instead of standing still at center;"
-                                        + " stage="
-                                        + stage);
-                    if (HoleWallPhysics.collides(
+            for (int seed = 0; seed < 12; seed++) {
+                int centerOpen = 0, multiple = 0, mixed = 0;
+                var deck = new ArrayList<HoleWallPattern>();
+                for (int stage = 1; stage <= 20; stage++) {
+                    var pattern = HoleWallPattern.generate(stage, radius, patternRandom(seed));
+                    deck.add(pattern);
+                    var center = new BoundingBox(.2, 81, .2, .8, 82.8, .8);
+                    if (!HoleWallPhysics.collides(
                             pattern.cells(),
                             HoleWallPhysics.Direction.NORTH,
                             -2,
                             2,
-                            jumping,
-                            jumping)) mustMove++;
-                    else canJump++;
+                            center,
+                            center)) centerOpen++;
+                    if (pattern.gates().size() >= 2) multiple++;
+                    if (pattern.gates().stream()
+                                    .map(g -> List.of(g.bottom(), g.bodyHeight()))
+                                    .distinct()
+                                    .count()
+                            >= 2) mixed++;
+                    if (pattern.gates().stream().anyMatch(g -> g.width() < 1))
+                        check(
+                                pattern.gates().stream().anyMatch(g -> g.width() >= 1),
+                                "Precision route always has a wider alternative");
                 }
                 check(
-                        mustMove >= 6 && canJump >= 1,
-                        "Most walls force lateral movement, with some timed center jumps");
+                        centerOpen >= 3 && centerOpen <= 12,
+                        "Center is sometimes useful, never permanently safe");
+                check(
+                        multiple >= 16 && mixed >= 10,
+                        "Most walls offer routes and many offer distinct movement choices");
+                for (double u = -radius + .3; u <= radius + .7; u += .2) {
+                    var body = new BoundingBox(u - .3, 81, .2, u + .3, 82.8, .8);
+                    check(
+                            deck.stream()
+                                    .anyMatch(p ->
+                                            HoleWallPhysics.collides(
+                                                    p.cells(),
+                                                    HoleWallPhysics.Direction.NORTH,
+                                                    -2,
+                                                    2,
+                                                    body,
+                                                    body)),
+                            "No fixed standing position survives every wall");
+                }
             }
     }
 
@@ -87,6 +130,35 @@ public final class HoleWallCheck {
         }
     }
 
+    private static void randomPatternOrder() {
+        Set<List<net.kyori.adventure.text.Component>> orders = new HashSet<>();
+        for (int seed = 0; seed < 6; seed++) {
+            var flow = new HoleWallFlow(6000, new Random(seed));
+            List<net.kyori.adventure.text.Component> titles = new ArrayList<>();
+            for (int tick = 0; tick < 6000 && titles.size() < 40; tick++)
+                for (var wall : flow.tick(tick).started()) {
+                    if (titles.size() < 5)
+                        check(
+                                wall.pattern.gates().stream()
+                                        .allMatch(g -> g.height() >= 1.8 && g.width() >= 1),
+                                "Opening walls teach walking and jumping before crouch or"
+                                        + " precision");
+                    if (titles.size() < 10)
+                        check(
+                                wall.pattern.gates().stream().allMatch(g -> g.width() >= 1),
+                                "First ten random walls never require precision slits");
+                    titles.add(wall.pattern.title());
+                }
+            check(titles.size() >= 40, "Two full random decks fit in a long round");
+            for (int start : new int[] {0, 20})
+                check(
+                        new HashSet<>(titles.subList(start, start + 20)).size() == 20,
+                        "Each shuffled deck uses every wall type exactly once");
+            orders.add(List.copyOf(titles.subList(0, 20)));
+        }
+        check(orders.size() == 6, "Different games use different wall orders");
+    }
+
     private static void openings() {
         Set<List<HoleWallPattern.Cell>> patterns = new HashSet<>();
         boolean jumps = false;
@@ -94,7 +166,7 @@ public final class HoleWallCheck {
         for (int radius : new int[] {1, 2, 6, 8})
             for (int stage = 1; stage <= 20; stage++)
                 for (int seed = 0; seed < 8; seed++) {
-                    var pattern = HoleWallPattern.generate(stage, radius, new Random(seed));
+                    var pattern = HoleWallPattern.generate(stage, radius, patternRandom(seed));
                     patterns.add(pattern.cells());
                     sizes.add(pattern.cells().size());
                     check(!pattern.gates().isEmpty(), "Every wall has a passage");
@@ -111,11 +183,23 @@ public final class HoleWallCheck {
                                 "Jump never exceeds one block");
                         jumps |= gate.bottom() == 1;
                         for (var dir : HoleWallPhysics.Direction.values()) {
-                            double u = gate.start() + .5, y = 81 + gate.bottom() + .01;
+                            double u = gate.start() + gate.width() / 2, y = 81 + gate.bottom();
                             BoundingBox body =
                                     dir.dx == 0
-                                            ? new BoundingBox(u - .3, y, .2, u + .3, y + 1.8, .8)
-                                            : new BoundingBox(.2, y, u - .3, .8, y + 1.8, u + .3);
+                                            ? new BoundingBox(
+                                                    u - .3,
+                                                    y,
+                                                    .2,
+                                                    u + .3,
+                                                    y + gate.bodyHeight(),
+                                                    .8)
+                                            : new BoundingBox(
+                                                    .2,
+                                                    y,
+                                                    u - .3,
+                                                    .8,
+                                                    y + gate.bodyHeight(),
+                                                    u + .3);
                             check(
                                     !HoleWallPhysics.collides(
                                             pattern.cells(), dir, -1, 1, body, body),
@@ -126,6 +210,142 @@ public final class HoleWallCheck {
         check(
                 jumps && patterns.size() > 50 && sizes.size() >= 8,
                 "Ten varied obstacle silhouettes, not just rectangular walls with moved holes");
+    }
+
+    private static void crossingRoutes() {
+        for (int orientations = 0; orientations < 4; orientations++)
+            for (int radius : new int[] {1, 2})
+                for (int a = 1; a <= 20; a++)
+                    for (int b = 1; b <= 20; b++) {
+                        var first =
+                                HoleWallPattern.generate(
+                                        a, radius, patternRandom(orientations / 2));
+                        var second =
+                                HoleWallPattern.generate(
+                                        b, radius, patternRandom(orientations % 2));
+                        if (!HoleWallPattern.compatible(first, second)) continue;
+                        boolean fits = false;
+                        for (var ga : first.gates())
+                            for (var gb : second.gates()) {
+                                double x = ga.start() + ga.width() / 2,
+                                        z = gb.start() + gb.width() / 2;
+                                double y = 81 + Math.max(ga.bottom(), gb.bottom());
+                                var body =
+                                        new BoundingBox(
+                                                x - .3,
+                                                y,
+                                                z - .3,
+                                                x + .3,
+                                                y + Math.min(ga.bodyHeight(), gb.bodyHeight()),
+                                                z + .3);
+                                if (!HoleWallPhysics.collides(
+                                                first.cells(),
+                                                HoleWallPhysics.Direction.NORTH,
+                                                -2,
+                                                2,
+                                                body,
+                                                body)
+                                        && !HoleWallPhysics.collides(
+                                                second.cells(),
+                                                HoleWallPhysics.Direction.WEST,
+                                                -2,
+                                                2,
+                                                body,
+                                                body)) fits = true;
+                            }
+                        check(
+                                fits,
+                                "Compatible perpendicular walls have a real common passage over the"
+                                        + " plus");
+                    }
+    }
+
+    private static void precisionPassages() {
+        var roof =
+                List.of(
+                        new HoleWallPattern.Cell(
+                                0,
+                                1,
+                                new HoleWallBlock(
+                                        Material.SMOOTH_STONE_SLAB,
+                                        HoleWallBlock.Shape.UPPER_SLAB)));
+        var crouched = new BoundingBox(.2, 81, .79, .8, 82.5, 1.39);
+        var outsideStanding = new BoundingBox(.2, 81, 1.01, .8, 82.8, 1.61);
+        check(
+                !HoleWallPhysics.collides(
+                        roof, HoleWallPhysics.Direction.NORTH, 0, 0, crouched, outsideStanding),
+                "Standing up after leaving a low tunnel cannot invent an earlier head impact");
+        var insideStanding = new BoundingBox(.2, 81, .79, .8, 82.8, 1.39);
+        check(
+                HoleWallPhysics.collides(
+                        roof, HoleWallPhysics.Direction.NORTH, 0, 0, crouched, insideStanding),
+                "An actual current head overlap still counts when the body grows");
+        Set<HoleWallBlock.Shape> shapes = EnumSet.noneOf(HoleWallBlock.Shape.class);
+        int low = 0, narrow = 0;
+        for (int orientation = 0; orientation < 2; orientation++)
+            for (int radius : new int[] {1, 2})
+                for (int stage = 1; stage <= 20; stage++) {
+                    var pattern =
+                            HoleWallPattern.generate(stage, radius, patternRandom(orientation));
+                    pattern.cells().forEach(cell -> shapes.add(cell.block().shape()));
+                    for (var gate : pattern.gates())
+                        for (var dir : HoleWallPhysics.Direction.values()) {
+                            double u = gate.start() + gate.width() / 2, y = 81 + gate.bottom();
+                            var body =
+                                    dir.dx == 0
+                                            ? new BoundingBox(
+                                                    u - .3,
+                                                    y,
+                                                    .2,
+                                                    u + .3,
+                                                    y + gate.bodyHeight(),
+                                                    .8)
+                                            : new BoundingBox(
+                                                    .2,
+                                                    y,
+                                                    u - .3,
+                                                    .8,
+                                                    y + gate.bodyHeight(),
+                                                    u + .3);
+                            if (gate.height() == 1.5) {
+                                low++;
+                                var standing = body.clone().expand(0, 0, 0, 0, .3, 0);
+                                check(
+                                        HoleWallPhysics.collides(
+                                                pattern.cells(), dir, -1, 1, standing, standing),
+                                        "Low tunnel requires crouching, standing does not fit");
+                                check(
+                                        !HoleWallPhysics.collides(
+                                                pattern.cells(), dir, -1, 1, standing, body),
+                                        "Crouching this tick removes stale standing-head"
+                                                + " collision");
+                            }
+                            if (gate.width() < 1) {
+                                narrow++;
+                                var offCenter =
+                                        body.clone()
+                                                .shift(
+                                                        dir.dx == 0 ? .18 : 0,
+                                                        0,
+                                                        dir.dx == 0 ? 0 : .18);
+                                check(
+                                        HoleWallPhysics.collides(
+                                                pattern.cells(), dir, -1, 1, offCenter, offCenter),
+                                        "Thin posts require lining up with their actual narrow"
+                                                + " gap");
+                            }
+                        }
+                }
+        check(low > 0 && narrow > 0, "Both crouch and precision passages are generated");
+        check(
+                shapes.containsAll(
+                        List.of(
+                                HoleWallBlock.Shape.FENCE_POST,
+                                HoleWallBlock.Shape.BARS,
+                                HoleWallBlock.Shape.CHAIN,
+                                HoleWallBlock.Shape.ROD,
+                                HoleWallBlock.Shape.UPPER_SLAB)),
+                "Non-full blocks support distinct passage geometry");
     }
 
     private static void wallStream() {
@@ -144,11 +364,11 @@ public final class HoleWallCheck {
                             frame.radius() == expectedRadius,
                             "Ends disappear exactly at each timed third, even with active walls");
                     check(
-                            frame.armRadius() == (tick < seconds * 10L ? 2 : 1),
-                            "Arms narrow from five to three blocks exactly halfway");
+                            frame.armRadius() == (tick < seconds * 20L / 3 ? 2 : 1),
+                            "Arms narrow from five to three blocks at the first shrink");
                     check(
-                            frame.warningArmRadius() == (tick < seconds * 10L - 60 ? 2 : 1),
-                            "Width change is warned three seconds before halfway");
+                            frame.warningArmRadius() == (tick < seconds * 20L / 3 - 60 ? 2 : 1),
+                            "Width change is warned three seconds before the first shrink");
                     if (frame.warningRadius() < oldRadius && warningAt < 0) warningAt = tick;
                     if (frame.radius() < oldRadius) {
                         check(
@@ -165,11 +385,19 @@ public final class HoleWallCheck {
                                 count >= 2,
                                 "Second wall appears within four seconds, before first exits");
                     for (var a : active) {
+                        check(
+                                a.depth == Math.rint(a.depth)
+                                        && a.depth - a.from >= 0
+                                        && a.depth - a.from <= 1,
+                                "Walls move in discrete one-block piston steps");
                         for (var gate : a.pattern.gates())
-                            check(
-                                    gate.start() >= -frame.armRadius()
-                                            && gate.start() + gate.width() <= frame.armRadius() + 1,
-                                    "Even existing wall gates fit the floor when the arms narrow");
+                            if (!a.pattern.requiresIslands())
+                                check(
+                                        gate.start() >= -frame.armRadius()
+                                                && gate.start() + gate.width()
+                                                        <= frame.armRadius() + 1,
+                                        "Even existing wall gates fit the floor when the arms"
+                                            + " narrow");
                         for (var b : active)
                             if (a != b) {
                                 int dot =
@@ -184,17 +412,23 @@ public final class HoleWallCheck {
                                         "Opposing walls never squeeze the playable platform");
                                 if (dot == 0 && tick >= a.moveAt && tick >= b.moveAt)
                                     crossing = true;
-                                for (var ga : a.pattern.gates())
-                                    for (var gb : b.pattern.gates()) {
-                                        double feet = Math.max(ga.bottom(), gb.bottom()) + .01;
-                                        check(
-                                                feet + 1.8
-                                                        <= Math.min(
-                                                                ga.bottom() + ga.height(),
-                                                                gb.bottom() + gb.height()),
-                                                "Crossing gates have compatible player-height"
-                                                        + " clearance");
-                                    }
+                                if (aOnFloor && bOnFloor) {
+                                    boolean route = false;
+                                    for (var ga : a.pattern.gates())
+                                        for (var gb : b.pattern.gates())
+                                            if (Math.max(ga.bottom(), gb.bottom())
+                                                            + Math.min(
+                                                                    ga.bodyHeight(),
+                                                                    gb.bodyHeight())
+                                                    <= Math.min(
+                                                            ga.bottom() + ga.height(),
+                                                            gb.bottom() + gb.height()))
+                                                route = true;
+                                    check(
+                                            route,
+                                            "Crossing walls retain at least one compatible pair of"
+                                                    + " routes");
+                                }
                             }
                     }
                 }
@@ -238,14 +472,19 @@ public final class HoleWallCheck {
         var arena = new HoleWallArena(fixture.world);
         arena.build();
         check(
-                fixture.blocks.values().stream().filter(m -> m != Material.AIR).count() == 145,
-                "Smaller 17 by 17 plus with five-wide arms");
+                fixture.blocks.values().stream().filter(m -> m != Material.AIR).count() == 161,
+                "17 by 17 plus with five-wide arms and four 2 by 2 corner islands");
         for (int x = -8; x <= 8; x++)
             for (int z = -8; z <= 8; z++)
                 check(
                         (fixture.world.getBlockAt(x, 80, z).getType() != Material.AIR)
-                                == (Math.abs(x) <= 2 || Math.abs(z) <= 2),
-                        "No solid corners outside plus");
+                                == (Math.abs(x) <= 2
+                                        || Math.abs(z) <= 2
+                                        || (Math.abs(x) >= 5
+                                                && Math.abs(x) <= 6
+                                                && Math.abs(z) >= 5
+                                                && Math.abs(z) <= 6)),
+                        "Only the four deliberate islands exist outside the plus");
         arena.warn(6, 2);
         check(
                 fixture.world.getBlockAt(8, 80, 0).getType() == Material.RED_CONCRETE,
@@ -265,14 +504,31 @@ public final class HoleWallCheck {
                 fixture.world.getBlockAt(1, 80, 5).getType() != Material.RED_CONCRETE,
                 "The remaining three-wide strip is safe");
         arena.shrink(6, 1);
+        for (int sx : new int[] {-1, 1})
+            for (int sz : new int[] {-1, 1}) {
+                check(
+                        fixture.world.getBlockAt(sx * 5, 80, sz * 5).getType() != Material.AIR,
+                        "Corner islands survive the first shrink and arm narrowing");
+                check(
+                        fixture.world.getBlockAt(sx * 5, 80, sz * 4).getType() == Material.AIR,
+                        "Islands remain separated from arms by a jumpable gap");
+            }
+        arena.warn(4, 1);
+        check(
+                fixture.world.getBlockAt(5, 80, 5).getType() != Material.RED_CONCRETE,
+                "Permanent corner islands are never marked for collapse");
         arena.shrink(4, 1);
         for (int x = -10; x <= 10; x++)
             for (int z = -10; z <= 10; z++)
                 check(
                         (fixture.world.getBlockAt(x, 80, z).getType() != Material.AIR)
-                                == (Math.abs(x) <= 4
-                                        && Math.abs(z) <= 4
-                                        && (Math.abs(x) <= 1 || Math.abs(z) <= 1)),
+                                == ((Math.abs(x) <= 4
+                                                && Math.abs(z) <= 4
+                                                && (Math.abs(x) <= 1 || Math.abs(z) <= 1))
+                                        || (Math.abs(x) >= 5
+                                                && Math.abs(x) <= 6
+                                                && Math.abs(z) >= 5
+                                                && Math.abs(z) <= 6)),
                         "Shrinking preserves plus shape with three-wide arms");
         for (int i = 0; i < 12; i++) {
             var p = arena.spawn(i, 12);
@@ -281,6 +537,79 @@ public final class HoleWallCheck {
                             != Material.AIR,
                     "Spawn remains over floor");
         }
+    }
+
+    private static void footholds() {
+        var full = List.of(new HoleWallPattern.Cell(0, 0));
+        var face = new BoundingBox(.2, 81, 1, .8, 82.8, 1.6);
+        check(
+                HoleWallPhysics.collides(
+                        full,
+                        HoleWallPhysics.Direction.NORTH,
+                        0,
+                        0,
+                        face.clone().shift(0, 0, .2),
+                        face),
+                "Arriving at the exact native front face triggers knockback");
+        var rear = new BoundingBox(.2, 81, -.6, .8, 82.8, 0);
+        check(
+                !HoleWallPhysics.collides(full, HoleWallPhysics.Direction.NORTH, 0, 1, rear, rear),
+                "A wall moving away from a touching player cannot hit them");
+        check(
+                !HoleWallPhysics.collides(
+                        full,
+                        HoleWallPhysics.Direction.NORTH,
+                        0,
+                        0,
+                        face,
+                        face.clone().shift(0, 0, .2)),
+                "Walking away from a face cannot trigger knockback");
+        check(
+                HoleWallPhysics.collides(
+                        full,
+                        HoleWallPhysics.Direction.NORTH,
+                        0,
+                        0,
+                        rear.clone().shift(0, 0, -.2),
+                        rear),
+                "Arriving at the exact native rear face triggers knockback");
+        check(
+                !HoleWallPhysics.collides(full, HoleWallPhysics.Direction.NORTH, 0, 0, face, face),
+                "An idle neighbor is not launched without an impact");
+        for (var direction : HoleWallPhysics.Direction.values()) {
+            for (var block :
+                    List.of(
+                            HoleWallBlock.STONE,
+                            new HoleWallBlock(Material.OAK_SLAB, HoleWallBlock.Shape.LOWER_SLAB),
+                            new HoleWallBlock(Material.OAK_SLAB, HoleWallBlock.Shape.UPPER_SLAB),
+                            new HoleWallBlock(Material.OAK_FENCE, HoleWallBlock.Shape.FENCE))) {
+                var cells = List.of(new HoleWallPattern.Cell(0, 0, block));
+                double height =
+                        block.shape() == HoleWallBlock.Shape.LOWER_SLAB
+                                ? .5
+                                : block.shape() == HoleWallBlock.Shape.FENCE ? 1.5 : 1;
+                var standing = new BoundingBox(.2, 81 + height, .2, .8, 82.8 + height, .8);
+                check(
+                        HoleWallPhysics.supports(cells, direction, 0, standing),
+                        "Native-shaped top is a safe foothold");
+                var carried = standing.clone().shift(direction.dx, 0, direction.dz);
+                check(
+                        !HoleWallPhysics.collides(cells, direction, 0, 1, standing, carried),
+                        "Riding a stepped wall never triggers a side hit");
+            }
+        }
+        var slab =
+                List.of(
+                        new HoleWallPattern.Cell(
+                                0,
+                                0,
+                                new HoleWallBlock(
+                                        Material.OAK_SLAB, HoleWallBlock.Shape.LOWER_SLAB)));
+        var clearance = new BoundingBox(.2, 81.55, .2, .8, 83.35, .8);
+        check(
+                !HoleWallPhysics.collides(
+                        slab, HoleWallPhysics.Direction.NORTH, -1, 1, clearance, clearance),
+                "Slabs do not collide like full cubes");
     }
 
     private static void pushingAndRouting() throws Exception {
@@ -304,11 +633,7 @@ public final class HoleWallCheck {
                 "Standalone factory selects the same game");
         Method push =
                 HoleWallSession.class.getDeclaredMethod(
-                        "push",
-                        Player.class,
-                        HoleWallFlow.Wall.class,
-                        BoundingBox.class,
-                        double.class);
+                        "push", Player.class, HoleWallFlow.Wall.class, BoundingBox.class);
         push.setAccessible(true);
         UUID playerId = new UUID(0, 1);
         for (var dir : HoleWallPhysics.Direction.values()) {
@@ -343,10 +668,10 @@ public final class HoleWallCheck {
                                                                 "Unexpected player method: "
                                                                         + m.getName());
                                             });
-            push.invoke(round, player, wall, body(position[0]), .2);
+            push.invoke(round, player, wall, body(position[0]));
             check(
-                    velocity[0].getX() * dir.dx + velocity[0].getZ() * dir.dz > 0,
-                    "Collision pushes along wall travel");
+                    velocity[0].getX() * dir.dx + velocity[0].getZ() * dir.dz >= 1,
+                    "Side collision gives a strong horizontal launch");
             check(
                     velocity[0].getY() == .3 && position[0].getY() == 81,
                     "Pushing preserves jump velocity and height");
@@ -371,7 +696,7 @@ public final class HoleWallCheck {
                             body(behind),
                             body(position[0])),
                     "Sprinting into rear face is a real collision");
-            push.invoke(round, player, wall, body(behind), .2);
+            push.invoke(round, player, wall, body(behind));
             check(
                     position[0].getX() * dir.dx + position[0].getZ() * dir.dz
                             < .2 + (dir.dx + dir.dz) * .5,
@@ -388,7 +713,9 @@ public final class HoleWallCheck {
             List<HoleWallPattern.Cell> solid = new ArrayList<>();
             for (int u = -3; u <= 3; u++)
                 for (int y = 0; y < 2; y++) solid.add(new HoleWallPattern.Cell(u, y));
-            var full = new HoleWallPattern(solid, List.of(), net.kyori.adventure.text.Component.empty());
+            var full =
+                    new HoleWallPattern(
+                            solid, List.of(), net.kyori.adventure.text.Component.empty());
             var first = new HoleWallFlow.Wall(1, full, dir, 0);
             first.from = first.depth = 0;
             var perpendicular =
@@ -413,23 +740,29 @@ public final class HoleWallCheck {
             check(
                     velocity[0].getX() != 0 && velocity[0].getZ() != 0 && velocity[0].getY() == .3,
                     "Perpendicular pushes combine without erasing jump or earlier push");
-        }
-        var fixture = new DisplayWorld(-1);
-        Field displaysField = HoleWallSession.class.getDeclaredField("displays");
-        displaysField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<HoleWallFlow.Wall, HoleWallDisplay> displays =
-                (Map<HoleWallFlow.Wall, HoleWallDisplay>) displaysField.get(round);
-        for (var dir : HoleWallPhysics.Direction.values()) {
-            var pattern = HoleWallPattern.generate(3, 2, new Random(0));
-            var wall = new HoleWallFlow.Wall(1, pattern, dir, 0);
-            displays.put(wall, new HoleWallDisplay(fixture.world, pattern, dir, 0));
+            var riding =
+                    new HoleWallFlow.Wall(
+                            3,
+                            new HoleWallPattern(
+                                    List.of(new HoleWallPattern.Cell(0, 0)),
+                                    List.of(),
+                                    net.kyori.adventure.text.Component.empty()),
+                            dir,
+                            0);
+            riding.from = 0;
+            riding.depth = 1;
+            position[0] = new Location(null, .5, 82, .5);
+            velocity[0] = new Vector();
+            ((HoleWallSession) round).carry(player, List.of(riding));
+            check(
+                    position[0].getX() == .5 + dir.dx
+                            && position[0].getZ() == .5 + dir.dz
+                            && position[0].getY() == 82
+                            && velocity[0].lengthSquared() == 0,
+                    "A standing rider moves exactly one cell without launch");
         }
         ((HoleWallSession) round).cleanup();
         ((HoleWallSession) round).cleanup();
-        check(
-                displays.isEmpty() && fixture.removed.size() == fixture.positions.size(),
-                "Aborting concurrent walls removes every display");
     }
 
     private static BoundingBox body(Location p) {
@@ -443,85 +776,55 @@ public final class HoleWallCheck {
     }
 
     private static void displayLifecycle() {
-        var pattern = HoleWallPattern.generate(3, 6, new Random(4));
-        for (var dir : HoleWallPhysics.Direction.values()) {
-            var fixture = new DisplayWorld(-1);
-            var wall = new HoleWallDisplay(fixture.world, pattern, dir, -16);
-            wall.move(2.5);
-            check(
-                    fixture.positions.size() == pattern.cells().size(),
-                    "Exactly one display per solid cell");
-            for (int i = 0; i < fixture.positions.size(); i++) {
-                var b = HoleWallPhysics.box(pattern.cells().get(i), dir, 2.5);
-                var p = fixture.positions.get(i);
-                check(
-                        p.getX() == b.getMinX()
-                                && p.getY() == b.getMinY()
-                                && p.getZ() == b.getMinZ(),
-                        "Visible wall matches collision geometry");
-            }
-            wall.clear();
-            wall.clear();
-            check(
-                    fixture.removed.size() == fixture.positions.size(),
-                    "Clearing wall removes every display exactly once");
-        }
-        var fixture = new DisplayWorld(4);
-        try {
-            new HoleWallDisplay(fixture.world, pattern, HoleWallPhysics.Direction.NORTH, -16);
-            throw new AssertionError("Expected spawn failure");
-        } catch (IllegalStateException expected) {
-            check(fixture.removed.size() == 4, "Partial spawn failure cleans existing displays");
-        }
-    }
-
-    private static final class DisplayWorld {
-        final List<Location> positions = new ArrayList<>();
-        final Set<Integer> removed = new HashSet<>();
-        int failAfter;
-
-        DisplayWorld(int failAfter) {
-            this.failAfter = failAfter;
-        }
-
-        final World world =
-                (World)
-                        Proxy.newProxyInstance(
-                                World.class.getClassLoader(),
-                                new Class[] {World.class},
-                                (o, m, a) -> {
-                                    if (!m.getName().equals("spawn"))
-                                        throw new AssertionError(
-                                                "Unexpected world method: " + m.getName());
-                                    if (positions.size() == failAfter)
-                                        throw new IllegalStateException("Simulated spawn failure");
-                                    int id = positions.size();
-                                    positions.add(((Location) a[0]).clone());
-                                    // Display appearance needs a server; this fixture tests
-                                    // movement and ownership.
-                                    return Proxy.newProxyInstance(
-                                            BlockDisplay.class.getClassLoader(),
-                                            new Class[] {BlockDisplay.class},
-                                            (display, method, args) ->
-                                                    switch (method.getName()) {
-                                                        case "teleport" -> {
-                                                            positions.set(
-                                                                    id,
-                                                                    ((Location) args[0]).clone());
-                                                            yield true;
-                                                        }
-                                                        case "remove" -> {
-                                                            check(
-                                                                    removed.add(id),
-                                                                    "Display removed once");
-                                                            yield null;
-                                                        }
-                                                        default ->
-                                                                throw new AssertionError(
-                                                                        "Unexpected display method:"
-                                                                                + " "
-                                                                                + method.getName());
-                                                    });
-                                });
+        PartyArenaCheck.installDataFactory();
+        var fixture = new PartyArenaCheck.WorldMap();
+        fixture.block(0, 81, 0).setType(Material.GOLD_BLOCK, false);
+        fixture.block(0, 80, 0).setType(Material.QUARTZ_BLOCK, false);
+        var stone =
+                new HoleWallPattern(
+                        List.of(new HoleWallPattern.Cell(0, 0)),
+                        List.of(),
+                        net.kyori.adventure.text.Component.empty());
+        var slab =
+                new HoleWallPattern(
+                        List.of(
+                                new HoleWallPattern.Cell(
+                                        0,
+                                        0,
+                                        new HoleWallBlock(
+                                                Material.OAK_SLAB,
+                                                HoleWallBlock.Shape.LOWER_SLAB))),
+                        List.of(),
+                        net.kyori.adventure.text.Component.empty());
+        var first = new HoleWallFlow.Wall(1, stone, HoleWallPhysics.Direction.NORTH, 0);
+        var second = new HoleWallFlow.Wall(2, slab, HoleWallPhysics.Direction.WEST, 0);
+        first.from = first.depth = second.from = second.depth = 0;
+        var blocks = new HoleWallBlocks(fixture.world);
+        blocks.render(List.of(first, second));
+        check(
+                fixture.block(0, 81, 0).getType() == Material.OAK_SLAB,
+                "Crossing wall has one real visible block");
+        check(
+                HoleWallBlocks.visibleCells(List.of(first, second), false).get(first).isEmpty(),
+                "Hidden crossing geometry cannot hit the player");
+        blocks.render(List.of(first));
+        check(
+                fixture.block(0, 81, 0).getType() == Material.STONE_BRICKS,
+                "Leaving wall reveals the other wall instead of deleting it");
+        first.depth = 1;
+        blocks.render(List.of(first));
+        check(
+                fixture.block(0, 81, 0).getType() == Material.GOLD_BLOCK
+                        && fixture.block(0, 81, 1).getType() == Material.STONE_BRICKS,
+                "Step restores old cell and installs new foothold");
+        blocks.clear();
+        blocks.clear();
+        check(
+                fixture.block(0, 81, 1).getType() == Material.AIR
+                        && fixture.block(0, 81, 0).getType() == Material.GOLD_BLOCK,
+                "Cleanup restores original blocks and is idempotent");
+        check(
+                fixture.block(0, 80, 0).getType() == Material.QUARTZ_BLOCK,
+                "Moving walls never touch the platform");
     }
 }

@@ -2,6 +2,7 @@ package me.petr1furious.potatominigames.games.party;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.i18n.I18n;
+
 import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
@@ -28,7 +29,7 @@ final class AnvilSession extends PartySurvivalSession {
         arena = new AnvilArena(world);
         arena.build();
         round = new AnvilRound(names.size(), waveSeconds * 20, moveSeconds * 20, waves, pvpWave);
-        arena.relocateShelters(round.shelters(), random);
+        arena.relocateShelters(round.shelters(), round.shelterSize(), random);
         rain = new AnvilRain(world, arena, random, this::eliminate);
     }
 
@@ -69,14 +70,19 @@ final class AnvilSession extends PartySurvivalSession {
                 return;
             }
             if (!round.raining()) {
-                arena.relocateShelters(round.shelters(), random);
-                announceTitle(I18n.tr("party.rounds.anvils.move"),
-                        I18n.tr("party.rounds.anvils.shelters_moved", moveSeconds), 2);
+                arena.relocateShelters(round.shelters(), round.shelterSize(), random);
+                announceTitle(
+                        I18n.tr("party.rounds.anvils.move"),
+                        I18n.tr("party.rounds.anvils.shelters_moved", round.remaining(elapsed)),
+                        2);
                 PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, 1.2f);
             } else {
                 announceTitle(
                         I18n.tr("party.rounds.anvils.wave", round.wave()),
-                        I18n.tr(round.pvpEnabled() ? "party.rounds.anvils.push" : "party.rounds.anvils.hide"),
+                        I18n.tr(
+                                round.pvpEnabled()
+                                        ? "party.rounds.anvils.push"
+                                        : "party.rounds.anvils.hide"),
                         2);
                 PartySounds.play(alivePlayers(), Sound.ENTITY_LIGHTNING_BOLT_THUNDER, .35f, 1.5f);
             }
@@ -87,7 +93,9 @@ final class AnvilSession extends PartySurvivalSession {
     }
 
     Component status() {
-        return I18n.tr("party.rounds.anvils.status", round.wave(),
+        return I18n.tr(
+                "party.rounds.anvils.status",
+                round.wave(),
                 I18n.tr(round.raining() ? "party.rounds.anvils.rain" : "party.rounds.anvils.move"),
                 round.remaining(elapsed()));
     }

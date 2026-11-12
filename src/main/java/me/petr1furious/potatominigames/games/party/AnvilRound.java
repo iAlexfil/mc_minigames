@@ -7,7 +7,7 @@ final class AnvilRound {
     private boolean raining, done;
 
     AnvilRound(int players) {
-        this(players, 120, 200, 10, 4);
+        this(players, 120, 200, 10, 3);
     }
 
     AnvilRound(int players, int rainTicks, int moveTicks, int waves, int pvpWave) {
@@ -19,7 +19,7 @@ final class AnvilRound {
     }
 
     void start(long tick) {
-        deadline = tick + moveTicks;
+        deadline = tick + relocationTicks();
     }
 
     boolean advance(long tick) {
@@ -31,7 +31,7 @@ final class AnvilRound {
                 return true;
             }
             wave++;
-            deadline = tick + moveTicks;
+            deadline = tick + relocationTicks();
         } else {
             raining = true;
             deadline = tick + rainTicks;
@@ -45,6 +45,14 @@ final class AnvilRound {
 
     int shelters() {
         return Math.max(1, initial - (wave - 1) / 2);
+    }
+
+    int shelterSize() {
+        return wave >= 6 ? 1 : 2;
+    }
+
+    private int relocationTicks() {
+        return Math.max(Math.min(moveTicks, 120), moveTicks - (wave - 1) * 20);
     }
 
     boolean raining() {

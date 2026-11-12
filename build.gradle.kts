@@ -168,7 +168,8 @@ tasks.check { dependsOn(checkPartyLifecycle) }
 
 for ((taskName, checkClass) in mapOf(
     "checkColorFloor" to "ColorFloorCheck", "checkAnvils" to "AnvilsCheck",
-    "checkBuildMemory" to "BuildMemoryCheck", "checkToolRace" to "ToolRaceCheck")) {
+    "checkBuildMemory" to "BuildMemoryCheck", "checkToolRace" to "ToolRaceCheck",
+    "checkOneShot" to "OneShotCheck", "checkParkourRace" to "ParkourRaceCheck")) {
     val gameCheck = tasks.register<JavaExec>(taskName) {
         dependsOn(checks.classesTaskName)
         classpath = checks.runtimeClasspath
@@ -279,3 +280,10 @@ val checkMagicBattle by tasks.registering(JavaExec::class) {
     mainClass.set("me.petr1furious.potatominigames.games.party.MagicBattleCheck")
 }
 tasks.check { dependsOn(checkMagicBattle) }
+
+val checkCounterStrike by tasks.registering(JavaExec::class) {
+    dependsOn(checks.classesTaskName)
+    classpath = checks.runtimeClasspath
+    mainClass.set("me.petr1furious.potatominigames.games.cs.CsCheck")
+}
+tasks.check { dependsOn(checkCounterStrike) }

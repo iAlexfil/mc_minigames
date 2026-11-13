@@ -221,6 +221,11 @@ final class FinalsHighlights {
                     }
                 }
             }
+            // Paper clears private visibility when chunk tracking ends. The entity can be
+            // valid again before this refresh, so validity alone does not mean it is visible.
+            if (!view.player.canSee(overlay.label())) view.player.showEntity(plugin, overlay.label());
+            if (overlay.outline() != null && !view.player.canSee(overlay.outline()))
+                view.player.showEntity(plugin, overlay.outline());
         }
         view.overlays
                 .entrySet()

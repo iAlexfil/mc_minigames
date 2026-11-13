@@ -77,6 +77,7 @@ public final class FinalsSessionCheck {
         fallDamageIsDisabled();
         bareHandGlassBreaking();
         doorAndTrapdoorInteractions();
+        nativeControlsAndPressurePlates();
         deathAndRejoin();
         creditedEnemyKills();
         teamWipeDeadlines();
@@ -470,8 +471,96 @@ public final class FinalsSessionCheck {
         check(other.useInteractedBlock() == Event.Result.DENY, "other native block interactions remain denied");
     }
 
+    private static void nativeControlsAndPressurePlates() throws Exception {
+        Fixture f = new Fixture();
+        Block control = f.world.block(6, 65, 3);
+        f.red.location = control.getLocation().add(-1, 0, 0);
+        f.red.hand.type = Material.WOODEN_HOE;
+        for (Material material : Material.values()) {
+            if (!material.name().endsWith("_BUTTON") && !material.name().endsWith("_FENCE_GATE")) continue;
+            control.setType(material);
+            PlayerInteractEvent click = interact(f.red.player, control, EquipmentSlot.HAND);
+            f.session.onPlayerInteract(click);
+            check(click.useInteractedBlock() == Event.Result.ALLOW && click.useItemInHand() == Event.Result.DENY,
+                    "main-hand right click permits native redstone/toggle behavior without firing equipment: " + material);
+            PlayerInteractEvent offhand = interact(f.red.player, control, EquipmentSlot.OFF_HAND);
+            f.session.onPlayerInteract(offhand);
+            check(offhand.useInteractedBlock() == Event.Result.DENY && offhand.useItemInHand() == Event.Result.DENY,
+                    "offhand duplicates cannot activate native controls: " + material);
+        }
+        for (Material material : Material.values()) {
+            if (!material.name().endsWith("_PRESSURE_PLATE")) continue;
+            control.setType(material);
+            PlayerInteractEvent step = interaction(f.red.player, control, null, Action.PHYSICAL);
+            f.session.onPlayerInteract(step);
+            check(step.useInteractedBlock() == Event.Result.ALLOW && step.useItemInHand() == Event.Result.DENY,
+                    "physical pressure plate activation accepts its native null hand and never uses equipment: " + material);
+        }
+        for (Material material : List.of(Material.STONE_BUTTON, Material.OAK_FENCE_GATE, Material.HEAVY_WEIGHTED_PRESSURE_PLATE)) {
+            boolean plate = material.name().endsWith("_PRESSURE_PLATE");
+            for (String gate : List.of("inactive", "preparing", "countdown", "protection", "downed", "disconnected", "finished", "outside")) {
+                Fixture blocked = new Fixture();
+                Block target = blocked.world.block(gate.equals("outside") ? 24 : 6, 65, 3);
+                target.setType(material);
+                blocked.red.location = target.getLocation().add(-1, 0, 0);
+                if (!gate.equals("outside")) interactionGate(blocked, gate);
+                PlayerInteractEvent denied = interaction(blocked.red.player, target, plate ? null : EquipmentSlot.HAND,
+                        plate ? Action.PHYSICAL : Action.RIGHT_CLICK_BLOCK);
+                blocked.session.onPlayerInteract(denied);
+                check(denied.useInteractedBlock() == Event.Result.DENY,
+                        material + " interaction respects " + gate);
+            }
+        }
+        for (Material material : List.of(Material.FARMLAND, Material.TURTLE_EGG, Material.STONE,
+                Material.STONE_BUTTON, Material.OAK_FENCE_GATE)) {
+            control.setType(material);
+            PlayerInteractEvent step = interaction(f.red.player, control, null, Action.PHYSICAL);
+            f.session.onPlayerInteract(step);
+            check(step.useInteractedBlock() == Event.Result.DENY,
+                    "physical activation does not enable unrelated terrain mutations: " + material);
+        }
+        for (Material material : List.of(Material.CHEST, Material.LEVER, Material.CRAFTING_TABLE)) {
+            control.setType(material);
+            PlayerInteractEvent click = interact(f.red.player, control, EquipmentSlot.HAND);
+            f.session.onPlayerInteract(click);
+            check(click.useInteractedBlock() == Event.Result.DENY,
+                    "unrelated right-click block interactions stay blocked: " + material);
+        }
+        control.setType(Material.OAK_PRESSURE_PLATE);
+        FinalsWeapons weapons = new FinalsWeapons(context(f.session));
+        Class<?> equippedType = Class.forName(FinalsWeapons.class.getName() + "$Equipped");
+        var equippedConstructor = equippedType.getDeclaredConstructor(FinalsWeapon.class);
+        equippedConstructor.setAccessible(true);
+        Object equipped = equippedConstructor.newInstance(FinalsWeapon.DUAL_BLADES);
+        set(equipped, "guardUntil", 400L);
+        map(weapons, "equipped").put(RED, equipped);
+        set(f.session, "weapons", weapons);
+        PlayerInteractEvent step = interaction(f.red.player, control, null, Action.PHYSICAL);
+        f.session.onPlayerInteract(step);
+        check(step.useInteractedBlock() == Event.Result.ALLOW && (Long) field(equipped, "guardUntil").get(equipped) == 400L,
+                "walking on a pressure plate does not cancel ongoing weapon use");
+
+        FinalsRevives revives = bare(FinalsRevives.class);
+        Class<?> channelType = Class.forName(FinalsRevives.class.getName() + "$Channel");
+        var channelConstructor = channelType.getDeclaredConstructor(Player.class, UUID.class, boolean.class, int.class, long.class);
+        channelConstructor.setAccessible(true);
+        Object channel = channelConstructor.newInstance(f.red.player, BLUE_MATE, false, 0, 300L);
+        Map<UUID, Object> channels = new HashMap<>();
+        channels.put(RED, channel);
+        set(revives, "channels", channels);
+        set(f.session, "revives", revives);
+        PlayerInteractEvent duringRevive = interaction(f.red.player, control, null, Action.PHYSICAL);
+        f.session.onPlayerInteract(duringRevive);
+        check(duringRevive.useInteractedBlock() == Event.Result.DENY && channels.get(RED) == channel,
+                "an occupied reviver cannot activate a pressure plate, but walking never interrupts the revive channel");
+        check((Long) field(equipped, "guardUntil").get(equipped) == 400L,
+                "a rejected physical interaction also preserves weapon state");
+    }
+
     private static void interactionGate(Fixture f, String gate) throws Exception {
         switch (gate) {
+            case "inactive" -> set(f.session, "done", true);
+            case "preparing" -> set(f.session, "preparing", true);
             case "protection" -> f.protection().put(RED, 101L);
             case "countdown" -> set(f.session, "state", null);
             case "downed" -> map(f.session, "respawnAt").put(RED, 200L);

@@ -395,9 +395,9 @@ public final class FinalsLoadoutSmoke {
                 emitters.put(viewer.getUniqueId(),emitter);
                 require(!emitter.isVisibleByDefault()&&!emitter.isPersistent()&&!emitter.hasGravity()
                                 &&emitter.isInvulnerable()&&!emitter.isSilent()
-                                &&emitter.getTeleportDuration()==0
+                                &&emitter.getTeleportDuration()==2
                                 &&PlainTextComponentSerializer.plainText().serialize(emitter.text()).isEmpty(),
-                        "The actual music factory creates an empty, private, non-silent and immobile display");
+                        "The actual music factory creates an empty, private, non-silent display with two-tick movement smoothing");
                 require(players.values().stream().allMatch(player->
                                 player.shownEntities.contains(emitter.getUniqueId())==player.id.equals(viewer.getUniqueId())),
                         "The private native emitter is shown only to its intended listener");
@@ -448,9 +448,9 @@ public final class FinalsLoadoutSmoke {
         require(carrier.musicSource==transports.get(carrier.id)&&listener.musicSource==transports.get(listener.id)
                         &&carrier.musicCategory==SoundCategory.RECORDS,
                 "Background music binds once to each listener's private emitter in the record category");
-        require(emitters.get(carrier.id).getLocation().distanceSquared(carrier.player.getEyeLocation())<.000001
-                        &&emitters.get(listener.id).getLocation().distanceSquared(listener.player.getEyeLocation())<.000001,
-                "Audible native emitters follow their listeners' eye positions");
+        require(emitters.get(carrier.id).getLocation().distanceSquared(carrier.player.getEyeLocation().add(0,2,0))<.000001
+                        &&emitters.get(listener.id).getLocation().distanceSquared(listener.player.getEyeLocation().add(0,2,0))<.000001,
+                "Audible native emitters remain two blocks above their listeners' eye positions");
         close(carrier.musicVolume,.30,"Cashout music uses thirty-percent volume");
         require(players.values().stream().filter(player->player!=carrier&&player!=listener)
                         .allMatch(player->player.musicStarted.isEmpty()),
@@ -480,7 +480,7 @@ public final class FinalsLoadoutSmoke {
         boundary.location=source.getLocation().add(24,0,0);
         withPlayerLookup(session,"updateCashoutMusic");
         require(boundary.musicStarted.size()==1&&boundary.musicStopped.isEmpty()&&emitters.get(boundary.id)==boundaryEmitter
-                        &&boundaryEmitter.getLocation().distanceSquared(boundary.player.getEyeLocation())<.000001,
+                        &&boundaryEmitter.getLocation().distanceSquared(boundary.player.getEyeLocation().add(0,2,0))<.000001,
                 "Returning within range restores the same emitter without restarting the current track");
         call(session,"onPlayerPostRespawn",new com.destroystokyo.paper.event.player.PlayerPostRespawnEvent(
                 boundary.player,boundary.location,false,false,false,PlayerRespawnEvent.RespawnReason.DEATH));

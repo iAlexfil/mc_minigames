@@ -16,6 +16,14 @@ java -Xms256M -Xmx1536M -Dfinals.smoke.includePreviews=true -jar asp-server.jar 
 
 The default run checks maps only. Add `-Dfinals.smoke.includePreviews=true` for editor previews and/or `-Dfinals.smoke.includeLoadouts=true` for loadouts. Use `-Dfinals.smoke.previewOnly=true` or `-Dfinals.smoke.loadoutOnly=true` for a targeted rerun. Start a fresh map fixture for another map run: its setup names are intentionally fixed.
 
+`FinalsMarkerDeliverySmoke.run(smokePlugin, mainPlugin)` tests real CraftPlayer
+visibility and native entity-tracker packets for contestants on both teams. Compile
+it with the cached native server JAR under `versions` in addition to the dependencies
+above, then invoke it on the server thread from an isolated runner. Only the network
+socket is replaced: spawn packets, initial text/glow/block metadata, delayed chunk
+delivery, private visibility and tracking-loss recovery use the native runtime.
+The fixture unregisters its temporary players and removes its displays afterward.
+
 `FinalsSlimeMapsSmoke.run(smokePlugin, mainPlugin, done, failed)` is a callback-based
 fixture for prepared Slime templates. Compile it with the other fixtures and invoke
 it from an isolated runner on the server thread. Keep that server running until
@@ -179,3 +187,17 @@ actual tracked playback. The private empty TextDisplay moves an already-playing
 disc outside hearing range without stopping it. Player transport remains
 simulated, and no client audio capture was performed. The test server shut down
 afterward.
+
+On 2026-11-14, marker visibility recovery and music movement smoothing passed
+**407 native assertions** against JAR SHA-256
+`3c40a444d8346191e677e2781b01c86d6721e626297c0769e494f19b1220e184`:
+126 real-player packet/delivery assertions, 134 display-geometry/lifecycle assertions,
+and 147 music/configuration assertions. The old marker implementation failed the
+native tracking-loss recovery check before the repair. Both contestants now receive
+private spawn packets with nonempty text and correct glowing block metadata, recover
+their original displays after tracking loss, and avoid duplicate spawns on unchanged
+refreshes. Assembly and focused Gradle checks passed (195 highlights, 43 music,
+380 session assertions, plus i18n validation). Music uses a two-block overhead source
+with two-tick interpolation to reduce movement-induced positional jitter; continuity
+and metadata are tested, but audible client playback has not been verified. The
+isolated server shut down after the run.

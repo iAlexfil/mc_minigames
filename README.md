@@ -46,8 +46,9 @@ deposit/steal interactions and ongoing payout timers follow their current positi
 Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 30%
 volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
 within 32 blocks of the station. The background track follows each listener while
-they remain in range. Leaving the radius makes the same track inaudible; returning
-continues its current playback position. Payout, disconnect, world changes, and
+they remain in range, with a smoothed overhead sound source to reduce movement jitter.
+Leaving the radius makes the same track inaudible; returning continues its current
+playback position, with a brief two-tick fade at the boundary. Payout, disconnect, world changes, and
 match end stop it. Respawning/reconnecting starts a fresh stream because vanilla
 clients cannot seek within a disc. The old saved 40-second default is upgraded once;
 other custom timings remain.
@@ -182,13 +183,16 @@ Dematerializer holes restore once clear of players. Mesh Shield requires holding
 the specialization and blocks attacks from the front. Winch Claw pulls enemies,
 cashboxes and cashouts, with terrain stopping their movement.
 Glass blocks and panes can be broken with an empty hand. Right-click doors and
-trapdoors to open or close them, including iron variants. There is no demolition
+trapdoors to open or close them, including iron variants. Fence gates and buttons
+support normal right-click interaction, and pressure plates activate when stepped
+on. Buttons and plates retain Minecraft's normal redstone behavior. There is no demolition
 pickaxe; weapons and explosives still destroy arena cover and temporary barricades,
 while objectives, spawn areas and the protected floor remain intact.
 
 Vault and cashout labels show their remaining timers. Distant objective and teammate
 markers are drawn closer to the viewer when needed, with the actual distance shown,
-so they remain visible beyond entity render distance. Eliminations appear in
+so they remain visible beyond entity render distance. Marker refreshes restore
+private visibility after chunk tracking is lost and returns. Eliminations appear in
 chat, cashout starts show a title, and vaults, cashouts, kills, explosions and
 respawns have sound cues.
 

@@ -122,16 +122,22 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
 
     static HoleWallPattern generate(int stage, int radius, Random random) {
         int kind = KINDS[Math.floorMod(stage - 1, KINDS.length)];
-        boolean mirror = random.nextBoolean();
         var gates = routes(kind, radius);
         var full =
                 new HoleWallBlock(
-                        random.nextBoolean() ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
+                        kind % 2 == 0 ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
                         HoleWallBlock.Shape.FULL);
         var cells = new ArrayList<Cell>();
+        var outline = silhouette(kind);
         for (int u = -HALF_WIDTH; u <= HALF_WIDTH; u++)
             for (int y = 0; y < HEIGHT; y++) {
-                HoleWallBlock block = silhouette(kind, u, y) ? full : null;
+                HoleWallBlock block =
+                        outline[HEIGHT - 1 - y].charAt(Math.floorMod(u + 4, 9)) == '#'
+                                ? full
+                                : null;
+                // The central frame belongs to the exits, rather than cutting unrelated holes
+                // through a decorative skyline. The hurdle deliberately remains an open jump.
+                if (kind != 2 && Math.abs(u) <= radius) block = full;
                 // Each silhouette has a readable sill/ceiling around its actual routes, including
                 // half-height headroom. The wide alternatives are playable even on three-wide arms.
                 for (var gate : gates)
@@ -173,33 +179,9 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                             new HoleWallBlock(
                                     Material.STONE_BRICK_STAIRS, HoleWallBlock.Shape.STAIRS);
                 }
-                if (block != null) cells.add(new Cell(mirror ? -u : u, y, block));
+                if (block != null) cells.add(new Cell(u, y, block));
             }
-        cells =
-                new ArrayList<>(
-                        frameLowPassages(
-                                cells,
-                                mirror
-                                        ? gates.stream()
-                                                .map(g ->
-                                                        new Gate(
-                                                                1 - g.start() - g.width(),
-                                                                g.width(),
-                                                                g.bottom(),
-                                                                g.height()))
-                                                .toList()
-                                        : gates,
-                                full));
-        if (mirror)
-            gates =
-                    gates.stream()
-                            .map(g ->
-                                    new Gate(
-                                            1 - g.start() - g.width(),
-                                            g.width(),
-                                            g.bottom(),
-                                            g.height()))
-                            .toList();
+        cells = new ArrayList<>(frameLowPassages(cells, gates, full));
         return new HoleWallPattern(
                 cells, gates, I18n.tr("party.rounds.hole_wall.pattern." + NAMES[kind]));
     }
@@ -213,7 +195,7 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
         int kind = random.nextInt(3);
         var full =
                 new HoleWallBlock(
-                        random.nextBoolean() ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
+                        kind % 2 == 0 ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
                         HoleWallBlock.Shape.FULL);
         double height = kind == 2 ? 1.5 : kind == 1 ? 2 : 3;
         var gates = List.of(new Gate(-6, 2, 0, height), new Gate(5, 2, 0, height));
@@ -251,34 +233,43 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
         };
     }
 
-    private static boolean silhouette(int kind, int u, int y) {
-        int a = Math.abs(u),
-                tooth = Math.floorMod(Math.abs(u), 4),
-                wave = Math.floorMod(Math.abs(u), 6);
+    private static String[] silhouette(int kind) {
+        // Front elevations, top to bottom. Repeating whole architectural bays keeps the
+        // silhouette legible, like Classic's arches and Beach's stepped ribbons.
+        // The middle bay is fitted to the surviving arm by the explicit route frame above.
         return switch (kind) {
-            case 0 -> y == 3 || (tooth == 0 && y < 4); // A row of open arches.
-            case 1 -> y >= 2 || (a % 5 == 2 && y < 2); // Central door flanked by raised windows.
-            case 2 -> y == 0; // Low hurdle with broad escape route.
-            case 3 -> y <= a % 4; // Ascending stair skyline.
-            case 4 -> y == 0 || (tooth == 0 && y < 4); // Comb, open above the teeth.
-            case 5 -> y <= (tooth < 2 ? 2 : 0); // Alternating tall and short battlements.
-            case 6 -> y <= Math.min(wave, 6 - wave); // Diagonal ribbons.
-            case 7 -> y == 3 || (a % 4 == 0 && y < 3); // Aqueduct: center or raised side windows.
-            case 8 -> y == 1 || y == 2 || (a % 6 == 0 && y == 0); // Low canopy, tall escape door.
-            case 9 -> !(y >= 1 && y <= 3 && (tooth == 1 || (y == 2 && tooth == 2))); // Keyholes.
-            case 10 -> y <= a % 3; // Three-height terraces.
-            case 11 -> y == 3 || a % 3 == 0; // Fence arcade, generous floor-level windows.
-            case 12 -> y == 1 || y == 2 || a % 4 == 0; // Low beam with upright bypass.
-            case 13 -> y == 3 || a % 3 == 0; // Fence wicket plus wide side arch.
-            case 14 -> y <= 2 || a % 3 == 0; // Duck or jump, neither route forced.
-            case 15 -> y == 0 || y == 3 || a % 4 < 2; // Iron window or low side tunnel.
-            case 16 -> true; // A curtain of physically thin chains, not a solid rectangular frame.
-            case 17 -> y == 0 || y == 3 || a % 2 == 0; // End-rod lattice.
+            case 0, 11, 13 ->
+                    new String[] {"#########", "##.....##", "#.......#", "#.......#", "#.......#"};
+            case 1 ->
+                    new String[] {"#########", "#..###..#", "#..###..#", "#..###..#", "#########"};
+            case 2 ->
+                    new String[] {".........", ".........", ".........", ".........", "#########"};
+            case 3 ->
+                    new String[] {"#.......#", "##.....##", "###...###", "####.####", "#########"};
+            case 4 ->
+                    new String[] {"##..#..##", "##..#..##", "##..#..##", "##..#..##", "#########"};
+            case 5 ->
+                    new String[] {"##..#..##", "##..#..##", "#########", "#########", "#########"};
+            case 6 ->
+                    new String[] {"##.....##", "###...###", ".###.###.", "..#####..", "...###..."};
+            case 7 ->
+                    new String[] {"#########", "#########", "#..###..#", "#...#...#", "#...#...#"};
+            case 8, 12, 14 ->
+                    new String[] {"#########", "#########", "#########", "##.....##", "##.....##"};
+            case 9 ->
+                    new String[] {"#########", "###...###", "##.....##", "###...###", "####.####"};
+            case 10 ->
+                    new String[] {"....#....", "...###...", "..#####..", ".#######.", "#########"};
+            case 15 ->
+                    new String[] {"#########", "##.....##", "##.....##", "##.....##", "#########"};
+            case 16 ->
+                    new String[] {"#########", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#########"};
+            case 17 ->
+                    new String[] {"#########", "#..#.#..#", "#########", "#..#.#..#", "#########"};
             case 18 ->
-                    !(y == 2 && tooth != 0
-                            || y == 1 && tooth == 2
-                            || y == 3 && tooth == 2); // Cross windows.
-            default -> y <= 4 - a % 4; // Repeating M-shaped skyline.
+                    new String[] {"#########", "##.###.##", "#...#...#", "##.###.##", "#########"};
+            default ->
+                    new String[] {"##.....##", "###...###", "####.####", "#########", "#########"};
         };
     }
 

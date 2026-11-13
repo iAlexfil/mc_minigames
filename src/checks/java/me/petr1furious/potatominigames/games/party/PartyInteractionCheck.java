@@ -181,11 +181,18 @@ public final class PartyInteractionCheck {
     private static void memoryMining() throws Exception {
         var world = new PartyArenaCheck.WorldMap();
         var session = fixture(BuildMemorySession.class);
+        Set<UUID> ready = new HashSet<>();
+        set(session, "ready", ready);
         set(session, "arena", new BuildMemoryArena(world.world, List.of(ID)));
         phase(session, "BUILD");
         var hit = interact(Action.LEFT_CLICK_BLOCK, world.block(16, 81, 0));
         session.onPlayerInteract(hit);
         check(!hit.isCancelled(), "Memory must let players break misplaced blocks");
+        ready.add(ID);
+        hit = interact(Action.LEFT_CLICK_BLOCK, world.block(16, 81, 0));
+        session.onPlayerInteract(hit);
+        check(hit.isCancelled(), "Ready builders cannot edit their submitted model");
+        ready.clear();
         hit = interact(Action.LEFT_CLICK_BLOCK, world.block(16, 80, 0));
         session.onPlayerInteract(hit);
         check(hit.isCancelled(), "Platform stays protected");

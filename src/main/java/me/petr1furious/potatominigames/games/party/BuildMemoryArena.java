@@ -7,6 +7,7 @@ import java.util.*;
 
 final class BuildMemoryArena {
     private final World world;
+    private int size = 5;
     private final Map<UUID, Location> centers = new LinkedHashMap<>();
 
     BuildMemoryArena(World world, Collection<UUID> roster) {
@@ -25,6 +26,25 @@ final class BuildMemoryArena {
         }
     }
 
+    void resize(int size) {
+        if (size != 5 && size != 7) throw new IllegalArgumentException("Build size must be 5 or 7");
+        if (this.size == size) return;
+        centers.keySet().forEach(this::clear);
+        this.size = size;
+        for (Location c : centers.values()) floor(c);
+    }
+
+    private void floor(Location c) {
+        for (int x = -4; x <= 8; x++)
+            for (int z = -4; z <= 8; z++)
+                world.getBlockAt(c.getBlockX() + x, 80, c.getBlockZ() + z)
+                        .setType(
+                                x >= 0 && x < size && z >= 0 && z < size
+                                        ? Material.LIGHT_BLUE_CONCRETE
+                                        : Material.SMOOTH_QUARTZ,
+                                false);
+    }
+
     void build() {
         for (int x = 1; x <= 3; x++)
             for (int z = 1; z <= 3; z++)
@@ -35,14 +55,7 @@ final class BuildMemoryArena {
                                         : Material.PRISMARINE_BRICKS,
                                 false);
         for (Location c : centers.values()) {
-            for (int x = -4; x <= 8; x++)
-                for (int z = -4; z <= 8; z++)
-                    world.getBlockAt(c.getBlockX() + x, 80, c.getBlockZ() + z)
-                            .setType(
-                                    x >= 0 && x < 5 && z >= 0 && z < 5
-                                            ? Material.LIGHT_BLUE_CONCRETE
-                                            : Material.SMOOTH_QUARTZ,
-                                    false);
+            floor(c);
             for (int x = -4; x <= 8; x++)
                 for (int z = -4; z <= 8; z++)
                     if (x == -4 || x == 8 || z == -4 || z == 8)
@@ -53,11 +66,11 @@ final class BuildMemoryArena {
     }
 
     Location spawn(UUID id) {
-        return centers.get(id).clone().add(2.5, 0, -2.5);
+        return centers.get(id).clone().add(size / 2.0, 0, -2.5);
     }
 
     Location reviewCenter(UUID id) {
-        return centers.get(id).clone().add(2.5, 1.5, 2.5);
+        return centers.get(id).clone().add(size / 2.0, 1.5, size / 2.0);
     }
 
     Location cellLocation(UUID id, BuildMemoryPattern.Cell cell) {
@@ -70,12 +83,13 @@ final class BuildMemoryArena {
         int x = block.getX() - c.getBlockX(),
                 y = block.getY() - 81,
                 z = block.getZ() - c.getBlockZ();
-        return x >= 0 && x < 5 && y >= 0 && y < 4 && z >= 0 && z < 5
+        return x >= 0 && x < size && y >= 0 && y < 4 && z >= 0 && z < size
                 ? new BuildMemoryPattern.Cell(x, y, z)
                 : null;
     }
 
     void show(UUID id, BuildMemoryPattern p) {
+        if (p.size() > size) resize(p.size());
         clear(id);
         Location c = centers.get(id);
         p.blocks()
@@ -119,9 +133,9 @@ final class BuildMemoryArena {
 
     void clear(UUID id) {
         Location c = centers.get(id);
-        for (int x = 0; x < 5; x++)
+        for (int x = 0; x < size; x++)
             for (int y = 81; y < 85; y++)
-                for (int z = 0; z < 5; z++)
+                for (int z = 0; z < size; z++)
                     world.getBlockAt(c.getBlockX() + x, y, c.getBlockZ() + z)
                             .setType(Material.AIR, false);
     }
@@ -129,9 +143,9 @@ final class BuildMemoryArena {
     Map<BuildMemoryPattern.Cell, MemoryBlock> capture(UUID id) {
         Map<BuildMemoryPattern.Cell, MemoryBlock> result = new HashMap<>();
         Location c = centers.get(id);
-        for (int x = 0; x < 5; x++)
+        for (int x = 0; x < size; x++)
             for (int y = 0; y < 4; y++)
-                for (int z = 0; z < 5; z++) {
+                for (int z = 0; z < size; z++) {
                     Material m =
                             world.getBlockAt(c.getBlockX() + x, 81 + y, c.getBlockZ() + z)
                                     .getType();

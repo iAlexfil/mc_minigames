@@ -38,7 +38,7 @@ final class CsCombat {
         if (gun != null && gun.toggleScope(session.now())) {
             if (gun.scoped) movement(p, gun);
             else scope.stop(p);
-            p.sendActionBar(CsItems.tr(gun.scoped ? "scope.on" : "scope.off"));
+            session.actionBar(p, CsItems.tr(gun.scoped ? "scope.on" : "scope.off"));
         }
     }
 
@@ -55,11 +55,14 @@ final class CsCombat {
 
     void reload(Player p) {
         var gun = session.gun(p);
+        if (session.deathmatch() && session.canAct(p) && gun != null)
+            gun.reserve = gun.weapon.reserve;
         if (session.canAct(p) && gun != null && gun.reload(session.now())) {
             scope.stop(p);
             p.clearActiveItem();
             gun.scoped = false;
             p.playSound(p.getLocation(), Sound.BLOCK_IRON_TRAPDOOR_OPEN, .5f, 1.4f);
+            session.weaponHud(p);
         }
     }
 
@@ -108,6 +111,7 @@ final class CsCombat {
             if (gun.magazine == 0) reload(p);
             return;
         }
+        session.attacking(p);
         session.cancelChannel(p.getUniqueId());
         var w = gun.weapon;
         Location eye = p.getEyeLocation();
@@ -162,14 +166,17 @@ final class CsCombat {
                                 ? .6f
                                 : w.category == CsWeapon.Category.SHOTGUN ? .8f : 1.6f);
         for (Impact hit : hits.values())
-            session.hurt(hit.target, p.getUniqueId(), hit.damage, hit.head, hit.leg, w, false);
+            session.hurt(
+                    hit.target,
+                    p.getUniqueId(),
+                    hit.damage,
+                    hit.head,
+                    hit.leg,
+                    w,
+                    CsMatch.KillCause.BULLET);
         if (!hits.isEmpty()) p.playSound(p.getLocation(), Sound.ENTITY_ARROW_HIT_PLAYER, .5f, 1.2f);
-        p.sendActionBar(
-                CsItems.tr(
-                        gun.reloadAt >= 0 ? "hud.reloading" : "hud.ammo",
-                        gun.magazine,
-                        gun.reserve));
         if (gun.magazine == 0) reload(p);
+        session.weaponHud(p);
     }
 
     private record HitGroup(UUID target, boolean head, boolean leg) {}
@@ -293,6 +300,7 @@ final class CsCombat {
         if (!session.canAct(p)
                 || p.getInventory().getHeldItemSlot() != 2
                 || session.now() < knifeAt.getOrDefault(p.getUniqueId(), 0L)) return;
+        session.attacking(p);
         knifeAt.put(p.getUniqueId(), session.now() + (heavy ? 20 : 10));
         var hit =
                 session.world()
@@ -324,7 +332,7 @@ final class CsCombat {
                 false,
                 false,
                 null,
-                false);
+                CsMatch.KillCause.KNIFE);
         p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_ATTACK_STRONG, .6f, 1);
     }
 

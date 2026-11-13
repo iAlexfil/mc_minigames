@@ -24,7 +24,11 @@ public final class CsGame implements Minigame {
     private final Map<UUID, CsSession> playing = new HashMap<>();
 
     public CsGame(ConfigRegistry registry) {
-        config = new CsConfig(registry);
+        this(new CsConfig(registry));
+    }
+
+    CsGame(CsConfig config) {
+        this.config = config;
     }
 
     @Override
@@ -38,13 +42,23 @@ public final class CsGame implements Minigame {
     }
 
     @Override
+    public List<String> modes() {
+        return List.of("default", "deathmatch");
+    }
+
+    @Override
+    public Material icon(String mode) {
+        return mode.equals("deathmatch") ? Material.DIAMOND_SWORD : icon();
+    }
+
+    @Override
     public Component modeTitle(String mode) {
-        return I18n.tr("cs.mode.default");
+        return I18n.tr(mode.equals("deathmatch") ? "cs.mode.deathmatch" : "cs.mode.default");
     }
 
     @Override
     public Component description(String mode) {
-        return I18n.tr("cs.description");
+        return I18n.tr(mode.equals("deathmatch") ? "cs.dm.description" : "cs.description");
     }
 
     @Override
@@ -54,7 +68,7 @@ public final class CsGame implements Minigame {
 
     @Override
     public int maxPlayers(String mode) {
-        return 10;
+        return mode.equals("deathmatch") ? 16 : 10;
     }
 
     @Override
@@ -64,12 +78,12 @@ public final class CsGame implements Minigame {
 
     @Override
     public List<TeamColor> teamColors(String mode) {
-        return List.of(TeamColor.RED, TeamColor.BLUE);
+        return mode.equals("deathmatch") ? List.of() : List.of(TeamColor.RED, TeamColor.BLUE);
     }
 
     @Override
     public GameSession createSession(SessionServices services, String mode) {
-        return new CsSession(services, config, this);
+        return new CsSession(services, config, this, mode.equals("deathmatch"));
     }
 
     void started(CsSession session, Collection<UUID> ids) {

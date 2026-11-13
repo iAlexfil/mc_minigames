@@ -19,6 +19,44 @@ final class CsItems {
         return I18n.tr("cs." + key, args);
     }
 
+    static Component ammoHud(CsGun gun, long tick) {
+        return ammoHud(gun, tick, false);
+    }
+
+    static Component ammoHud(CsGun gun, long tick, boolean infiniteReserve) {
+        Object reserve = infiniteReserve ? "∞" : gun.reserve;
+        if (gun.reloadAt < 0) return tr("hud.weapon", gun.magazine, reserve);
+        double seconds = Math.ceil(gun.reloadTicksRemaining(tick) / 2.0) / 10;
+        return tr(
+                "hud.weapon_reloading",
+                gun.magazine,
+                reserve,
+                String.format(Locale.ROOT, "%.1f", seconds));
+    }
+
+    static Component killMessage(CsMatch.Actor victim, Component killerName, Component victimName) {
+        var info = victim.killInfo;
+        Component source =
+                info == null
+                        ? null
+                        : info.weapon() != null
+                                ? tr("weapon." + info.weapon().id)
+                                : tr("kill.source." + info.cause().name().toLowerCase(Locale.ROOT));
+        if (victim.killedBy == null || victim.killedBy.equals(victim.id))
+            return info == null || info.cause() == CsMatch.KillCause.OTHER
+                    ? tr("death", victimName)
+                    : tr("death.cause", victimName, source);
+        if (info == null) return tr("kill", killerName, victimName);
+        if (info.weapon() != null)
+            return tr(
+                    "kill.weapon",
+                    killerName,
+                    victimName,
+                    source,
+                    tr(info.headshot() ? "kill.headshot" : "kill.no_headshot"));
+        return tr("kill.cause", killerName, victimName, source);
+    }
+
     static ItemStack item(
             Material material, String kind, Component title, List<Component> lore, Player viewer) {
         ItemStack item = new ItemStack(material);
@@ -107,8 +145,12 @@ final class CsItems {
     /** Visual equipment only: empty native attributes keep protection in CsMatch. */
     static void syncArmour(Player p, CsMatch match) {
         var actor = match.actor(p.getUniqueId());
-        Color color = Color.fromRGB(actor.team == 0 ? 0xB02E26 : 0x3C44AA);
-        Component uniform = tr("item.uniform", tr(actor.team == 0 ? "team.red" : "team.blue"));
+        Color color =
+                Color.fromRGB(match.deathmatch ? 0x777777 : actor.team == 0 ? 0xB02E26 : 0x3C44AA);
+        Component uniform =
+                match.deathmatch
+                        ? tr("dm.uniform")
+                        : tr("item.uniform", tr(actor.team == 0 ? "team.red" : "team.blue"));
         p.getInventory().setBoots(cosmeticArmour(Material.LEATHER_BOOTS, uniform, color, p));
         p.getInventory().setLeggings(cosmeticArmour(Material.LEATHER_LEGGINGS, uniform, color, p));
         p.getInventory()
@@ -163,9 +205,9 @@ final class CsItems {
             }
             slot++;
         }
-        if (match.side(a) == 0) {
+        if (!match.deathmatch && match.side(a) == 0) {
             if (Objects.equals(match.carrier, a.id)) p.getInventory().setItem(7, bomb(p));
-        } else
+        } else if (!match.deathmatch)
             p.getInventory()
                     .setItem(
                             7,
@@ -183,8 +225,8 @@ final class CsItems {
                         item(
                                 Material.FILLED_MAP,
                                 "buy",
-                                tr("item.buy"),
-                                List.of(tr("controls.buy")),
+                                tr(match.deathmatch ? "dm.radar" : "item.buy"),
+                                List.of(tr(match.deathmatch ? "dm.radar_hint" : "controls.buy")),
                                 p));
         ItemStack chart = p.getInventory().getItem(8);
         chart.editMeta(meta -> {

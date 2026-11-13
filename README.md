@@ -4,7 +4,7 @@ Server fork of [Petr1Furious/potato-minigames](https://github.com/Petr1Furious/p
 preserving the upstream Git history and the server's downstream patches.
 The original Apache-2.0 license and attribution are retained in `LICENSE` and `NOTICE`.
 
-One Paper plugin with six game categories on a shared framework, built for a server
+One Paper plugin with seven game categories on a shared framework, built for a server
 anybody can join and play at any time: players queue for a game, wait in a lobby,
 and the game starts by itself. Different games run side by side.
 Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Java 25.
@@ -18,6 +18,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
 | **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `one_shot`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
+| **Counter-Strike** | `/cs` | `default`, `deathmatch` | Classic T/CT bomb defusal or a timed free-for-all with respawns and free weapon selection on Dust II. |
 | **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
 
 ### The Finals
@@ -1513,6 +1514,43 @@ same equipment price calculation. Sources: Valve's
 Fire timing, accuracy and movement remain Minecraft adaptations; this is not exact
 parity with every current CS2 weapon statistic. The default match format is MR12.
 
+The CS lobby category opens two modes: **Classic** (queue ID `default`, keeping
+existing queue configuration and `/play cs` compatible) and **Deathmatch**
+(`/play cs deathmatch`). Classic keeps its bomb-defusal rules. Deathmatch supports
+2–16 players on Dust II, with a five-second countdown and a five-minute match.
+Every player is an opponent; kills rank first and fewer deaths breaks ties.
+Players respawn after three seconds at a walkable point selected away from living
+opponents. Each spawn grants three seconds of protection, ending when the player
+shoots or swings the knife. Spawn candidates are derived from connected walkable
+surfaces in the imported blueprint, seeded from the classic starts and bombsites.
+
+Deathmatch grants an AK-47, USP-S, vest and helmet; all guns from either faction
+are free in a single categorized weapon-selection screen. Open it with `/cs buy`
+or right-click the radar; `/cs score` shows individual standings. Loadout choices
+persist across lives. A choice applies immediately during countdown or spawn
+protection; in combat it is saved for the next respawn, preventing free mid-fight
+magazine refills. Magazines and reload timing remain normal, with unlimited reserve
+ammunition. There is no C4, utility, economy, round elimination, team spotting,
+team chat or allied glow in this mode. Rejoining participants respawn with their
+existing statistics. `deathmatch.durationSeconds` and `deathmatch.countdownSeconds`
+in `games/cs.yml` configure the timer and countdown. Non-test matches award 3/2/1
+points by place to players with kills; equal kills/deaths share a place.
+
+Round starts use a CS2-style pool of fifteen T Start positions and five CT Spawn
+positions by the passage under A. Each side's pool is shuffled once per round,
+so teammates get distinct slots. Positions and buy areas are fitted to the
+existing Minecraft map geometry; the original map architecture stays intact.
+See [spawn references and adaptation](assets/maps/lesraisins-dust2/SPAWNS-Dust2.md).
+
+The action bar continuously shows the selected gun's magazine/reserve and the F
+reload hint. During reloading it shows tenths of a second remaining until the
+entire reload completes, including all remaining shotgun shells. Brief notices
+share the ammo line; planting/defusing progress takes priority.
+
+Kill messages include the lethal weapon and whether the killing hit was a
+headshot. Knife, HE, Molotov/incendiary and C4 deaths use their own source labels;
+earlier nonlethal headshots do not mark a later body-shot kill as a headshot.
+
 There are finite magazines/reserves, draw times, held automatic fire,
 burst recoil/recovery, movement/jump spread, crouch accuracy, head/body/leg
 damage, armor/helmet penetration, hit tagging and aim punch. AWP and SSG 08
@@ -1520,7 +1558,7 @@ have scoped accuracy; SSG is cheaper and faster to move with,
 but an armored body hit is survivable. AUG and SG 553 trade mobility for scoped
 accuracy at range. Their scope toggles with left-click, while right-click keeps
 firing. Zoom uses a transient movement-attribute modifier and compensated walk
-speed: approximately 0.60× normal FOV for snipers and 0.70× for scoped rifles,
+speed: approximately 0.555× normal FOV for snipers and 0.57× for scoped rifles,
 with the intended 45% scoped walking speed. Vanilla client FOV Effects must be
 enabled for visible zoom; their strength scales the result. No spyglass use is
 forced: a vanilla client releases it as soon as the use button is not held, and
@@ -1547,11 +1585,14 @@ idle gap. Limited wallbangs lose damage; breakable glass is restored each round.
 FAMAS currently uses automatic fire only; Glock burst mode and removable
 suppressors are not implemented.
 
-HE, flash, smoke and Molotov/incendiary grenades use snowball-like air trajectories:
+HE, flash, smoke and Molotov/incendiary grenades have two throw modes.
+**Right-click** is a short potion-like toss: speed 0.5 blocks/tick, gravity 0.05,
+a -20-degree pitch offset and 0.99 air drag. **Left-click** is a long snowball-like throw:
 1.5 blocks/tick initial speed, 0.03 gravity and 0.99 drag, with no artificial upward
 kick. The throw inherits horizontal motion and airborne vertical motion, starts
 0.1 blocks below the eye without skipping cover, and retains collision bounces
-and the utility fuse;
+and the utility fuse. Both modes share the existing 0.8-second throw cooldown,
+so overlapping click/swing events cannot consume a second grenade;
 HE respects cover, flash duration depends on distance and facing, smoke hides
 players while allowing bullets through, and smoke extinguishes fire. Molotov
 zones render animated fire blocks over supported floor cells within the existing
@@ -1567,8 +1608,8 @@ most four grenades, with at most two flashes and one of each other kind.
 
 | Input / slot | Action |
 | --- | --- |
-| Right-click | Fire / throw / heavy knife attack |
-| Left-click | Quick knife attack / toggle scope on AWP, SSG 08, AUG or SG 553 |
+| Right-click | Fire / short grenade throw / heavy knife attack |
+| Left-click | Long grenade throw / quick knife attack / toggle scope on AWP, SSG 08, AUG or SG 553 |
 | F / `/cs reload` | Reload |
 | Q / `/cs drop` | Drop selected weapon, grenade, kit or C4 |
 | Slots 1–2 | Primary and secondary gun |

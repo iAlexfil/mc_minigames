@@ -37,6 +37,8 @@ import java.util.*;
 
 /** Independent competitive bomb-defusal match on the imported Dust II world. */
 final class CsSession implements GameSession, Listener {
+    private record Notice(Component text, long until) {}
+
     private record Drop(
             Item item,
             CsGun gun,
@@ -104,6 +106,10 @@ final class CsSession implements GameSession, Listener {
     private final Map<UUID, PendingDrop> pendingDrops = new LinkedHashMap<>();
     private final Map<UUID, Channel> channels = new HashMap<>();
     private final Map<UUID, Drop> drops = new LinkedHashMap<>();
+    private final Map<UUID, Notice> notices = new HashMap<>();
+    private final Set<UUID> weaponHudShown = new HashSet<>();
+    private final boolean deathmatch;
+    private final CsDeathmatch dm;
     private CsMatch match;
     private World world;
     private CsArena arena;
@@ -123,9 +129,23 @@ final class CsSession implements GameSession, Listener {
     private List<Component> result = List.of();
 
     CsSession(SessionServices services, CsConfig config, CsGame owner) {
+        this(services, config, owner, false);
+    }
+
+    CsSession(SessionServices services, CsConfig config, CsGame owner, boolean deathmatch) {
+        this.deathmatch = deathmatch;
+        this.dm = deathmatch ? new CsDeathmatch() : null;
         this.services = services;
         this.config = config;
         this.owner = owner;
+    }
+
+    boolean deathmatch() {
+        return deathmatch;
+    }
+
+    void attacking(Player p) {
+        if (dm != null) dm.attack(p.getUniqueId());
     }
 
     JavaPlugin plugin() {
@@ -201,6 +221,39 @@ final class CsSession implements GameSession, Listener {
         return holder instanceof Shop || holder instanceof Scores;
     }
 
+    void actionBar(Player p, Component text) {
+        notices.put(p.getUniqueId(), new Notice(text, tick + 20));
+        weaponHud(p);
+    }
+
+    void weaponHud(Player p) {
+        UUID id = p.getUniqueId();
+        // Objective progress owns the action bar while planting/defusing.
+        if (channels.containsKey(id)) return;
+        Notice notice = notices.get(id);
+        Component text = notice != null && tick < notice.until ? notice.text : null;
+        CsGun gun =
+                active(p)
+                                && !shopOpen(p)
+                                && (match.phase == CsMatch.Phase.LIVE
+                                        || match.phase == CsMatch.Phase.FREEZE)
+                        ? gun(p)
+                        : null;
+        if (gun != null) {
+            Component ammo = CsItems.ammoHud(gun, tick, deathmatch);
+            text = text == null ? ammo : tr("hud.weapon_notice", ammo, text);
+        }
+        if (text != null) {
+            p.sendActionBar(text);
+            weaponHudShown.add(id);
+        } else if (weaponHudShown.remove(id)) p.sendActionBar(Component.empty());
+    }
+
+    private void clearWeaponHud(Player p) {
+        notices.remove(p.getUniqueId());
+        if (weaponHudShown.remove(p.getUniqueId())) p.sendActionBar(Component.empty());
+    }
+
     boolean visible(Player viewer, Player target) {
         if (!active(viewer) || !active(target) || grenades.obscured(viewer, target)) return false;
         Vector delta =
@@ -261,8 +314,10 @@ final class CsSession implements GameSession, Listener {
         services.sidebar().setNameTagsVisible(false);
         List<me.petr1furious.potatominigames.core.player.Participant> roster =
                 new ArrayList<>(services.participants().all());
-        if (roster.isEmpty() || roster.size() > 10 || !services.isTest() && roster.size() < 2)
-            throw new CommandFailure(tr("error.roster"));
+        if (roster.isEmpty()
+                || roster.size() > (deathmatch ? 16 : 10)
+                || !services.isTest() && roster.size() < 2)
+            throw new CommandFailure(tr(deathmatch ? "dm.error.roster" : "error.roster"));
         Collections.shuffle(roster, random);
         Map<UUID, Integer> teams = new LinkedHashMap<>();
         int[] counts = {0, 0};
@@ -271,18 +326,18 @@ final class CsSession implements GameSession, Listener {
                     p.team() == TeamColor.BLUE
                             ? 1
                             : p.team() == TeamColor.RED ? 0 : counts[0] <= counts[1] ? 0 : 1;
-            if (counts[team] >= 5) team = 1 - team;
+            if (!deathmatch && counts[team] >= 5) team = 1 - team;
             teams.put(p.id(), team);
             counts[team]++;
             names.put(p.id(), p.name());
-            p.setTeam(team == 0 ? TeamColor.RED : TeamColor.BLUE);
+            p.setTeam(deathmatch ? null : team == 0 ? TeamColor.RED : TeamColor.BLUE);
         }
         while (Math.abs(counts[0] - counts[1]) > 1) {
             int larger = counts[0] > counts[1] ? 0 : 1;
             for (var p : roster)
                 if (teams.get(p.id()) == larger) {
                     teams.put(p.id(), 1 - larger);
-                    p.setTeam(larger == 0 ? TeamColor.BLUE : TeamColor.RED);
+                    p.setTeam(deathmatch ? null : larger == 0 ? TeamColor.BLUE : TeamColor.RED);
                     counts[larger]--;
                     counts[1 - larger]++;
                     break;
@@ -292,11 +347,12 @@ final class CsSession implements GameSession, Listener {
                 new CsMatch(
                         teams,
                         config.half.get(),
-                        config.freeze.get() * 20,
-                        config.round.get() * 20,
+                        (deathmatch ? config.dmCountdown.get() : config.freeze.get()) * 20,
+                        (deathmatch ? config.dmDuration.get() : config.round.get()) * 20,
                         config.bomb.get() * 20,
                         config.buy.get() * 20,
-                        services.isTest());
+                        services.isTest(),
+                        deathmatch);
         owner.started(this, names.keySet());
         world = services.worlds().createVoid("cs_" + UUID.randomUUID().toString().replace("-", ""));
         services.arena().applyStandardGameRules(world);
@@ -332,7 +388,7 @@ final class CsSession implements GameSession, Listener {
                 p.showBossBar(bar);
             }
         }
-        say(tr("rules"));
+        say(tr(deathmatch ? "dm.rules" : "rules"));
         say(tr("map_credit"));
         task =
                 Bukkit.getScheduler()
@@ -408,7 +464,7 @@ final class CsSession implements GameSession, Listener {
             }
             return;
         }
-        if (!match.practice) {
+        if (!deathmatch && !match.practice) {
             boolean red = match.actors().stream().anyMatch(a -> a.online && a.team == 0),
                     blue = match.actors().stream().anyMatch(a -> a.online && a.team == 1);
             if (!red || !blue) {
@@ -438,18 +494,31 @@ final class CsSession implements GameSession, Listener {
                 death(p);
                 if (!p.isDead()) p.setHealth(0);
             }
+            if (deathmatch
+                    && !a.alive
+                    && a.online
+                    && match.phase == CsMatch.Phase.LIVE
+                    && tick >= deathAt.getOrDefault(a.id, tick + CsDeathmatch.RESPAWN_TICKS)) {
+                spawnDeathmatch(p);
+                continue;
+            }
             if (!a.alive && !p.isDead() && p.getGameMode() != GameMode.SPECTATOR) spectate(p);
-            if (!a.alive && p.isDead() && tick >= deathAt.getOrDefault(a.id, tick + 60)) {
+            if (!deathmatch
+                    && !a.alive
+                    && p.isDead()
+                    && tick >= deathAt.getOrDefault(a.id, tick + 60)) {
                 respawn(p);
                 spectate(p);
             }
-            if (!a.alive && p.getGameMode() == GameMode.SPECTATOR) camera(p);
+            if (!deathmatch && !a.alive && p.getGameMode() == GameMode.SPECTATOR) camera(p);
         }
         if (match.phase == CsMatch.Phase.LIVE) {
             combat.tick();
             grenades.tick();
-            channels();
-            bombTick();
+            if (!deathmatch) {
+                channels();
+                bombTick();
+            }
         }
         match.tick(tick, random);
         if (match.number != roundSeen) {
@@ -459,8 +528,12 @@ final class CsSession implements GameSession, Listener {
         if (match.version != versionSeen) {
             versionSeen = match.version;
             if (match.phase == CsMatch.Phase.LIVE) {
-                for (Player p : players()) if (actor(p).alive) release(p);
-                say(tr("fight"));
+                for (Player p : players())
+                    if (actor(p).alive) {
+                        release(p);
+                        if (dm != null) dm.protect(p.getUniqueId(), tick);
+                    }
+                say(tr(deathmatch ? "dm.fight" : "fight"));
             }
             if (match.phase == CsMatch.Phase.ROUND_END) {
                 channels.clear();
@@ -506,7 +579,7 @@ final class CsSession implements GameSession, Listener {
             for (Drop drop : drops.values())
                 if (drop.bomb && drop.item.getLocation().getY() < 73)
                     drop.item.teleport(arena.spawn(0, 2));
-        if (tick % 10 == 0) {
+        if (!deathmatch && tick % 10 == 0) {
             Map<UUID, Integer> teams = new HashMap<>();
             for (var actor : match.actors()) if (actor.online) teams.put(actor.id, actor.team);
             teammateGlow.update(
@@ -518,10 +591,18 @@ final class CsSession implements GameSession, Listener {
                                     && viewer.canSee(target)
                                     && !grenades.obscured(viewer, target));
         }
+        if (tick % 4 == 0) {
+            notices.values().removeIf(notice -> tick >= notice.until);
+            for (Player p : players()) weaponHud(p);
+        }
         if (tick % 20 == 0) hud();
     }
 
     private void newRound() {
+        if (deathmatch) {
+            startDeathmatch();
+            return;
+        }
         resetting = true;
         try {
             ctBombKnown = false;
@@ -537,6 +618,7 @@ final class CsSession implements GameSession, Listener {
             clearDrops();
             clearBomb();
             arena.reset();
+            arena.shuffleSpawns(random);
             int[] index = {0, 0};
             for (Player p : players()) {
                 release(p);
@@ -564,6 +646,10 @@ final class CsSession implements GameSession, Listener {
     }
 
     private void finish() {
+        if (deathmatch) {
+            finishDeathmatch();
+            return;
+        }
         finished = true;
         List<Component> lines = new ArrayList<>();
         int winner =
@@ -593,11 +679,10 @@ final class CsSession implements GameSession, Listener {
             boolean head,
             boolean leg,
             CsWeapon weapon,
-            boolean grenade) {
-        if (!active(victim)) return;
+            CsMatch.KillCause cause) {
+        if (!active(victim) || dm != null && dm.protectedSpawn(victim.getUniqueId(), tick)) return;
         boolean hadVest = actor(victim).armour > 0;
-        var outcome =
-                match.hurt(victim.getUniqueId(), attacker, damage, head, leg, weapon, grenade);
+        var outcome = match.hurt(victim.getUniqueId(), attacker, damage, head, leg, weapon, cause);
         if (outcome.health() <= 0) return;
         var a = actor(victim);
         combat.tag(victim, a.armour > 0);
@@ -613,11 +698,12 @@ final class CsSession implements GameSession, Listener {
         if (attacker != null) {
             Player p = player(attacker);
             if (p != null)
-                p.sendActionBar(tr(head ? "hit_head" : "hit", Math.round(outcome.health())));
+                actionBar(p, tr(head ? "hit_head" : "hit", Math.round(outcome.health())));
         }
     }
 
     private void death(Player p) {
+        clearWeaponHud(p);
         var a = actor(p);
         if (Objects.equals(handled.get(a.id), a.life)) return;
         handled.put(a.id, a.life);
@@ -625,10 +711,10 @@ final class CsSession implements GameSession, Listener {
         cancelChannel(a.id);
         pendingDrops.remove(a.id);
         deathAt.put(a.id, tick + 60);
-        if (match.dropBomb(a.id)) dropBomb(p.getLocation());
-        if (a.primary != null)
+        if (!deathmatch && match.dropBomb(a.id)) dropBomb(p.getLocation());
+        if (!deathmatch && a.primary != null)
             addDrop(p.getLocation(), CsItems.gun(a.primary, null), a.primary, null, false, false);
-        if (a.secondary != null)
+        if (!deathmatch && a.secondary != null)
             addDrop(
                     p.getLocation(),
                     CsItems.gun(a.secondary, null),
@@ -636,16 +722,197 @@ final class CsSession implements GameSession, Listener {
                     null,
                     false,
                     false);
-        a.utility.forEach((u, n) -> {
-            for (int i = 0; i < n; i++)
-                addDrop(p.getLocation(), CsItems.utility(u, null), null, u, false, false);
-        });
-        if (a.kit) addDrop(p.getLocation(), CsItems.kit(null), null, null, true, false);
+        if (!deathmatch)
+            a.utility.forEach((u, n) -> {
+                for (int i = 0; i < n; i++)
+                    addDrop(p.getLocation(), CsItems.utility(u, null), null, u, false, false);
+            });
+        if (!deathmatch && a.kit)
+            addDrop(p.getLocation(), CsItems.kit(null), null, null, true, false);
         a.loseEquipment();
         say(
-                a.killedBy == null || a.killedBy.equals(a.id)
-                        ? tr("death", name(a.id))
-                        : tr("kill", name(a.killedBy), name(a.id)));
+                CsItems.killMessage(
+                        a, a.killedBy == null ? Component.empty() : name(a.killedBy), name(a.id)));
+    }
+
+    private void startDeathmatch() {
+        roundSeen = match.number;
+        versionSeen = match.version;
+        arena.reset();
+        for (Player p : players()) spawnDeathmatch(p);
+        say(tr("dm.start", config.dmDuration.get() / 60));
+        hud();
+    }
+
+    private void spawnDeathmatch(Player p) {
+        if (!match.respawnDeathmatch(p.getUniqueId())) return;
+        combat.stopScope(p);
+        respawn(p);
+        release(p);
+        if (p.getGameMode() == GameMode.SPECTATOR) p.setSpectatorTarget(null);
+        p.closeInventory();
+        p.setItemOnCursor(null);
+        services.playerState().resetForRound(p, GameMode.SURVIVAL);
+        dm.equip(actor(p), tick);
+        deathAt.remove(p.getUniqueId());
+        pendingDrops.remove(p.getUniqueId());
+        p.setAbsorptionAmount(0);
+        p.setNoDamageTicks(0);
+        p.setHealth(20);
+        p.setSaturation(20);
+        CsItems.sync(p, match, radar.view);
+        p.getInventory().setHeldItemSlot(0);
+        List<Location> opponents =
+                players().stream()
+                        .filter(other -> other != p && active(other))
+                        .map(Player::getLocation)
+                        .toList();
+        teleport(p, arena.deathmatchSpawn(opponents, random));
+        if (match.phase != CsMatch.Phase.LIVE) freeze(p);
+        p.showBossBar(bar);
+        actionBar(p, tr("dm.spawned"));
+    }
+
+    private Component deathmatchResult() {
+        var ranking = CsDeathmatch.ranking(match);
+        if (ranking.isEmpty() || ranking.getFirst().kills == 0) return tr("dm.draw");
+        var first = ranking.getFirst();
+        Component winners =
+                Component.join(
+                        net.kyori.adventure.text.JoinConfiguration.separator(Component.text(", ")),
+                        ranking.stream()
+                                .filter(a -> a.kills == first.kills && a.deaths == first.deaths)
+                                .map(a -> name(a.id))
+                                .toList());
+        return tr("dm.winner", winners, first.kills, first.deaths);
+    }
+
+    private void finishDeathmatch() {
+        finished = true;
+        List<Component> lines = new ArrayList<>();
+        lines.add(deathmatchResult());
+        for (var actor : CsDeathmatch.ranking(match)) {
+            int place = CsDeathmatch.place(match, actor);
+            lines.add(tr("dm.standing", place, name(actor.id), actor.kills, actor.deaths));
+            if (!services.isTest() && names.size() >= 2 && actor.kills > 0)
+                services.award("cs", actor.id, Math.max(0, 4 - place));
+        }
+        result = List.copyOf(lines);
+        services.session().endGame(EndReason.FINISHED);
+    }
+
+    private void deathmatchHud() {
+        long left = Math.max(0, (match.until - tick + 19) / 20);
+        Component status =
+                match.phase == CsMatch.Phase.FREEZE
+                        ? tr("dm.countdown", left)
+                        : tr("dm.time", TimeFormat.clock(left));
+        bar.name(status);
+        bar.progress(
+                (float)
+                        Math.clamp(
+                                left
+                                        / (double)
+                                                (match.phase == CsMatch.Phase.FREEZE
+                                                        ? config.dmCountdown.get()
+                                                        : config.dmDuration.get()),
+                                0,
+                                1));
+        for (Player p : viewers()) {
+            List<Component> lines = new ArrayList<>();
+            lines.add(status);
+            lines.add(tr("dm.players", match.actors().stream().filter(a -> a.online).count()));
+            var a = actor(p);
+            if (a != null) {
+                lines.add(tr("dm.position", CsDeathmatch.place(match, a)));
+                lines.add(tr("hud.kda", a.kills, a.deaths, a.assists));
+                if (a.alive) {
+                    lines.add(
+                            tr(
+                                    "hud.health",
+                                    Math.round(a.health),
+                                    Math.round(a.armour),
+                                    tr(a.helmet ? "yes" : "no")));
+                    if (dm.protectedSpawn(a.id, tick)) lines.add(tr("dm.protected"));
+                } else
+                    lines.add(
+                            tr(
+                                    "dm.respawn",
+                                    Math.max(
+                                            0,
+                                            (deathAt.getOrDefault(a.id, tick) - tick + 19) / 20)));
+            }
+            lines.add(tr("dm.select_hint"));
+            services.sidebar().update(p, tr("mode.deathmatch"), lines);
+            p.showBossBar(bar);
+            CsNameTags.update(p.getScoreboard(), match, names, null);
+            if (p.getOpenInventory().getTopInventory().getHolder() instanceof Scores scores)
+                fillDeathmatchScores(p, scores);
+        }
+    }
+
+    private void openDeathmatchShop(Player p) {
+        if (!built || done || !isInGame(p)) return;
+        combat.stopScope(p);
+        var a = actor(p);
+        for (CsGun gun : new CsGun[] {a.primary, a.secondary}) if (gun != null) gun.heldUntil = -1;
+        p.clearActiveItem();
+        Shop shop = new Shop(p.getUniqueId());
+        shop.inventory = Bukkit.createInventory(shop, 54, I18n.render(tr("dm.weapons"), p));
+        for (var category : CsWeapon.Category.values())
+            shop.inventory.setItem(
+                    category.ordinal() * 9,
+                    CsItems.item(
+                            Material.PAPER,
+                            "shop",
+                            tr("buy.category." + category.name().toLowerCase(Locale.ROOT)),
+                            List.of(tr("dm.free")),
+                            p));
+        for (var entry : CsShop.deathmatchSlots().entrySet()) {
+            var weapon = entry.getValue();
+            shop.inventory.setItem(
+                    entry.getKey(),
+                    CsItems.item(
+                            weapon.material,
+                            "shop",
+                            tr("weapon." + weapon.id),
+                            List.of(tr("dm.free"), tr("dm.selection_rules")),
+                            p));
+            shop.choices.put(entry.getKey(), weapon.id);
+        }
+        p.openInventory(shop.inventory);
+    }
+
+    private void selectDeathmatchWeapon(Player p, String id) {
+        if (!built || done || !isInGame(p)) return;
+        var weapon = CsWeapon.find(id);
+        if (weapon == null) return;
+        boolean applied = dm.select(match, p.getUniqueId(), weapon, tick);
+        if (applied) {
+            combat.stopScope(p);
+            CsItems.sync(p, match, radar.view);
+        }
+        actionBar(p, tr(applied ? "dm.selected" : "dm.selected_next", tr("weapon." + weapon.id)));
+    }
+
+    private void fillDeathmatchScores(Player viewer, Scores scores) {
+        scores.inventory.clear();
+        int slot = 0;
+        for (var a : CsDeathmatch.ranking(match)) {
+            scores.inventory.setItem(
+                    slot++,
+                    CsItems.item(
+                            a.alive ? Material.LIME_WOOL : Material.RED_WOOL,
+                            "score",
+                            name(a.id),
+                            List.of(
+                                    tr("dm.position", CsDeathmatch.place(match, a)),
+                                    tr("hud.kda", a.kills, a.deaths, a.assists),
+                                    tr(
+                                            "score.status",
+                                            tr(a.alive ? "status.alive" : "status.dead"))),
+                            viewer));
+        }
     }
 
     private void spectate(Player p) {
@@ -797,7 +1064,7 @@ final class CsSession implements GameSession, Listener {
                                 false,
                                 false,
                                 null,
-                                true);
+                                CsMatch.KillCause.C4);
                 }
             return;
         }
@@ -849,6 +1116,7 @@ final class CsSession implements GameSession, Listener {
     }
 
     private void dropSlot(Player p, int slot) {
+        if (deathmatch) return;
         var a = actor(p);
         if (a == null
                 || !active(p)
@@ -912,9 +1180,13 @@ final class CsSession implements GameSession, Listener {
     }
 
     private void openShop(Player p) {
+        if (deathmatch) {
+            openDeathmatchShop(p);
+            return;
+        }
         var a = actor(p);
         if (!built || !match.canBuy(a, tick) || !arena.buyZone(p.getLocation(), match.side(a))) {
-            p.sendActionBar(tr("buy.closed", config.buy.get()));
+            actionBar(p, tr("buy.closed", config.buy.get()));
             return;
         }
         cancelChannel(a.id);
@@ -989,10 +1261,14 @@ final class CsSession implements GameSession, Listener {
     }
 
     private void purchase(Player p, String item) {
+        if (deathmatch) {
+            selectDeathmatchWeapon(p, item);
+            return;
+        }
         var a = actor(p);
         if (a == null || !match.canBuy(a, tick) || !arena.buyZone(p.getLocation(), match.side(a))) {
             p.closeInventory();
-            p.sendActionBar(tr("buy.closed", config.buy.get()));
+            actionBar(p, tr("buy.closed", config.buy.get()));
             return;
         }
         CsWeapon weapon = CsWeapon.find(item);
@@ -1004,7 +1280,7 @@ final class CsSession implements GameSession, Listener {
                 addDrop(p.getLocation(), CsItems.gun(old, null), old, null, false, false);
             CsItems.sync(p, match, radar.view);
             p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .7f, 1.4f);
-        } else p.sendActionBar(tr("buy.error." + status.name().toLowerCase(Locale.ROOT)));
+        } else actionBar(p, tr("buy.error." + status.name().toLowerCase(Locale.ROOT)));
         openShop(p);
     }
 
@@ -1012,12 +1288,18 @@ final class CsSession implements GameSession, Listener {
         if (!built || done || !isInGame(p)) return;
         combat.stopScope(p);
         Scores scores = new Scores(p.getUniqueId());
-        scores.inventory = Bukkit.createInventory(scores, 27, I18n.render(tr("score.title"), p));
+        scores.inventory =
+                Bukkit.createInventory(
+                        scores, 27, I18n.render(tr(deathmatch ? "dm.score" : "score.title"), p));
         fillScores(p, scores);
         p.openInventory(scores.inventory);
     }
 
     private void fillScores(Player viewer, Scores scores) {
+        if (deathmatch) {
+            fillDeathmatchScores(viewer, scores);
+            return;
+        }
         var self = actor(viewer);
         for (int team = 0; team < 2; team++) {
             int slot = team * 18;
@@ -1052,6 +1334,10 @@ final class CsSession implements GameSession, Listener {
     }
 
     private void refreshChatTeams() {
+        if (deathmatch) {
+            chatTeams = Map.of();
+            return;
+        }
         Map<UUID, Integer> teams = new HashMap<>();
         for (var actor : match.actors()) if (actor.online) teams.put(actor.id, actor.team);
         chatTeams = Map.copyOf(teams);
@@ -1095,15 +1381,19 @@ final class CsSession implements GameSession, Listener {
             case "pause" -> {
                 var a = actor(p);
                 if (built && a != null && match.pause(a.team)) say(tr("pause", team(a.team)));
-                else p.sendActionBar(tr("pause_denied"));
+                else actionBar(p, tr("pause_denied"));
             }
-            case "help" -> p.sendMessage(tr("controls"));
+            case "help" -> p.sendMessage(tr(deathmatch ? "dm.controls" : "controls"));
             default -> throw new IllegalArgumentException();
         }
     }
 
     private void hud() {
         if (!built) return;
+        if (deathmatch) {
+            deathmatchHud();
+            return;
+        }
         long left =
                 Math.max(
                         0,
@@ -1199,7 +1489,10 @@ final class CsSession implements GameSession, Listener {
 
     @Override
     public boolean arePlayersFriendly(Player a, Player b) {
-        return actor(a) != null && actor(b) != null && actor(a).team == actor(b).team;
+        return !deathmatch
+                && actor(a) != null
+                && actor(b) != null
+                && actor(a).team == actor(b).team;
     }
 
     @Override
@@ -1215,6 +1508,7 @@ final class CsSession implements GameSession, Listener {
     @Override
     public Component globalResult() {
         if (!finished) return null;
+        if (deathmatch) return deathmatchResult();
         int winner =
                 match.score[0] == match.score[1] ? -1 : match.score[0] > match.score[1] ? 0 : 1;
         return winner < 0
@@ -1241,11 +1535,13 @@ final class CsSession implements GameSession, Listener {
         for (Player p : players()) {
             release(p);
             p.clearActiveItem();
+            clearWeaponHud(p);
         }
         services.bossBars().hideAll();
     }
 
     private void disconnect(Player p) {
+        clearWeaponHud(p);
         var a = actor(p);
         if (a == null) return;
         if (combat != null) combat.stopScope(p);
@@ -1278,7 +1574,7 @@ final class CsSession implements GameSession, Listener {
         refreshChatTeams();
         deathAt.put(p.getUniqueId(), tick + 60);
         if (!p.isDead()) spectate(p);
-        p.sendMessage(tr("rejoin"));
+        p.sendMessage(tr(deathmatch ? "dm.rejoin" : "rejoin"));
     }
 
     @Override
@@ -1294,9 +1590,11 @@ final class CsSession implements GameSession, Listener {
         event.setKeepLevel(true);
         event.deathScreenMessageOverride(
                 I18n.render(
-                        a.killedBy == null || a.killedBy.equals(a.id)
-                                ? tr("you_died")
-                                : tr("killed_by", name(a.killedBy)),
+                        deathmatch
+                                ? tr("dm.death_screen", CsDeathmatch.RESPAWN_TICKS / 20)
+                                : a.killedBy == null || a.killedBy.equals(a.id)
+                                        ? tr("you_died")
+                                        : tr("killed_by", name(a.killedBy)),
                         event.getPlayer()));
     }
 
@@ -1322,10 +1620,7 @@ final class CsSession implements GameSession, Listener {
         var a = actor(p);
         if (a == null || !a.alive) return;
         if (event.getAction().isRightClick()) rightClick(p);
-        else if (event.getAction().isLeftClick()) {
-            if (p.getInventory().getHeldItemSlot() == 2) combat.knife(p, false, null);
-            else combat.left(p);
-        }
+        else if (event.getAction().isLeftClick()) leftClick(p, null);
     }
 
     @Override
@@ -1346,36 +1641,46 @@ final class CsSession implements GameSession, Listener {
             return;
         }
         if (slot == 7) {
+            if (deathmatch) return;
             beginChannel(p);
             return;
         }
         if (!canAct(p)) return;
         if (slot >= 3 && slot <= 6) {
-            if (grenades.toss(p, CsMatch.Utility.values()[slot - 3]))
-                CsItems.sync(p, match, radar.view);
+            throwGrenade(p, CsGrenadePhysics.ThrowMode.SHORT);
         } else if (slot == 2) combat.knife(p, true, null);
         else combat.right(p);
     }
 
-    /** Paper can omit interact events for some arm-swing targets; the gun debounces overlap. */
+    private void throwGrenade(Player p, CsGrenadePhysics.ThrowMode mode) {
+        int slot = p.getInventory().getHeldItemSlot();
+        if (slot >= 3 && slot <= 6 && grenades.toss(p, CsMatch.Utility.values()[slot - 3], mode))
+            CsItems.sync(p, match, radar.view);
+    }
+
+    private void leftClick(Player p, Player target) {
+        int slot = p.getInventory().getHeldItemSlot();
+        if (slot >= 3 && slot <= 6) throwGrenade(p, CsGrenadePhysics.ThrowMode.LONG);
+        else if (slot == 2) combat.knife(p, false, target);
+        else combat.left(p);
+    }
+
+    /** Swing/interact/attack overlap is debounced by the gun or shared grenade throw cooldown. */
     @EventHandler(priority = EventPriority.HIGHEST)
-    public void onScopeSwing(PlayerArmSwingEvent event) {
-        if (built && event.getHand() == EquipmentSlot.HAND && isInGame(event.getPlayer()))
-            combat.left(event.getPlayer());
+    public void onCombatSwing(PlayerArmSwingEvent event) {
+        if (built && event.getHand() == EquipmentSlot.HAND && isInGame(event.getPlayer())) {
+            Player p = event.getPlayer();
+            int slot = p.getInventory().getHeldItemSlot();
+            if (slot >= 3 && slot <= 6) throwGrenade(p, CsGrenadePhysics.ThrowMode.LONG);
+            else combat.left(p);
+        }
     }
 
     @Override
     public void onPrePlayerAttackEntity(PrePlayerAttackEntityEvent event) {
         if (actor(event.getPlayer()) == null) return;
         event.setCancelled(true);
-        if (built) {
-            if (event.getPlayer().getInventory().getHeldItemSlot() == 2)
-                combat.knife(
-                        event.getPlayer(),
-                        false,
-                        event.getAttacked() instanceof Player p ? p : null);
-            else combat.left(event.getPlayer());
-        }
+        if (built) leftClick(event.getPlayer(), event.getAttacked() instanceof Player p ? p : null);
     }
 
     @Override
@@ -1383,7 +1688,7 @@ final class CsSession implements GameSession, Listener {
         event.setCancelled(true);
         if (!(event.getEntity() instanceof Player p) || !built || !active(p)) return;
         if (event.getCause() == EntityDamageEvent.DamageCause.FALL)
-            hurt(p, null, event.getDamage() * 5, false, true, null, false);
+            hurt(p, null, event.getDamage() * 5, false, true, null, CsMatch.KillCause.OTHER);
         else if (event instanceof EntityDamageByEntityEvent hit
                 && hit.getDamager() instanceof Player source
                 && source.getInventory().getHeldItemSlot() == 2) combat.knife(source, false, p);

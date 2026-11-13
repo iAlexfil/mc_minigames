@@ -40,6 +40,7 @@ final class CsMatch {
         final int team;
         int money = 800, kills, deaths, assists, mvps, life, roundKills;
         UUID killedBy;
+        KillInfo killInfo;
         double health = 100, armour;
         boolean helmet, kit, alive, online = true;
         CsGun primary, secondary;
@@ -72,10 +73,25 @@ final class CsMatch {
 
     record Damage(double health, boolean killed, boolean head) {}
 
+    enum KillCause {
+        BULLET,
+        KNIFE,
+        HE,
+        FIRE,
+        C4,
+        OTHER;
+
+        boolean grenade() {
+            return this == HE || this == FIRE || this == C4;
+        }
+    }
+
+    record KillInfo(CsWeapon weapon, boolean headshot, KillCause cause) {}
+
     private final Map<UUID, Actor> actors = new LinkedHashMap<>();
     private final int[] economySizes = new int[2];
     final int halfRounds, freezeTicks, roundTicks, bombTicks, buyTicks;
-    final boolean practice;
+    final boolean practice, deathmatch;
     final int[] score = {0, 0}, losses = {1, 1}, timeouts = {4, 4};
     private final boolean[] pendingPause = {false, false};
     private final Map<UUID, Map<UUID, Double>> contributions = new HashMap<>();
@@ -96,13 +112,25 @@ final class CsMatch {
             int bombTicks,
             int buyTicks,
             boolean practice) {
+        this(teams, halfRounds, freezeTicks, roundTicks, bombTicks, buyTicks, practice, false);
+    }
+
+    CsMatch(
+            Map<UUID, Integer> teams,
+            int halfRounds,
+            int freezeTicks,
+            int roundTicks,
+            int bombTicks,
+            int buyTicks,
+            boolean practice,
+            boolean deathmatch) {
         if (teams.isEmpty()
-                || teams.size() > 10
+                || teams.size() > (deathmatch ? 16 : 10)
                 || teams.values().stream().anyMatch(t -> t < 0 || t > 1)
                 || halfRounds < 1) throw new IllegalArgumentException("Invalid CS roster or rules");
         for (int team = 0; team < 2; team++) {
             int selected = team;
-            if (teams.values().stream().filter(t -> t == selected).count() > 5)
+            if (!deathmatch && teams.values().stream().filter(t -> t == selected).count() > 5)
                 throw new IllegalArgumentException("Five players per team maximum");
         }
         teams.forEach((id, team) -> actors.put(id, new Actor(id, team)));
@@ -112,6 +140,7 @@ final class CsMatch {
         this.bombTicks = bombTicks;
         this.buyTicks = buyTicks;
         this.practice = practice;
+        this.deathmatch = deathmatch;
     }
 
     Collection<Actor> actors() {
@@ -145,7 +174,29 @@ final class CsMatch {
 
     void start(long now, Random random) {
         if (number != 0) throw new IllegalStateException("Already started");
-        beginRound(now, random);
+        if (deathmatch) {
+            number = 1;
+            phase = Phase.FREEZE;
+            until = now + freezeTicks;
+            for (Actor p : actors.values()) respawnDeathmatch(p.id);
+            version++;
+        } else beginRound(now, random);
+    }
+
+    boolean respawnDeathmatch(UUID id) {
+        Actor p = actors.get(id);
+        if (!deathmatch || ended || p == null || !p.online) return false;
+        p.loseEquipment();
+        p.health = 100;
+        p.armour = 100;
+        p.helmet = true;
+        p.alive = true;
+        p.life++;
+        p.killedBy = null;
+        p.killInfo = null;
+        p.money = 0;
+        contributions.remove(id);
+        return true;
     }
 
     private void beginRound(long now, Random random) {
@@ -191,6 +242,7 @@ final class CsMatch {
             p.life++;
             p.roundKills = 0;
             p.killedBy = null;
+            p.killInfo = null;
             if (p.secondary == null)
                 p.secondary = new CsGun(side(p) == 0 ? CsWeapon.GLOCK : CsWeapon.USP);
             if (p.primary != null) p.primary.restock();
@@ -224,6 +276,14 @@ final class CsMatch {
             } else beginRound(now, random);
         } else if (phase == Phase.HALFTIME && now >= until) beginRound(now, random);
         if (phase != Phase.LIVE) return;
+        if (deathmatch) {
+            if (now >= until) {
+                phase = Phase.FINISHED;
+                ended = true;
+                version++;
+            }
+            return;
+        }
         if (planted() && now >= detonateAt) {
             endRound(teamForSide(0), Reason.EXPLOSION, now);
             return;
@@ -312,6 +372,7 @@ final class CsMatch {
     }
 
     boolean consume(Actor p, Utility utility) {
+        if (deathmatch) return false;
         int n = p.utility.getOrDefault(utility, 0);
         if (!live(p.id) || phase != Phase.LIVE || n == 0) return false;
         if (n == 1) p.utility.remove(utility);
@@ -321,7 +382,8 @@ final class CsMatch {
 
     boolean plant(UUID player, int site, long now) {
         Actor p = actors.get(player);
-        if (site < 0
+        if (deathmatch
+                || site < 0
                 || site > 1
                 || phase != Phase.LIVE
                 || !live(player)
@@ -372,9 +434,33 @@ final class CsMatch {
             boolean leg,
             CsWeapon weapon,
             boolean grenade) {
+        return hurt(
+                victim,
+                attacker,
+                raw,
+                head,
+                leg,
+                weapon,
+                grenade
+                        ? KillCause.HE
+                        : weapon != null
+                                ? KillCause.BULLET
+                                : attacker != null ? KillCause.KNIFE : KillCause.OTHER);
+    }
+
+    Damage hurt(
+            UUID victim,
+            UUID attacker,
+            double raw,
+            boolean head,
+            boolean leg,
+            CsWeapon weapon,
+            KillCause cause) {
+        boolean grenade = cause.grenade();
         Actor p = actors.get(victim), source = actors.get(attacker);
         if (phase != Phase.LIVE || !live(victim) || raw <= 0) return new Damage(0, false, head);
-        boolean friendly = source != null && source.team == p.team && !source.id.equals(p.id);
+        boolean friendly =
+                !deathmatch && source != null && source.team == p.team && !source.id.equals(p.id);
         if (friendly) raw *= grenade ? .85 : weapon == null ? .4 : .33;
         if (!leg && p.armour > 0 && (!head || p.helmet)) {
             double penetration = weapon == null ? (grenade ? .5 : .85) : weapon.penetration;
@@ -385,28 +471,35 @@ final class CsMatch {
         }
         double damage = Math.min(p.health, raw);
         p.health = Math.max(0, p.health - damage);
-        if (source != null && source.team != p.team)
+        if (source != null && !source.id.equals(p.id) && (deathmatch || source.team != p.team))
             contributions
                     .computeIfAbsent(victim, k -> new HashMap<>())
                     .merge(attacker, damage, Double::sum);
-        if (p.health <= 0) die(p, source, weapon, grenade);
+        if (p.health <= 0)
+            die(p, source, new KillInfo(weapon, weapon != null && !grenade && head, cause));
         return new Damage(damage, p.health <= 0, head);
     }
 
-    private void die(Actor p, Actor source, CsWeapon weapon, boolean grenade) {
+    private void die(Actor p, Actor source, KillInfo info) {
         if (!p.alive) return;
         p.alive = false;
         p.deaths++;
         lastKiller = source == null ? null : source.id;
         p.killedBy = lastKiller;
+        p.killInfo = info;
         if (source != null && !source.id.equals(p.id)) {
-            if (source.team == p.team) {
+            if (!deathmatch && source.team == p.team) {
                 source.kills--;
                 credit(source, -300);
             } else {
                 source.kills++;
                 source.roundKills++;
-                reward(source, grenade ? 300 : weapon == null ? 1500 : weapon.killReward());
+                if (!deathmatch)
+                    reward(
+                            source,
+                            info.cause().grenade()
+                                    ? 300
+                                    : info.weapon() == null ? 1500 : info.weapon().killReward());
                 contributions
                         .getOrDefault(p.id, Map.of())
                         .forEach((id, damage) -> {
@@ -422,7 +515,7 @@ final class CsMatch {
         Actor p = actors.get(id);
         if (live(id)) {
             p.health = 0;
-            die(p, p, null, false);
+            die(p, p, new KillInfo(null, false, KillCause.OTHER));
         }
     }
 
@@ -432,7 +525,7 @@ final class CsMatch {
         p.online = false;
         if (p.alive) {
             p.health = 0;
-            die(p, null, null, false);
+            die(p, null, new KillInfo(null, false, KillCause.OTHER));
         }
     }
 
@@ -497,6 +590,7 @@ final class CsMatch {
     }
 
     boolean pause(int team) {
+        if (deathmatch) return false;
         if (phase == Phase.FINISHED || timeouts[team] == 0 || pendingPause[team]) return false;
         timeouts[team]--;
         if (phase == Phase.FREEZE) until += 600;

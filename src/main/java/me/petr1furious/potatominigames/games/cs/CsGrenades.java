@@ -15,6 +15,7 @@ final class CsGrenades {
         final CsMatch.Utility kind;
         final Item item;
         final long fuse;
+        final CsGrenadePhysics.ThrowMode mode;
         Location at;
         Vector velocity;
 
@@ -24,13 +25,15 @@ final class CsGrenades {
                 Item item,
                 Location at,
                 Vector velocity,
-                long fuse) {
+                long fuse,
+                CsGrenadePhysics.ThrowMode mode) {
             this.owner = owner;
             this.kind = kind;
             this.item = item;
             this.at = at;
             this.velocity = velocity;
             this.fuse = fuse;
+            this.mode = mode;
         }
     }
 
@@ -53,14 +56,14 @@ final class CsGrenades {
     }
 
     @SuppressWarnings("deprecation")
-    boolean toss(Player p, CsMatch.Utility kind) {
+    boolean toss(Player p, CsMatch.Utility kind, CsGrenadePhysics.ThrowMode mode) {
         var a = session.actor(p);
         if (flights.size() >= 40
                 || session.now() < throwAt.getOrDefault(p.getUniqueId(), 0L)
                 || !session.canAct(p)
                 || !session.match().consume(a, kind)) return false;
         throwAt.put(p.getUniqueId(), session.now() + 16);
-        // Start at the snowball's release height; a forward offset could skip thin cover.
+        // Start at native throwable release height; a forward offset could skip thin cover.
         Location at = p.getEyeLocation().subtract(0, .1, 0);
         Item item =
                 session.world()
@@ -76,15 +79,19 @@ final class CsGrenades {
                         item,
                         at,
                         CsGrenadePhysics.launch(
-                                p.getEyeLocation().getDirection(), p.getVelocity(), p.isOnGround()),
-                        session.now() + 30));
+                                p.getEyeLocation().getDirection(),
+                                p.getVelocity(),
+                                p.isOnGround(),
+                                mode),
+                        session.now() + 30,
+                        mode));
         return true;
     }
 
     void tick() {
         for (Flight f : List.copyOf(flights)) {
             boolean ground = false;
-            CsGrenadePhysics.airTick(f.velocity);
+            CsGrenadePhysics.airTick(f.velocity, f.mode);
             for (int step = 0; step < 4; step++) {
                 Vector move = f.velocity.clone().multiply(.25);
                 double length = move.length();
@@ -139,7 +146,8 @@ final class CsGrenades {
                     if (session.active(target)
                             && target.getLocation().distanceSquared(z.at) < 16
                             && line(z.at.clone().add(0, .2, 0), target.getLocation().add(0, .3, 0)))
-                        session.hurt(target, z.owner, 10, false, true, null, true);
+                        session.hurt(
+                                target, z.owner, 10, false, true, null, CsMatch.KillCause.FIRE);
             }
             visibility();
         }
@@ -223,7 +231,7 @@ final class CsGrenades {
                                     false,
                                     false,
                                     null,
-                                    true);
+                                    CsMatch.KillCause.HE);
                     }
             }
             case FLASH -> {
@@ -287,7 +295,9 @@ final class CsGrenades {
                 if (viewer == target || !session.active(target)) continue;
                 boolean dead =
                         !session.active(viewer)
-                                && session.actor(viewer).team != session.actor(target).team;
+                                && (session.deathmatch()
+                                        || session.actor(viewer).team
+                                                != session.actor(target).team);
                 boolean flash = flashed.getOrDefault(viewer.getUniqueId(), 0L) > session.now();
                 boolean obscured =
                         smoke.stream()

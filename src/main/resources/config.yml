@@ -75,3 +75,4 @@ queues:
 
   cs:
     default: {enabled: true, minPlayers: 2, maxPlayers: 10}
+    deathmatch: {enabled: true, minPlayers: 2, maxPlayers: 16}

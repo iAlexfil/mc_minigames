@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.block.*;
 import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.*;
@@ -33,6 +34,7 @@ final class BuildMemorySession extends PartySurvivalSession {
     private static final int REVIEW_TICKS = 60;
     private final Map<UUID, BuildMemoryJudging.Progress> progress = new LinkedHashMap<>();
     private final Set<UUID> dirty = new LinkedHashSet<>();
+    private final Set<UUID> ready = new HashSet<>();
     private final Map<UUID, BuildMemoryJudging.Grade> grades = new LinkedHashMap<>();
     private List<UUID> reviewOrder = List.of();
     private int reviewIndex;
@@ -65,7 +67,7 @@ final class BuildMemorySession extends PartySurvivalSession {
         int seconds = 10;
         for (int round = 1; round <= stages; round++)
             seconds +=
-                    Math.max(5, 13 - round)
+                    memorizeSeconds(round)
                             + buildSeconds(round)
                             + Math.max(1, names.size()) * (REVIEW_TICKS / 20)
                             + 3;
@@ -73,7 +75,15 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
 
     static int buildSeconds(int stage) {
-        return 30 + 5 * (stage - 1);
+        return 20 + 5 * (stage - 1);
+    }
+
+    static int memorizeSeconds(int stage) {
+        return 12 + stage - 1;
+    }
+
+    static boolean allReady(Collection<UUID> players, Set<UUID> ready) {
+        return !players.isEmpty() && ready.containsAll(players);
     }
 
     boolean podiumAwards() {
@@ -97,6 +107,8 @@ final class BuildMemorySession extends PartySurvivalSession {
         progress.clear();
         dirty.clear();
         grades.clear();
+        ready.clear();
+        arena.resize(BuildMemoryPattern.buildSize(stage));
         BuildMemoryPattern shared =
                 BuildMemoryPattern.generate(stage, models.get(stage - 1), random);
         modelTitle = shared.title();
@@ -108,7 +120,7 @@ final class BuildMemorySession extends PartySurvivalSession {
             clearKit(p);
             arena.show(p.getUniqueId(), pattern);
         }
-        deadline = elapsed() + Math.max(5, 13 - stage) * 20L;
+        deadline = elapsed() + memorizeSeconds(stage) * 20L;
         announceTitle(I18n.tr("party.rounds.build_memory.memorize"), modelTitle, 2);
         say(I18n.tr("party.rounds.build_memory.orientation", stage));
         PartySounds.play(alivePlayers(), Sound.BLOCK_NOTE_BLOCK_BELL, .7f, .9f);
@@ -118,6 +130,8 @@ final class BuildMemorySession extends PartySurvivalSession {
         if (phase == Phase.BUILD) {
             for (UUID id : dirty) progress.get(id).observe(arena.capture(id), elapsed);
             dirty.clear();
+            if (allReady(alivePlayers().stream().map(Player::getUniqueId).toList(), ready))
+                deadline = elapsed;
         }
         if (elapsed < deadline) {
             if (phase != Phase.REVIEW) PartySounds.countdown(alivePlayers(), deadline - elapsed);
@@ -132,7 +146,11 @@ final class BuildMemorySession extends PartySurvivalSession {
                     clearKit(p);
                     p.getInventory().setItem(6, PvpClass.item(Material.IRON_PICKAXE));
                     p.getInventory().setItem(7, PvpClass.item(Material.IRON_AXE));
-                    p.getInventory().setItem(8, PvpClass.item(Material.SHEARS));
+                    p.getInventory().setItem(5, PvpClass.item(Material.SHEARS));
+                    ItemStack done = new ItemStack(Material.EMERALD);
+                    done.editMeta(meta ->
+                            meta.displayName(I18n.tr("party.rounds.build_memory.ready_item")));
+                    p.getInventory().setItem(8, I18n.item(done, p));
                     patterns.get(p.getUniqueId())
                             .inventory()
                             .forEach((m, n) -> p.getInventory().addItem(new ItemStack(m, n)));
@@ -234,7 +252,7 @@ final class BuildMemorySession extends PartySurvivalSession {
     }
 
     private boolean building(Player p) {
-        return playing() && phase == Phase.BUILD && alive(p);
+        return playing() && phase == Phase.BUILD && alive(p) && !ready.contains(p.getUniqueId());
     }
 
     @Override
@@ -292,6 +310,23 @@ final class BuildMemorySession extends PartySurvivalSession {
 
     @Override
     public void onPlayerInteract(PlayerInteractEvent e) {
+        Player player = e.getPlayer();
+        if (playing()
+                && phase == Phase.BUILD
+                && alive(player)
+                && e.getHand() == EquipmentSlot.HAND
+                && e.getAction().isRightClick()
+                && e.getItem() != null
+                && e.getItem().getType() == Material.EMERALD
+                && player.getInventory().getHeldItemSlot() == 8) {
+            e.setCancelled(true);
+            if (ready.add(player.getUniqueId())) {
+                say(I18n.tr("party.rounds.build_memory.player_ready", player.getName()));
+                player.playSound(
+                        player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .7f, 1.2f);
+            }
+            return;
+        }
         if (!building(e.getPlayer())) {
             e.setCancelled(true);
             return;
@@ -324,6 +359,8 @@ final class BuildMemorySession extends PartySurvivalSession {
     protected void handleInventoryClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)
                 || !building(p)
+                || (e.getClickedInventory() == p.getInventory() && e.getSlot() == 8)
+                || e.getHotbarButton() == 8
                 || e.getSlotType() == InventoryType.SlotType.CRAFTING
                 || e.getSlotType() == InventoryType.SlotType.RESULT
                 || e.getAction().name().contains("DROP")

@@ -41,6 +41,41 @@ public final class PartyArenaCheck {
         check(
                 memory.capture(ids.get(1)).equals(pattern.blocks()),
                 "Clearing own model preserves neighbor");
+        memory.resize(7);
+        for (UUID id : ids) {
+            var center = memory.reviewCenter(id);
+            int cx = center.getBlockX() - 3, cz = center.getBlockZ() - 3;
+            for (int x = 0; x < 7; x++)
+                for (int z = 0; z < 7; z++)
+                    check(
+                            w.world.getBlockAt(cx + x, 80, cz + z).getType()
+                                    == Material.LIGHT_BLUE_CONCRETE,
+                            "Expanded 7x7 floor is marked");
+            check(
+                    memory.localCell(id, w.block(cx + 6, 84, cz + 6)) != null,
+                    "Far corner is editable in expanded plot");
+            check(
+                    memory.localCell(id, w.block(cx + 7, 84, cz + 6)) == null,
+                    "Expanded plot still rejects outside edits");
+        }
+        for (UUID id : ids) memory.show(id, pattern);
+        memory.clear(ids.getFirst());
+        check(memory.capture(ids.getFirst()).isEmpty(), "Expanded model clears all cells");
+        check(
+                memory.capture(ids.get(1)).equals(pattern.blocks()),
+                "Expanded plots remain isolated");
+        memory.resize(5);
+        for (UUID id : ids) {
+            check(memory.capture(id).isEmpty(), "Resizing clears previous build");
+            var center = memory.reviewCenter(id);
+            int cx = center.getBlockX() - 2, cz = center.getBlockZ() - 2;
+            check(
+                    w.world.getBlockAt(cx + 6, 80, cz + 6).getType() == Material.SMOOTH_QUARTZ,
+                    "Shrinking restores outer floor");
+            check(
+                    w.world.getBlockAt(cx + 6, 81, cz + 6).getType() == Material.AIR,
+                    "Shrinking removes blocks outside the smaller capture bounds");
+        }
         var owner = ids.getFirst();
         var anchor = memory.spawn(owner);
         int ax = anchor.getBlockX() - 2, az = anchor.getBlockZ() + 3;

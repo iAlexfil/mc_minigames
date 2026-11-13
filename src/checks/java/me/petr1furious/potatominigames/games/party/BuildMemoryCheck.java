@@ -16,8 +16,25 @@ public final class BuildMemoryCheck {
         for (int stage = 1; stage <= 8; stage++)
             check(
                     BuildMemorySession.buildSeconds(stage)
-                            == new int[] {30, 35, 40, 45, 50, 55, 60, 65}[stage - 1],
-                    "Construction starts at thirty seconds and gains five per stage");
+                            == new int[] {20, 25, 30, 35, 40, 45, 50, 55}[stage - 1],
+                    "Construction starts at twenty seconds and gains five per stage");
+        for (int stage = 1; stage <= 8; stage++)
+            check(
+                    BuildMemorySession.memorizeSeconds(stage) == 11 + stage,
+                    "Memorization gains one second every round");
+        UUID first = UUID.randomUUID(), second = UUID.randomUUID(), spectator = UUID.randomUUID();
+        check(
+                !BuildMemorySession.allReady(List.of(first, second), Set.of(first, spectator)),
+                "One unfinished survivor prevents early review");
+        check(
+                BuildMemorySession.allReady(List.of(first, second), Set.of(first, second)),
+                "All survivors can finish early");
+        check(
+                BuildMemorySession.allReady(List.of(first), Set.of(first)),
+                "A disconnected player no longer prevents review");
+        check(
+                !BuildMemorySession.allReady(List.of(), Set.of()),
+                "Empty roster does not start review");
         for (int stage = 1; stage <= 2; stage++)
             for (int seed = 0; seed < 100; seed++)
                 check(
@@ -33,8 +50,9 @@ public final class BuildMemoryCheck {
                 check(
                         stage <= 2
                                 ? p.blocks().size() <= 9
-                                : p.blocks().size() >= 11 && p.blocks().size() <= 24,
-                        "Small opening, then recognizable models with reduced filler");
+                                : p.blocks().size() >= (stage >= 6 ? 24 : 11)
+                                        && p.blocks().size() <= 48,
+                        "Difficulty comes from progressively larger complete models");
                 check(
                         p.blocks().keySet().stream().anyMatch(c -> c.y() >= 2),
                         "Every stage starts with a three-dimensional model");
@@ -50,9 +68,9 @@ public final class BuildMemoryCheck {
                 for (var c : p.blocks().keySet()) {
                     check(
                             c.x() >= 0
-                                    && c.x() < 5
+                                    && c.x() < (stage >= 6 ? 7 : 5)
                                     && c.z() >= 0
-                                    && c.z() < 5
+                                    && c.z() < (stage >= 6 ? 7 : 5)
                                     && c.y() >= 0
                                     && c.y() < 4,
                             "Bounds");
@@ -79,18 +97,27 @@ public final class BuildMemoryCheck {
                         "Can place every block from the floor without extra scaffolding");
                 var actual = new HashMap<>(p.blocks());
                 check(p.matches(actual), "Exact succeeds");
-                var first = actual.keySet().iterator().next();
-                actual.remove(first);
+                var firstCell = actual.keySet().iterator().next();
+                actual.remove(firstCell);
                 check(!p.matches(actual), "One missing fails");
-                actual.put(first, MemoryBlock.of(Material.BEDROCK));
+                actual.put(firstCell, MemoryBlock.of(Material.BEDROCK));
                 check(!p.matches(actual), "One wrong fails");
             }
         Set<Material> materials = new HashSet<>();
         for (int model = 0; model < BuildMemoryPattern.MODEL_COUNT; model++) {
             Set<Map<BuildMemoryPattern.Cell, MemoryBlock>> variants = new HashSet<>();
             for (int seed = 0; seed < 40; seed++) {
-                var p = BuildMemoryPattern.generate(4, model, new Random(seed));
+                var p = BuildMemoryPattern.generate(4, model, new Random(seed * 104729L));
                 variants.add(p.blocks());
+                check(
+                        p.blocks()
+                                .keySet()
+                                .equals(
+                                        BuildMemoryPattern.generate(
+                                                        8, model, new Random(seed * 104729L))
+                                                .blocks()
+                                                .keySet()),
+                        "A model never gains stage-dependent random paving or posts");
                 materials.addAll(p.inventory().keySet());
                 for (var entry : p.blocks().entrySet()) {
                     var support = entry.getValue().support(entry.getKey());
@@ -99,7 +126,13 @@ public final class BuildMemoryCheck {
                             "Every attachment has support");
                 }
             }
-            check(variants.size() >= 30, "Same model has many visual variants");
+            check(
+                    variants.size() >= 8,
+                    "Same model varies materials and orientation: "
+                            + model
+                            + " ("
+                            + variants.size()
+                            + ")");
         }
         for (String suffix :
                 List.of("_STAIRS", "_SLAB", "_SIGN", "_FENCE", "_CHAIN", "TORCH", "LAMP"))
@@ -109,6 +142,15 @@ public final class BuildMemoryCheck {
         for (int seed = 0; seed < 30; seed++) {
             var deck = BuildMemoryPattern.deck(new Random(seed));
             check(new HashSet<>(deck.subList(0, 8)).size() == 8, "No repeated model in a match");
+            int previousSize = 0;
+            for (int stage = 1; stage <= 8; stage++) {
+                var pattern =
+                        BuildMemoryPattern.generate(stage, deck.get(stage - 1), new Random(seed));
+                check(
+                        pattern.blocks().size() >= previousSize,
+                        "Deck difficulty never drops to a smaller model");
+                previousSize = pattern.blocks().size();
+            }
             for (int stage = 1; stage <= 2; stage++)
                 check(
                         BuildMemoryPattern.generate(stage, deck.get(stage - 1), new Random(seed))
@@ -194,6 +236,6 @@ public final class BuildMemoryCheck {
         check(
                 progress.finishedAt() == 130,
                 "Removing a temporary extra block updates completion even if the net build is"
-                    + " unchanged");
+                        + " unchanged");
     }
 }

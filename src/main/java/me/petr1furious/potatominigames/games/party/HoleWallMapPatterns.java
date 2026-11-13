@@ -92,6 +92,8 @@ final class HoleWallMapPatterns {
                 case 32, 35 -> gates.add(gate(0, 1, 1, 1.5));
                 default -> {}
             }
+        boolean movementRequired = HoleWallChallenge.required(difficulty(stage), kind, false);
+        gates = HoleWallChallenge.gates(gates, kind, movementRequired);
         var full =
                 new HoleWallBlock(
                         layout == HoleWallLayout.SNAKE
@@ -124,6 +126,7 @@ final class HoleWallMapPatterns {
                 if (block != null) cells.add(new HoleWallPattern.Cell(u, y, block));
             }
         cells = new ArrayList<>(HoleWallPattern.frameLowPassages(cells, gates, full));
+        cells = new ArrayList<>(HoleWallChallenge.frame(cells, gates, full, movementRequired));
         return new HoleWallPattern(
                 cells,
                 gates,

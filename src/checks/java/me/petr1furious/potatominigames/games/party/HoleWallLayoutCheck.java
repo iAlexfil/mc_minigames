@@ -133,17 +133,17 @@ final class HoleWallLayoutCheck {
                                         wall.direction.dx == 0
                                                 ? new BoundingBox(
                                                         u - .3,
-                                                        81,
+                                                        81 + gate.bottom(),
                                                         .2,
                                                         u + .3,
-                                                        81 + gate.bodyHeight(),
+                                                        81 + gate.bottom() + gate.bodyHeight(),
                                                         .8)
                                                 : new BoundingBox(
                                                         .2,
-                                                        81,
+                                                        81 + gate.bottom(),
                                                         u - .3,
                                                         .8,
-                                                        81 + gate.bodyHeight(),
+                                                        81 + gate.bottom() + gate.bodyHeight(),
                                                         u + .3);
                                 check(
                                         !HoleWallPhysics.collides(

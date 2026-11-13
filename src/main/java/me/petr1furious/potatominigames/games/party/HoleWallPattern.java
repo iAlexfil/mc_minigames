@@ -159,7 +159,8 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
 
     static HoleWallPattern generate(int stage, int radius, Random random) {
         int kind = KINDS[Math.floorMod(stage - 1, KINDS.length)];
-        var gates = routes(kind, radius);
+        boolean movementRequired = HoleWallChallenge.required(difficulty(stage), kind, true);
+        var gates = HoleWallChallenge.gates(routes(kind, radius), kind, movementRequired);
         var full =
                 new HoleWallBlock(
                         kind % 2 == 0 ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
@@ -228,6 +229,7 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                 if (block != null) cells.add(new Cell(u, y, block));
             }
         cells = new ArrayList<>(frameLowPassages(cells, gates, full));
+        cells = new ArrayList<>(HoleWallChallenge.frame(cells, gates, full, movementRequired));
         return new HoleWallPattern(
                 cells, gates, I18n.tr("party.rounds.hole_wall.pattern." + NAMES[kind]));
     }
@@ -244,15 +246,22 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                         kind % 2 == 0 ? Material.STONE_BRICKS : Material.DARK_PRISMARINE,
                         HoleWallBlock.Shape.FULL);
         double height = kind == 2 ? 1.5 : kind == 1 ? 2 : 3;
-        var gates = List.of(new Gate(-6, 2, 0, height), new Gate(5, 2, 0, height));
+        double bottom = kind == 2 ? 0 : 1;
+        var gates = List.of(new Gate(-6, 2, bottom, height), new Gate(5, 2, bottom, height));
         var cells = new ArrayList<Cell>();
         for (int u = -HALF_WIDTH; u <= HALF_WIDTH; u++)
             for (int y = 0; y < HEIGHT; y++) {
                 int a = Math.abs(u);
                 boolean opening = a == 5 || a == 6;
-                if (opening && y + 1 <= height) continue;
+                if (opening && y >= bottom && y + 1 <= bottom + height) continue;
                 if (!opening && a > 7 && y > 3 + (a % 2)) continue;
-                cells.add(new Cell(u, y, opening && y < height ? full.upperSlab() : full));
+                cells.add(
+                        new Cell(
+                                u,
+                                y,
+                                opening && y >= bottom && y < bottom + height
+                                        ? full.upperSlab()
+                                        : full));
             }
         return new HoleWallPattern(
                 cells, gates, I18n.tr("party.rounds.hole_wall.pattern.islands_" + kind));

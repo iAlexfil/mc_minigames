@@ -253,10 +253,21 @@ tasks.check { dependsOn(checkFinalsSession) }
 
 for ((taskName, checkClass) in mapOf(
     "checkFinalsWeapons" to "FinalsWeaponsCheck",
+    "checkFinalsRegeneration" to "FinalsRegenerationCheck",
     "checkFinalsGadgets" to "FinalsGadgetsCheck",
+    "checkFinalsEquipment" to "FinalsEquipmentCheck",
     "checkFinalsMaps" to "FinalsMapsCheck",
     "checkFinalsMapPreview" to "FinalsMapPreviewCheck",
     "checkFinalsHighlights" to "FinalsHighlightsCheck",
+    "checkFinalsKills" to "FinalsKillsCheck",
+    "checkFinalsTabList" to "FinalsTabListCheck",
+    "checkFinalsCashboxFlight" to "FinalsCashboxFlightCheck",
+    "checkFinalsLoadouts" to "FinalsLoadoutsCheck",
+    "checkFinalsTeamWipes" to "FinalsTeamWipesCheck",
+    "checkFinalsRevives" to "FinalsRevivesCheck",
+    "checkFinalsSlimeSnapshot" to "FinalsSlimeSnapshotCheck",
+    "checkFinalsMapDownload" to "FinalsMapDownloadCheck",
+    "checkFinalsCashoutMusic" to "FinalsCashoutMusicCheck",
     "checkFinalsCashoutPhysics" to "FinalsCashoutPhysicsCheck")) {
     val finalsCheck = tasks.register<JavaExec>(taskName) {
         dependsOn(checks.classesTaskName)

@@ -72,12 +72,117 @@ public final class FinalsGadgetsCheck {
         check(
                 !FinalsGadgetState.shouldRestoreGlow(false, false, false),
                 "already changed glow is left alone");
+        meshLifecycle();
+        defibrillatorTargetSelection();
         visibilityLifecycle();
         carrierAndSonarTransitions();
         domeEligibility();
         temporaryCoverOwnership();
         beamCancellation();
         System.out.println("FinalsGadgetsCheck: " + checks + " checks passed");
+    }
+
+    private static void defibrillatorTargetSelection() throws Exception {
+        Fixture f = new Fixture();
+        FakePlayer farther = f.player(4, 0);
+        f.redMate.location.setX(1);
+        farther.location.setX(3);
+        f.awaiting.add(f.redMate.id);
+        f.awaiting.add(farther.id);
+        f.reviveTarget = farther.id;
+        check(
+                (boolean)
+                                invoke(
+                                        f.gadgets,
+                                        "defibrillate",
+                                        new Class<?>[] {Player.class},
+                                        f.red.player)
+                        && f.revived == farther.player,
+                "A nearer off-axis statue cannot prevent Defibrillator from charging the aimed"
+                        + " teammate");
+    }
+
+    private static void meshLifecycle() throws Exception {
+        Fixture f = new Fixture();
+        java.lang.reflect.Field field;
+        try {
+            field = FinalsGadgets.class.getDeclaredField("effects");
+        } catch (NoSuchFieldException missing) {
+            throw new AssertionError(
+                    "Selectable specializations need bounded active effects", missing);
+        }
+        field.setAccessible(true);
+        Object effects = field.get(f.gadgets);
+        invoke(
+                effects,
+                "activate",
+                new Class<?>[] {Player.class, FinalsGadgetState.Kind.class},
+                f.red.player,
+                FinalsGadgetState.Kind.MESH_SHIELD);
+        Method blocks =
+                FinalsGadgets.class.getDeclaredMethod(
+                        "blocksDamage", Player.class, Player.class, Location.class);
+        check(
+                (boolean)
+                        blocks.invoke(
+                                f.gadgets,
+                                f.redMate.player,
+                                f.blue.player,
+                                new Location(f.world, 0, 66, 8)),
+                "Mesh blocks an actual projectile origin in front of its owner");
+        check(
+                !(boolean)
+                        blocks.invoke(
+                                f.gadgets,
+                                f.redMate.player,
+                                f.blue.player,
+                                new Location(f.world, 0, 66, -8)),
+                "Mesh allows attacks from behind");
+        check(
+                !(boolean)
+                        blocks.invoke(
+                                f.gadgets,
+                                f.redMate.player,
+                                f.blue.player,
+                                new Location(f.world, 8, 66, 0)),
+                "Mesh is a finite forward surface, not spherical immunity");
+        f.red.location.setPitch(90);
+        check(
+                (boolean)
+                        blocks.invoke(
+                                f.gadgets,
+                                f.redMate.player,
+                                f.blue.player,
+                                new Location(f.world, 0, 66, 8)),
+                "Looking down does not silently disable a yaw-facing Mesh Shield");
+        f.red.location.setPitch(0);
+        check(
+                (boolean)
+                        invoke(
+                                f.gadgets,
+                                "weaponBlocked",
+                                new Class<?>[] {Player.class},
+                                f.red.player),
+                "Mesh requires the owner to keep holding their specialization");
+        f.red.slot = 0;
+        check(
+                !(boolean)
+                        blocks.invoke(
+                                f.gadgets,
+                                f.redMate.player,
+                                f.blue.player,
+                                new Location(f.world, 0, 66, 8)),
+                "Switching away immediately stops Mesh protection");
+        f.red.slot = 4;
+        f.gadgets.forget(f.red.id);
+        check(
+                !(boolean)
+                        blocks.invoke(
+                                f.gadgets,
+                                f.redMate.player,
+                                f.blue.player,
+                                new Location(f.world, 0, 66, 8)),
+                "Death cleanup removes Mesh protection");
     }
 
     private static void visibilityLifecycle() throws Exception {
@@ -366,6 +471,9 @@ public final class FinalsGadgetsCheck {
         long now;
         final List<FakePlayer> players = new ArrayList<>();
         final Set<UUID> carriers = new HashSet<>();
+        final Set<UUID> awaiting = new HashSet<>();
+        UUID reviveTarget;
+        Player revived;
         final World world =
                 proxy(
                         World.class,
@@ -395,6 +503,22 @@ public final class FinalsGadgetsCheck {
                                     case "inside" -> true;
                                     case "carrier" ->
                                             carriers.contains(((Player) args[0]).getUniqueId());
+                                    case "awaitingRespawn" ->
+                                            awaiting.contains(((Player) args[0]).getUniqueId());
+                                    case "deathLocation" ->
+                                            players.stream()
+                                                    .filter(p -> p.id.equals(args[0]))
+                                                    .findFirst()
+                                                    .orElseThrow()
+                                                    .location
+                                                    .clone();
+                                    case "revive" -> {
+                                        Player target = (Player) args[0];
+                                        boolean accepted =
+                                                target.getUniqueId().equals(reviveTarget);
+                                        if (accepted) revived = target;
+                                        yield accepted;
+                                    }
                                     case "playerClass" -> FinalsClass.LIGHT;
                                     default -> defaultValue(method.getReturnType());
                                 });

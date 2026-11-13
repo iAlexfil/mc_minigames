@@ -7,6 +7,8 @@ import org.bukkit.block.BlockState;
 import org.bukkit.entity.*;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /** Real native bodies and collision shapes; no network connection is needed. */
 public final class FinalsCashoutPhysicsSmoke {
@@ -30,7 +32,8 @@ public final class FinalsCashoutPhysicsSmoke {
         }
         // Reproduce a configured anchor already inside its solid support. The very
         // first display packet must use the corrected surface height.
-        arena.moveStation(0, new Location(world, 700.5, 100.75, 700.5));
+        arena.moveStation(0, new Location(world, 700.5, 100.75, 700.5, 87.30008f, 76.34995f));
+        arena.moveStation(1, new Location(world, 705.5, 101, 700.5, 179.84937f, 71.54993f));
         world.getBlockAt(700, 96, 700).setBlockData(Bukkit.createBlockData("minecraft:stone_slab[type=bottom]"), false);
         Set<UUID> before = new HashSet<>();
         world.getEntities().forEach(entity -> before.add(entity.getUniqueId()));
@@ -42,8 +45,11 @@ public final class FinalsCashoutPhysicsSmoke {
         Method replace = method(type, "replace", int.class);
         Method station = method(type, "station", Entity.class);
         Method aimed = method(type, "aimedStation", Player.class, double.class);
+        Method pull = method(type, "moveToward", int.class, Location.class, double.class);
         try {
             List<Entity> initial = created(world, before);
+            alignedDisplay(physics, station, initial, 0, arena.station(0), "Initial Nuketown cashout A");
+            alignedDisplay(physics, station, initial, 1, arena.station(1), "Initial Nuketown cashout B");
             require(arena.station(0).getY() == 101,
                     "An initially buried cashout is lifted onto solid terrain before spawning");
             require(initial.stream().filter(entity -> entity.getLocation().getBlockX() == 700)
@@ -68,9 +74,11 @@ public final class FinalsCashoutPhysicsSmoke {
             invoke(tick, physics);
             require(Math.abs(arena.station(0).getY() - 100.92) < 1e-7,
                     "Destroying support starts native body gravity on the next tick");
+            alignedDisplay(physics, station, initial, 0, arena.station(0), "Falling cashout");
             for (int index = 0; index < 60; index++) invoke(tick, physics);
             require(Math.abs(arena.station(0).getY() - 96.5) < 1e-7,
                     "Swept native voxel collision lands precisely on a lower half slab");
+            alignedDisplay(physics, station, initial, 0, arena.station(0), "Cashout landed on a half slab");
             require(arena.station(1).getY() == 101 && unchangedSlot.stream().allMatch(Entity::isValid),
                     "Falling one body leaves the other station and its entities unchanged");
             require(world.getBlockAt(700, 96, 700).getType() == Material.STONE_SLAB
@@ -86,12 +94,16 @@ public final class FinalsCashoutPhysicsSmoke {
             for (String surface : new String[]{"minecraft:stone", "minecraft:oak_fence",
                     "minecraft:stone_slab[type=bottom]"}) {
                 world.getBlockAt(700, 96, 700).setBlockData(Bukkit.createBlockData(surface), false);
-                arena.moveStation(0, new Location(world, 700.5, 104, 700.5));
+                arena.moveStation(0, new Location(world, 700.5, 104, 700.5, 37, 90));
                 invoke(replace, physics, 0);
+                alignedDisplay(physics, station, created(world, before), 0, arena.station(0),
+                        "Replacement from a downward-looking editor");
                 for (int index = 0; index < 100; index++) invoke(tick, physics);
                 double expectedY = surface.contains("fence") ? 97.5 : surface.contains("slab") ? 96.5 : 97;
                 require(Math.abs(arena.station(0).getY() - expectedY) < 1e-7,
                         "A long fall settles on the exact surface and remains there: " + surface);
+                alignedDisplay(physics, station, created(world, before), 0, arena.station(0),
+                        "Replacement landed on " + surface);
                 var bodyBox = new org.bukkit.util.BoundingBox(700, expectedY, 700, 701, expectedY + 1, 701);
                 for (var shape : world.getBlockAt(700, 96, 700).getCollisionShape().getBoundingBoxes())
                     require(!bodyBox.overlaps(shape.clone().shift(700, 96, 700)),
@@ -150,6 +162,48 @@ public final class FinalsCashoutPhysicsSmoke {
                     "An anchor whose body protrudes beyond the map is replaced by a supported in-bounds candidate");
             require(created(world, before).size() == 4,
                     "Penetration repairs and candidate changes retain exactly two body pairs");
+            for (int x = 709; x <= 714; x++) for (int y = 99; y <= 103; y++)
+                for (int z = 699; z <= 702; z++) {
+                    Block block = world.getBlockAt(x, y, z);
+                    if (!(x == 710 && z == 700)) originals.add(block.getState());
+                    block.setType(y == 100 ? Material.STONE : Material.AIR, false);
+                }
+            for (int y = 101; y <= 102; y++) for (int z = 699; z <= 702; z++)
+                world.getBlockAt(712, y, z).setType(Material.STONE, false);
+            Location beforePull = arena.station(0), otherBeforePull = arena.station(1);
+            List<Entity> pullEntities = created(world, before).stream().filter(entity -> {
+                try { return ((Integer) invoke(station, physics, entity)) == 0; }
+                catch (Exception error) { throw new RuntimeException(error); }
+            }).toList();
+            Location goal = new Location(world, 714.5, 101, 700.5, 130, 65);
+            require((boolean) invoke(pull, physics, 0, goal, 100d),
+                    "Winch pulls the real cashout body across a supporting floor");
+            require(arena.station(0).distance(beforePull) > .34
+                            && arena.station(0).distance(beforePull) <= .350001,
+                    "Even a huge requested pull distance is capped at0.35 blocks per step");
+            for (int index = 0; index < 12; index++) invoke(pull, physics, 0, goal, .35d);
+            require(arena.station(0).getX() > 711.49 && arena.station(0).getX() <= 711.5,
+                    "Repeated Winch steps stop the complete body before the native stone wall");
+            for (Entity entity : pullEntities) {
+                Location position = entity.getLocation();
+                require(entity.isValid() && position.getYaw() == 0 && position.getPitch() == 0,
+                        "Pulled cashout entities are reused and remain axis-aligned");
+                close(position.getY(), arena.station(0).getY(), "Pulled native body height stays synchronized");
+                close(position.getX() + (entity instanceof BlockDisplay ? .5 : 0), arena.station(0).getX(),
+                        "Pulled native display and interaction share the arena's live center");
+                close(position.getZ() + (entity instanceof BlockDisplay ? .5 : 0), arena.station(0).getZ(),
+                        "Pulled native display and interaction share the arena's live depth");
+            }
+            require(arena.station(1).equals(otherBeforePull) && unchangedSlot.stream().allMatch(Entity::isValid),
+                    "Pulling one cashout preserves the other cashout and its entity pair");
+            require(!(boolean) invoke(pull, physics, 0, arena.station(0).clone().add(0, -2, 0), .35d)
+                            && arena.station(0).getY() == 101,
+                    "Winch cannot sink the cashout into its supporting floor");
+            world.getBlockAt(711, 102, 700).setType(Material.STONE, false);
+            require(!(boolean) invoke(pull, physics, 0, arena.station(0).clone().add(0, 2, 0), .35d)
+                            && arena.station(0).getY() == 101,
+                    "Winch cannot lift the full body through a native ceiling");
+            require(created(world, before).size() == 4, "Winch movement never duplicates native cashout entities");
             Class<?> sessionType = Class.forName("me.petr1furious.potatominigames.games.finals.FinalsSession");
             Constructor<?> sessionConstructor = Arrays.stream(sessionType.getDeclaredConstructors())
                     .filter(candidate -> candidate.getParameterCount() == 2).findFirst().orElseThrow();
@@ -173,6 +227,53 @@ public final class FinalsCashoutPhysicsSmoke {
 
     private static List<Entity> created(World world, Set<UUID> before) {
         return world.getEntities().stream().filter(entity -> !before.contains(entity.getUniqueId()) && entity.isValid()).toList();
+    }
+
+    private void alignedDisplay(Object physics, Method station, List<Entity> entities, int slot,
+                                Location point, String phase) throws Exception {
+        BlockDisplay display = null;
+        Interaction interaction = null;
+        for (Entity entity : entities) {
+            if (((Integer) invoke(station, physics, entity)) != slot) continue;
+            if (entity instanceof BlockDisplay block) display = block;
+            if (entity instanceof Interaction click) interaction = click;
+        }
+        require(display != null && interaction != null, phase + ": native display and interaction exist");
+        Location position = display.getLocation();
+        require(position.getYaw() == 0 && position.getPitch() == 0,
+                phase + ": saved editor facing cannot rotate or bury the visible body");
+        var transform = display.getTransformation();
+        Matrix4f matrix = new Matrix4f()
+                .rotateY((float) Math.toRadians(-position.getYaw()))
+                .rotateX((float) Math.toRadians(position.getPitch()))
+                .translate(transform.getTranslation()).rotate(transform.getLeftRotation())
+                .scale(transform.getScale()).rotate(transform.getRightRotation());
+        double[] minimum = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY};
+        double[] maximum = {Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY};
+        for (int x = 0; x <= 1; x++) for (int y = 0; y <= 1; y++) for (int z = 0; z <= 1; z++) {
+            Vector3f corner = matrix.transformPosition(new Vector3f(x, y, z));
+            double[] coordinates = {position.getX() + corner.x, position.getY() + corner.y,
+                    position.getZ() + corner.z};
+            for (int axis = 0; axis < 3; axis++) {
+                minimum[axis] = Math.min(minimum[axis], coordinates[axis]);
+                maximum[axis] = Math.max(maximum[axis], coordinates[axis]);
+            }
+        }
+        require(Math.abs(minimum[0] - (point.getX() - .5)) < 1e-6
+                        && Math.abs(minimum[1] - point.getY()) < 1e-6
+                        && Math.abs(minimum[2] - (point.getZ() - .5)) < 1e-6
+                        && Math.abs(maximum[0] - (point.getX() + .5)) < 1e-6
+                        && Math.abs(maximum[1] - (point.getY() + 1)) < 1e-6
+                        && Math.abs(maximum[2] - (point.getZ() + .5)) < 1e-6,
+                phase + ": all eight rendered corners match the simulated one-block body");
+        var bounds = interaction.getBoundingBox();
+        require(Math.abs(bounds.getMinX() - minimum[0]) < 1e-6
+                        && Math.abs(bounds.getMinY() - minimum[1]) < 1e-6
+                        && Math.abs(bounds.getMinZ() - minimum[2]) < 1e-6
+                        && Math.abs(bounds.getMaxX() - maximum[0]) < 1e-6
+                        && Math.abs(bounds.getMaxY() - maximum[1]) < 1e-6
+                        && Math.abs(bounds.getMaxZ() - maximum[2]) < 1e-6,
+                phase + ": native click bounds coincide with the rendered body");
     }
 
     private static Player viewer(Location eye, Vector direction) {
@@ -205,6 +306,10 @@ public final class FinalsCashoutPhysicsSmoke {
     private void require(boolean condition, String message) {
         assertions++;
         if (!condition) throw new AssertionError(message);
+    }
+
+    private void close(double actual, double expected, String message) {
+        require(Math.abs(actual - expected) < 1e-7, message + ": expected " + expected + ", got " + actual);
     }
 
     private static final class Arena implements FinalsMapArena {

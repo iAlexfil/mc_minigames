@@ -7,6 +7,9 @@ import net.kyori.adventure.text.Component;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 
@@ -20,6 +23,8 @@ final class HoleWallSession extends PartySurvivalSession {
     private HoleWallBlocks blocks;
     private final Map<UUID, BoundingBox> previous = new HashMap<>();
     private final Map<UUID, Long> nextHitSound = new HashMap<>();
+    private final Map<UUID, Player> hiddenPlayers = new HashMap<>();
+    private boolean visibilityConfigured;
     private int wallNumber, warnedRadius = 8, warnedArmRadius = 2;
 
     HoleWallSession(SessionServices services, PartyConfig config, PartyRoundContext context) {
@@ -34,6 +39,29 @@ final class HoleWallSession extends PartySurvivalSession {
         flow = new HoleWallFlow(seconds * 20L, random, layout);
         blocks = new HoleWallBlocks(world);
         world.setTime(6000);
+        visibilityConfigured = true;
+        services.sidebar().setHiddenNonCollidingPlayers(names.values());
+    }
+
+    @Override
+    void preparePlayer(Player player) {
+        // The base session has already cleared equipment and effects for this round.
+        hiddenPlayers.put(player.getUniqueId(), player);
+        player.addPotionEffect(
+                new PotionEffect(
+                        PotionEffectType.INVISIBILITY,
+                        PotionEffect.INFINITE_DURATION,
+                        0,
+                        false,
+                        false,
+                        false));
+        player.getInventory().setBoots(new ItemStack(Material.LEATHER_BOOTS));
+    }
+
+    private void restoreAppearance(Player player) {
+        if (hiddenPlayers.remove(player.getUniqueId()) == null) return;
+        player.removePotionEffect(PotionEffectType.INVISIBILITY);
+        player.getInventory().setBoots(null);
     }
 
     Location spawn(int i, int n) {
@@ -214,11 +242,17 @@ final class HoleWallSession extends PartySurvivalSession {
     }
 
     void playerOut(Player player) {
+        restoreAppearance(player);
         previous.remove(player.getUniqueId());
         nextHitSound.remove(player.getUniqueId());
     }
 
     void cleanup() {
+        for (Player player : List.copyOf(hiddenPlayers.values())) restoreAppearance(player);
+        if (visibilityConfigured) {
+            services.sidebar().setHiddenNonCollidingPlayers(List.of());
+            visibilityConfigured = false;
+        }
         if (blocks != null) blocks.clear();
         if (flow != null) flow.clear();
         previous.clear();

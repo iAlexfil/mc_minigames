@@ -1,9 +1,15 @@
 # Changes apply to the next match. All timings are in seconds.
-countdownSeconds: 5
-durationSeconds: 360
+# Loadout selection is clamped to 18–60 seconds, including older persisted values.
+countdownSeconds: 18
+durationSeconds: 600
+matchTimingVersion: 1
 vaultOpenSeconds: 5
-cashoutSeconds: 40
+cashoutSeconds: 90
+cashoutTimingVersion: 1
 stealSeconds: 5
+# Other team sizes use this automatic respawn delay. Initial 2v2/3v3 matches unlock
+# Space after 8 seconds; two-/three-player team wipes respawn together after 16 seconds.
+# Exactly five participants form 2v2 with the last joined player as spectator Game Master.
 respawnSeconds: 5
 protectionSeconds: 2
 cashoutValue: 10000

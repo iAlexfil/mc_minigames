@@ -1,14 +1,10 @@
 package me.petr1furious.potatominigames.core.hud;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Locale;
-import java.util.UUID;
-import java.util.function.Supplier;
+import me.petr1furious.potatominigames.core.team.TeamColor;
+import me.petr1furious.potatominigames.i18n.I18n;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -18,11 +14,15 @@ import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-
-import me.petr1furious.potatominigames.core.team.TeamColor;
-import me.petr1furious.potatominigames.i18n.I18n;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Per-viewer sidebar; each line is a team prefix on an invisible entry and only changed
@@ -33,6 +33,7 @@ public final class SidebarService {
 
     private final Map<UUID, View> views = new LinkedHashMap<>();
     private final Map<UUID, TeamColor> nameColors = new HashMap<>();
+    private java.util.Set<String> hiddenNonCollidingPlayers = java.util.Set.of();
     private final Supplier<Collection<Player>> spectators;
     private boolean nameTagsVisible = true;
 
@@ -151,6 +152,7 @@ public final class SidebarService {
         views.clear();
         nameColors.clear();
         nameTagsVisible = true;
+        hiddenNonCollidingPlayers = java.util.Set.of();
     }
 
     /** Controls vanilla overhead names on this session's private scoreboards only. */
@@ -169,6 +171,12 @@ public final class SidebarService {
                 nameTagsVisible ? Team.OptionStatus.ALWAYS : Team.OptionStatus.NEVER);
     }
 
+    /** Round-scoped rules, also applied to boards created later for new spectators. */
+    public void setHiddenNonCollidingPlayers(Collection<String> names) {
+        hiddenNonCollidingPlayers = java.util.Set.copyOf(names);
+        for (View view : views.values()) applyNameColors(view.scoreboard);
+    }
+
     public void setNameColor(Player player, TeamColor color) {
         if (color == null) {
             nameColors.remove(player.getUniqueId());
@@ -181,6 +189,8 @@ public final class SidebarService {
     }
 
     private void applyNameColors(Scoreboard scoreboard) {
+        Team hidden = scoreboard.getTeam("hidden_no_push");
+        if (hidden != null) hidden.unregister();
         for (TeamColor color : TeamColor.values()) {
             Team team = scoreboard.getTeam("color_" + color.id());
             if (team != null) {
@@ -203,6 +213,13 @@ public final class SidebarService {
             }
             applyNameTagVisibility(team);
             team.addEntry(player.getName());
+        }
+        if (!hiddenNonCollidingPlayers.isEmpty()) {
+            hidden = scoreboard.registerNewTeam("hidden_no_push");
+            hidden.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
+            hidden.setOption(Team.Option.NAME_TAG_VISIBILITY, Team.OptionStatus.NEVER);
+            hidden.setCanSeeFriendlyInvisibles(false);
+            for (String name : hiddenNonCollidingPlayers) hidden.addEntry(name);
         }
     }
 }

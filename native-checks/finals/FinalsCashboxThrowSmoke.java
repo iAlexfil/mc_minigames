@@ -29,8 +29,8 @@ public final class FinalsCashboxThrowSmoke {
         World world = Bukkit.getWorlds().getFirst();
         Location feet = new Location(world, 740.5, 100, 740.5, 0, 0);
         List<BlockState> terrain = new ArrayList<>();
-        for (int y = 100; y <= 103; y++) for (int z = 740; z <= 744; z++) {
-            var block = world.getBlockAt(740, y, z);
+        for (int x = 739; x <= 749; x++) for (int y = 100; y <= 104; y++) for (int z = 739; z <= 750; z++) {
+            var block = world.getBlockAt(x, y, z);
             terrain.add(block.getState());
             block.setType(Material.AIR, false);
         }
@@ -46,12 +46,16 @@ public final class FinalsCashboxThrowSmoke {
                 Class.forName("me.petr1furious.potatominigames.games.finals.FinalsConfig"));
         constructor.setAccessible(true);
         Object session = constructor.newInstance(services, null);
+        Location[] stations = {new Location(world, 740.5, 101, 743.5), new Location(world, 746.5, 101, 743.5)};
+        boolean[] normalBounds = {true};
         FinalsMapArena arena = (FinalsMapArena) Proxy.newProxyInstance(
                 FinalsMapArena.class.getClassLoader(), new Class<?>[]{FinalsMapArena.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "world" -> world;
-                    case "contains" -> world.equals(((Location) args[0]).getWorld());
+                    case "contains" -> world.equals(((Location) args[0]).getWorld())
+                            && (normalBounds[0] || ((Location) args[0]).getZ() < 742);
                     case "vault" -> feet.clone();
+                    case "station" -> stations[(int) args[0]].clone();
                     default -> throw new AssertionError("Unexpected arena call: " + method.getName());
                 });
         set(session, "world", world);
@@ -115,6 +119,88 @@ public final class FinalsCashboxThrowSmoke {
             close(dropped.getVelocity().lengthSquared(), 0, "Ordinary drops receive no throw force");
             close(dropped.getLocation().getY(), 100.4, "Ordinary drops release near the player's feet");
             require(dropped.hasGravity(), "Ordinary drops still use native gravity");
+
+            world.getBlockAt(740, 101, 741).setType(Material.AIR, false);
+            Flight redHit = launch(session, dropEvent, remove, player, trigger, roster, owner);
+            redHit.item().teleport(new Location(world, 740.5, 101.62, 745.5));
+            require(!redHit.item().getBoundingBox().overlaps(stationBox(stations[0])),
+                    "The thrown native item ends beyond cashout A, requiring a swept collision");
+            invoke(ensure, session);
+            require(redHit.state().phase() == FinalsState.Phase.CASHOUT
+                            && redHit.state().station() == 0 && redHit.state().ownerTeam() == 0,
+                    "An actual Q throw crossing cashout A automatically starts the thrower's red cashout");
+            require(get(session, "cashbox") == null && !redHit.item().isValid(),
+                    "Automatic insertion consumes the native item exactly once");
+
+            stations[0] = new Location(world, 746.5, 101, 743.5);
+            Flight blueHit = launch(session, dropEvent, remove, noncarrier, trigger, roster, other);
+            stations[1] = new Location(world, 740.5, 101, 746.5);
+            blueHit.item().teleport(new Location(world, 740.5, 101.62, 748.5));
+            require(!blueHit.item().getBoundingBox().overlaps(stationBox(stations[1])),
+                    "The second native item also crosses completely beyond the live station");
+            invoke(ensure, session);
+            require(blueHit.state().phase() == FinalsState.Phase.CASHOUT
+                            && blueHit.state().station() == 1 && blueHit.state().ownerTeam() == 1,
+                    "A moved cashout B uses its current position and credits the blue thrower");
+            require(!blueHit.item().isValid(), "The other cashout also removes its inserted item");
+
+            stations[1] = new Location(world, 748.5, 101, 746.5);
+            Flight miss = launch(session, dropEvent, remove, player, trigger, roster, owner);
+            miss.item().teleport(new Location(world, 740.5, 101.62, 745.5));
+            invoke(ensure, session);
+            require(miss.state().phase() == FinalsState.Phase.CASHBOX_AVAILABLE && miss.item().isValid(),
+                    "A thrown item missing both cashouts remains available in the world");
+
+            stations[0] = new Location(world, 740.5, 101, 743.5);
+            Flight blocked = launch(session, dropEvent, remove, player, trigger, roster, owner);
+            world.getBlockAt(740, 101, 742).setType(Material.STONE, false);
+            blocked.item().teleport(new Location(world, 740.5, 101.62, 745.5));
+            invoke(ensure, session);
+            require(blocked.state().phase() == FinalsState.Phase.CASHBOX_AVAILABLE && blocked.item().isValid(),
+                    "Solid native terrain between the previous item position and cashout blocks swept insertion");
+            world.getBlockAt(740, 101, 742).setType(Material.AIR, false);
+
+            invoke(remove, session);
+            FinalsState ordinary = carried(roster, owner);
+            set(session, "state", ordinary);
+            invoke(normalDrop, session, player);
+            invoke(ensure, session);
+            Item ordinaryItem = (Item) get(session, "cashbox");
+            ordinaryItem.teleport(stations[0].clone().add(0, .4, 0));
+            require(ordinaryItem.getBoundingBox().overlaps(stationBox(stations[0])),
+                    "The ordinary-drop regression really overlaps the cashout's native body bounds");
+            invoke(ensure, session);
+            require(ordinary.phase() == FinalsState.Phase.CASHBOX_AVAILABLE && ordinaryItem.isValid(),
+                    "Ordinary death/disconnect drops cannot auto-insert even while touching a cashout");
+
+            Flight pickedUp = launch(session, dropEvent, remove, player, trigger, roster, owner);
+            require(pickedUp.state().pickUp(other, 100), "The pickup regression uses a real state pickup");
+            invoke(ensure, session);
+            require(!pickedUp.item().isValid(), "Picking up the cashbox removes its former thrown item");
+            require(pickedUp.state().drop(other, 100), "The former catcher can drop the state-owned cashbox");
+            invoke(ensure, session);
+            Item afterPickup = (Item) get(session, "cashbox");
+            afterPickup.teleport(stations[0].clone().add(0, .4, 0));
+            invoke(ensure, session);
+            require(pickedUp.state().phase() == FinalsState.Phase.CASHBOX_AVAILABLE && afterPickup.isValid(),
+                    "A later dropped item cannot reuse flight ownership from before a pickup");
+
+            Flight reset = launch(session, dropEvent, remove, player, trigger, roster, owner);
+            reset.item().teleport(new Location(world, 740.5, 101.62, 745.5));
+            normalBounds[0] = false;
+            invoke(ensure, session);
+            require(!reset.item().isValid(), "An out-of-bounds thrown item is removed before collision insertion");
+            normalBounds[0] = true;
+            Item recovered = (Item) get(session, "cashbox");
+            if (recovered == null) {
+                invoke(ensure, session);
+                recovered = (Item) get(session, "cashbox");
+            }
+            require(recovered != null && recovered.isValid(), "The void reset produces a recoverable native cashbox");
+            recovered.teleport(stations[0].clone().add(0, .4, 0));
+            invoke(ensure, session);
+            require(reset.state().phase() == FinalsState.Phase.CASHBOX_AVAILABLE && recovered.isValid(),
+                    "A recovered item cannot reuse the old thrower's ownership to start a cashout");
             smoke.getLogger().info("FINALS_CASHBOX_THROW_SMOKE_PASS: " + assertions + " assertions");
             return assertions;
         } finally {
@@ -124,6 +210,22 @@ public final class FinalsCashboxThrowSmoke {
                 terrain.forEach(state -> state.update(true, false));
             }
         }
+    }
+
+    private record Flight(FinalsState state, Item item) {}
+
+    private static Flight launch(Object session, Method dropEvent, Method remove, Player thrower,
+                                 Item trigger, Map<UUID, Integer> roster, UUID owner) throws Exception {
+        invoke(remove, session);
+        FinalsState state = carried(roster, owner);
+        set(session, "state", state);
+        invoke(dropEvent, session, new PlayerDropItemEvent(thrower, trigger));
+        return new Flight(state, (Item) get(session, "cashbox"));
+    }
+
+    private static org.bukkit.util.BoundingBox stationBox(Location point) {
+        return new org.bukkit.util.BoundingBox(point.getX() - .5, point.getY(), point.getZ() - .5,
+                point.getX() + .5, point.getY() + 1, point.getZ() + .5);
     }
 
     private static FinalsState carried(Map<UUID, Integer> roster, UUID owner) {

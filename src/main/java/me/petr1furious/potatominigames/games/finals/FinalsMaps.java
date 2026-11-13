@@ -3,6 +3,7 @@ package me.petr1furious.potatominigames.games.finals;
 import static me.petr1furious.potatominigames.games.finals.FinalsMapData.*;
 
 import me.petr1furious.potatominigames.core.game.SessionServices;
+import me.petr1furious.potatominigames.core.world.SlimeFileLoader;
 import me.petr1furious.potatominigames.i18n.I18n;
 
 import net.kyori.adventure.text.Component;
@@ -25,14 +26,17 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-/** Draft setup plus immutable tiled snapshots. Matches only ever use disposable world copies. */
+/** Draft setup plus immutable Slime templates. Matches only ever use disposable world copies. */
 public final class FinalsMaps {
     private record Entry(Draft draft, Saved saved) {}
 
     private final JavaPlugin plugin;
     private final Path root, imports, templates, registry;
+    private final FinalsMapDownload downloads;
+    private final java.util.Set<String> importing = new java.util.HashSet<>();
     private Map<String, Entry> entries = new LinkedHashMap<>();
     private String selected = "generated";
+    private boolean closed;
 
     public FinalsMaps(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -47,6 +51,7 @@ public final class FinalsMaps {
         } catch (IOException | RuntimeException error) {
             throw new IllegalStateException("Cannot load Finals map registry", error);
         }
+        downloads = new FinalsMapDownload(plugin, imports);
     }
 
     public List<String> names() {
@@ -70,7 +75,7 @@ public final class FinalsMaps {
         if (!"generated".equals(name)) {
             Entry entry = entry(name);
             if (entry.saved == null) throw failure("not_saved", name);
-            loadTemplate(entry.saved);
+            validateTemplate(entry.saved);
         }
         commit(entries, name);
     }
@@ -81,34 +86,112 @@ public final class FinalsMaps {
             return new FinalsArena(services.worlds().createVoid("finals"));
         Entry entry = entry(name);
         if (entry.saved == null) throw failure("not_saved", name);
-        FinalsMapSnapshot snapshot = loadTemplate(entry.saved);
+        validateTemplate(entry.saved);
+        if (entry.saved.template().endsWith(".slime")) {
+            String template = entry.saved.template();
+            return new FinalsImportedArena(
+                    entry.saved,
+                    services.worlds(),
+                    new SlimeFileLoader(templates.toFile()),
+                    template.substring(0, template.length() - ".slime".length()),
+                    "finals_match_" + UUID.randomUUID().toString().replace("-", ""));
+        }
+        FinalsMapSnapshot snapshot = FinalsMapSnapshot.open(templates, entry.saved);
+        services.messages().broadcast(I18n.tr("finals.map.upgrading", name));
         World world = services.worlds().createVoid("finals");
-        world.setGameRule(org.bukkit.GameRules.COMMAND_BLOCKS_WORK, false);
-        world.setGameRule(org.bukkit.GameRules.SPAWNER_BLOCKS_WORK, false);
+        prepareEditor(world);
+        world.setGameRule(org.bukkit.GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
+        world.setGameRule(org.bukkit.GameRules.ADVANCE_TIME, false);
+        world.setGameRule(org.bukkit.GameRules.ADVANCE_WEATHER, false);
         if (entry.saved.bounds().minY() < world.getMinHeight()
                 || entry.saved.bounds().maxY() >= world.getMaxHeight()) throw failure("height");
-        return new FinalsImportedArena(world, entry.saved, snapshot);
+        return new FinalsImportedArena(
+                world, entry.saved, snapshot, () -> migration(name, entry.saved, world));
     }
 
     public void create(String name, Location location) {
-        FinalsMapFiles.name(name);
-        if (entries.containsKey(name)) throw failure("exists", name);
+        requireNewName(name);
         World world = location.getWorld();
-        if (world == null
-                || world.getName()
-                        .startsWith(
-                                me.petr1furious.potatominigames.core.world.ThrowawayWorldService
-                                        .PREFIX)) throw failure("persistent_world");
+        if (world == null) throw failure("persistent_world");
+        createInWorld(name, world.getName());
+    }
+
+    /** A separate playable area in the same editor, without copying terrain or setup points. */
+    public void create(String name, String sourceMap) {
+        requireNewName(name);
+        createInWorld(name, entry(sourceMap).draft.world);
+    }
+
+    private void createInWorld(String name, String worldName) {
+        if (worldName.startsWith(
+                        me.petr1furious.potatominigames.core.world.ThrowawayWorldService.PREFIX)
+                || worldName.startsWith("finals_match_")) throw failure("persistent_world");
         Draft draft = new Draft();
-        draft.world = world.getName();
+        draft.world = worldName;
+        inheritEditor(draft);
         Map<String, Entry> next = new LinkedHashMap<>(entries);
         next.put(name, new Entry(draft, null));
         commit(next, selected);
     }
 
+    /** Recover the shared imported world's reload information while keeping this area's setup. */
+    private void inheritEditor(Draft draft) {
+        if (draft.imported) return;
+        for (Entry entry : entries.values()) {
+            Draft source = entry.draft;
+            if (source.imported && source.world.equals(draft.world)) {
+                draft.imported = true;
+                draft.folder = source.folder;
+                return;
+            }
+        }
+    }
+
     public void importWorld(String name, String source) {
+        requireNewName(name);
+        importWorldSource(name, source);
+    }
+
+    private void requireNewName(String name) {
         FinalsMapFiles.name(name);
         if (entries.containsKey(name)) throw failure("exists", name);
+        if (importing.contains(name)) throw failure("importing", name);
+    }
+
+    /** Downloads off-thread; the existing world importer and registry run on the server thread. */
+    public void importUrlAsync(
+            String name, String url, Runnable success, Consumer<RuntimeException> failure) {
+        if (closed) throw failure("io");
+        requireNewName(name);
+        importing.add(name);
+        try {
+            downloads.download(
+                    url,
+                    source -> {
+                        if (closed) return;
+                        RuntimeException problem = null;
+                        try {
+                            importWorldSource(name, source);
+                        } catch (RuntimeException error) {
+                            problem = error;
+                        } finally {
+                            importing.remove(name);
+                        }
+                        if (closed) return;
+                        if (problem != null) failure.accept(problem);
+                        else success.run();
+                    },
+                    error -> {
+                        importing.remove(name);
+                        if (!closed) failure.accept(error);
+                    });
+        } catch (RuntimeException error) {
+            importing.remove(name);
+            throw error;
+        }
+    }
+
+    private void importWorldSource(String name, String source) {
         String worldName =
                 "finals_edit_" + name + "_" + UUID.randomUUID().toString().substring(0, 8);
         Path container = Bukkit.getWorldContainer().toPath().toAbsolutePath().normalize();
@@ -124,11 +207,12 @@ public final class FinalsMaps {
             FinalsMapFiles.copyWorldContents(input, destination);
             world = new WorldCreator(worldName).generateStructures(false).createWorld();
             if (world == null) throw failure("world_load");
-            prepareEditor(world);
             loadedFolder = world.getWorldFolder().toPath().toAbsolutePath().normalize();
             if (!loadedFolder.startsWith(container)
                     || !loadedFolder.getFileName().toString().equals(worldName))
                 throw failure("world_load");
+            if (closed) throw failure("io");
+            prepareEditor(world);
             Draft draft = new Draft();
             draft.world = worldName;
             draft.imported = true;
@@ -264,10 +348,20 @@ public final class FinalsMaps {
 
     /** Captures bounded pieces on the main thread, yielding between ticks. */
     public void saveAsync(String name, Runnable success, Consumer<RuntimeException> failure) {
+        saveAsync(name, ignored -> {}, success, failure);
+    }
+
+    public void saveAsync(
+            String name,
+            Consumer<Integer> progress,
+            Runnable success,
+            Consumer<RuntimeException> failure) {
         SaveWork work = beginSave(name);
         try {
             work.task =
                     new org.bukkit.scheduler.BukkitRunnable() {
+                        private int ticks;
+
                         @Override
                         public void run() {
                             try {
@@ -279,7 +373,12 @@ public final class FinalsMaps {
                                         success.run();
                                         return;
                                     }
-                                } while (System.nanoTime() < deadline);
+                                } while (!work.capture.waiting() && System.nanoTime() < deadline);
+                                if (++ticks % 100 == 0)
+                                    progress.accept(
+                                            (int)
+                                                    (FinalsSlimeSnapshot.progress(work.capture)
+                                                            * 100));
                             } catch (RuntimeException error) {
                                 cancel();
                                 work.cancel();
@@ -298,6 +397,9 @@ public final class FinalsMaps {
 
     /** Releases in-progress snapshot work when the plugin shuts down. */
     public void close() {
+        closed = true;
+        downloads.close();
+        importing.clear();
         for (SaveWork work : List.copyOf(captures)) work.cancel();
     }
 
@@ -310,7 +412,7 @@ public final class FinalsMaps {
             if (captures.stream().anyMatch(work -> work.worldId.equals(world.getUID())))
                 throw failure("saving");
             draft.fullHeight(world.getMinHeight(), world.getMaxHeight());
-            String filename = name + "-" + UUID.randomUUID() + ".tiles";
+            String filename = name + "-" + UUID.randomUUID() + ".slime";
             Saved saved = Saved.from(draft, filename);
             validateStandingPoints(world, saved);
             Path target = templates.resolve(filename);
@@ -322,13 +424,75 @@ public final class FinalsMaps {
                             saved,
                             target,
                             temporary,
-                            FinalsMapSnapshot.capture(plugin, world, saved.bounds(), temporary));
+                            FinalsSlimeSnapshot.capture(plugin, world, saved.bounds(), temporary));
             captures.add(work);
             return work;
         } catch (RuntimeException error) {
             saving.remove(name);
             throw error;
         }
+    }
+
+    /**
+     * Rebuild old structure snapshots once, then preserve that exact snapshot as a Slime template.
+     */
+    private FinalsMapSnapshot.Work migration(String name, Saved previous, World world) {
+        // A concurrent editor save will publish its own new template; never replace it with this
+        // old map.
+        if (saving.contains(name) || !previous.equals(entry(name).saved)) return null;
+        saving.add(name);
+        String filename = name + "-" + UUID.randomUUID() + ".slime";
+        Saved converted =
+                new Saved(
+                        previous.bounds(),
+                        previous.red(),
+                        previous.blue(),
+                        previous.vaults(),
+                        previous.cashouts(),
+                        filename);
+        Path target = templates.resolve(filename), temporary = templates.resolve(filename + ".tmp");
+        final SaveWork work;
+        try {
+            work =
+                    new SaveWork(
+                            name,
+                            world.getUID(),
+                            converted,
+                            target,
+                            temporary,
+                            FinalsSlimeSnapshot.capture(
+                                    plugin, world, converted.bounds(), temporary));
+            captures.add(work);
+        } catch (RuntimeException error) {
+            saving.remove(name);
+            throw error;
+        }
+        return new FinalsMapSnapshot.Work() {
+            private boolean done;
+
+            public boolean step() {
+                if (done) return true;
+                if (!work.capture.step()) return false;
+                work.commit();
+                done = true;
+                return true;
+            }
+
+            public void finish() {
+                if (done) return;
+                work.capture.finish();
+                work.commit();
+                done = true;
+            }
+
+            public void cancel() {
+                work.cancel();
+            }
+
+            public boolean waiting() {
+                return work.capture.waiting();
+            }
+        };
     }
 
     private final class SaveWork {
@@ -385,6 +549,15 @@ public final class FinalsMaps {
     }
 
     private void removeSnapshot(Path directory) {
+        if (Files.isRegularFile(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                Files.deleteIfExists(directory);
+            } catch (IOException error) {
+                plugin.getLogger()
+                        .warning("Cannot remove incomplete Finals snapshot: " + directory);
+            }
+            return;
+        }
         if (!Files.isDirectory(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
         try {
             Files.walkFileTree(
@@ -560,8 +733,12 @@ public final class FinalsMaps {
         world.setGameRule(org.bukkit.GameRules.RANDOM_TICK_SPEED, 0);
     }
 
-    private FinalsMapSnapshot loadTemplate(Saved saved) {
-        return FinalsMapSnapshot.open(templates, saved);
+    private void validateTemplate(Saved saved) {
+        if (saved.template() != null && saved.template().matches("[a-z0-9_-]+\\.slime")) {
+            Path template = templates.resolve(saved.template());
+            if (!Files.isRegularFile(template, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                throw failure("template");
+        } else FinalsMapSnapshot.open(templates, saved);
     }
 
     private void commit(Map<String, Entry> next, String selection) {
@@ -625,7 +802,7 @@ public final class FinalsMaps {
                                     ? null
                                     : Saved.from(
                                             Draft.read(section), section.getString("template", ""));
-                    if (saved != null) loadTemplate(saved);
+                    if (saved != null) validateTemplate(saved);
                     entries.put(name, new Entry(draft, saved));
                 } catch (RuntimeException invalid) {
                     plugin.getLogger()
@@ -636,6 +813,9 @@ public final class FinalsMaps {
                                             + invalid.getMessage());
                 }
             }
+        // Earlier /create aliases retained only the world name. Repair them after all potential
+        // imported-world owners have been read, independently of their order in the registry.
+        entries.values().forEach(entry -> inheritEditor(entry.draft));
         String requested = yaml.getString("selected", "generated");
         selected = names().contains(requested) ? requested : "generated";
     }

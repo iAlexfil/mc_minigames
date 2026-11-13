@@ -14,6 +14,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
 import me.petr1furious.potatominigames.core.game.SessionServices;
 import me.petr1furious.potatominigames.core.world.SessionWorlds;
+import me.petr1furious.potatominigames.core.world.SlimeWorldService;
 import me.petr1furious.potatominigames.core.world.ThrowawayWorldService;
 import me.petr1furious.potatominigames.games.finals.*;
 
@@ -263,22 +264,15 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         Path snapshot;
         try(var paths=Files.list(finals.resolve("templates"))) { snapshot=paths.filter(p->p.getFileName().toString().startsWith("native-")).findFirst().orElseThrow(); }
         String snapshotHash=hash(snapshot);
-        require(Files.isDirectory(snapshot) && snapshot.getFileName().toString().endsWith(".tiles"),
-                "Saved maps use a tiled native structure template");
-        var manifest=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(snapshot.resolve("manifest.yml").toFile());
-        require(manifest.getIntegerList("bounds").equals(List.of(84,editor.getMinHeight(),184,116,editor.getMaxHeight()-1,216)),
-                "Same-height horizontal corners snapshot the full native world height");
+        require(Files.isRegularFile(snapshot) && snapshot.getFileName().toString().endsWith(".slime"),
+                "Saved maps use one prepared Slime world template");
         var savedRegistry=org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(finals.resolve("maps.yml").toFile());
         require(savedRegistry.getDoubleList("maps.native.draft.pos1").get(1)==editor.getMinHeight()
                 && savedRegistry.getDoubleList("maps.native.draft.pos2").get(1)==editor.getMaxHeight()-1,
                 "Draft corners persist the world's bottom and highest buildable block");
-        try(var tiles=Files.list(snapshot)) {
-            var pieces=tiles.filter(path->path.getFileName().toString().endsWith(".nbt")).toList();
-            require(!pieces.isEmpty(),"Tiled snapshot contains native structure pieces");
-            for(Path piece:pieces)
-                require(Bukkit.getStructureManager().loadStructure(piece.toFile()).getEntityCount()==0,
-                        "Native structure tiles exclude source entities");
-        }
+        require(savedRegistry.getDoubleList("maps.native.saved.pos1").equals(List.of(84d,(double)editor.getMinHeight(),184d,0d,0d))
+                        &&savedRegistry.getDoubleList("maps.native.saved.pos2").equals(List.of(116d,(double)editor.getMaxHeight()-1,216d,0d,0d)),
+                "Same-height horizontal corners retain exact horizontal bounds and full world height");
         require(actor.isValid(),"Saving leaves source entity intact");
         stage("Native structure saved block states, inventory, sign data and source coordinates without entities");
 
@@ -293,10 +287,11 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         require(hash(snapshot).equals(snapshotHash),"Failed save preserves previous template bytes");
         stage("Failed draft save preserved the selected map, registry and immutable template across service reload");
 
-        SessionWorlds worlds=new SessionWorlds(new ThrowawayWorldService(main),null);
-        SessionServices services=new SessionServices(main,null,null,null,null,null,null,null,worlds,null,null,null);
+        SessionWorlds worlds=new SessionWorlds(new ThrowawayWorldService(main),new SlimeWorldService(main));
+        SessionServices services=new SessionServices(main,null,null,null,null,null,null,null,worlds,null,
+                new me.petr1furious.potatominigames.core.text.Messages(net.kyori.adventure.audience.Audience::empty,null),null);
         FinalsMapArena first=maps.open(services,null); first.build(); World match=first.world();
-        require(match!=editor && match.getName().startsWith("potato_tmp_"),"Match uses a disposable world");
+        require(match!=editor && worlds.owns(match),"Match uses a disposable session-owned world");
         require(match.getBlockAt(106,editor.getMinHeight(),206).getType()==Material.COPPER_BLOCK
                 && match.getBlockAt(106,editor.getMaxHeight()-1,206).getType()==Material.LAPIS_BLOCK,
                 "The bottom and highest native world layers survive save, reload and match placement");
@@ -325,7 +320,7 @@ public final class FinalsMapsSmoke extends JavaPlugin {
         checkLegacySnapshot(main,editor,services,finals);
         checkVaultSetup(main,editor,services);
         checkCashoutSetup(main,editor,services);
-        worlds.destroyVoid("finals");
+        worlds.destroyOwn();
         stage("Two real disposable match copies restored destructible cover and block-entity metadata without touching the source/template");
 
         editor.save(); Path editorFolder=editor.getWorldFolder().toPath();

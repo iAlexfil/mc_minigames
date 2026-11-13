@@ -106,6 +106,8 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
 
     void beginPlay() {}
 
+    void preparePlayer(Player player) {}
+
     boolean prepareArena() {
         return true;
     }
@@ -172,6 +174,7 @@ abstract class PartySurvivalSession implements PartyRoundSession, Listener {
             services.playerState().resetForRound(player, GameMode.SURVIVAL);
             player.setAbsorptionAmount(0);
             player.setSaturation(20);
+            preparePlayer(player);
             teleport(player, spawn(index++, names.size()));
             countdownFreeze.freeze(player);
             player.showBossBar(bar);

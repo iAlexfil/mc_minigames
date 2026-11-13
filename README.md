@@ -19,7 +19,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
 | **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `one_shot`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
 | **Counter-Strike** | `/cs` | `default`, `deathmatch` | Classic T/CT bomb defusal or a timed free-for-all with respawns and free weapon selection on Dust II. |
-| **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after six minutes. |
+| **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after ten minutes. |
 
 ### The Finals
 
@@ -32,8 +32,10 @@ Right-click the emerald vault to open it in five seconds, then touch the cashbox
 The carrier glows and moves slowly; aim and press Q to throw the cashbox forward
 with force, including when your selected hotbar slot is empty. The thrown box follows
 a gravity-driven arc; death still drops it normally.
+Throw the cashbox into either cashout to deposit it automatically for the thrower's
+team. Fast throws are checked along their full path, and walls block insertion.
 Right-click gold cashout A or B
-to deposit it. After 40 seconds the current owner banks $10,000. To steal an
+to deposit it. After 90 seconds the current owner banks $10,000. To steal an
 ongoing enemy cashout, **sneak + right-click the station and stay within three
 blocks for five seconds**. Damage, death, leaving the area or releasing sneak
 interrupts the steal. The action bar shows progress, and the boss bar shows the
@@ -42,47 +44,154 @@ is in progress, stopping when it succeeds or is interrupted. Stealing never rese
 that timer; a payout that finishes on the same tick wins over a steal. Cashout stations are simulated entities:
 destroying their support makes them fall and settle on terrain. Their labels,
 deposit/steal interactions and ongoing payout timers follow their current positions.
+Active cashouts alternate between vanilla **Pigstep** and **Lava Chicken** at 30%
+volume in the Jukebox/Note Blocks sound category. Nearby players hear the music
+within 32 blocks of the station. The background track follows each listener while
+they remain in range. Leaving the radius makes the same track inaudible; returning
+continues its current playback position. Payout, disconnect, world changes, and
+match end stop it. Respawning/reconnecting starts a fresh stream because vanilla
+clients cannot seek within a disc. The old saved 40-second default is upgraded once;
+other custom timings remain.
 
-First to $20,000 wins; the richer team wins after six minutes, with equal cash
-a draw. Death has a five-second respawn delay and two seconds of spawn protection,
+First to $20,000 wins; the richer team wins after ten minutes, with equal cash
+a draw. Existing six-minute defaults upgrade once; custom match durations remain.
+Death normally has a five-second automatic respawn delay. Matches that
+start with exactly two teams of two or three use the downed/revival rules below.
+When all members of a two- or three-player team are dead together, their respawns
+switch to a shared 16-second
+team-wipe countdown. They return at the same randomly selected team spawn; a
+disconnected teammate keeps that location and timer. Defibrillators cannot bypass
+the team-wipe delay. Respawns grant two seconds of spawn protection,
 during which combat and objectives are disabled. Teams remain fixed; a disconnected
 team has 15 seconds to return before the match ends without points. Connected
 winners receive three points; practice, draws and aborted matches award none.
 
+While downed or waiting to respawn, press **Sneak** (Shift by default) to choose a
+loadout, or use `/finals loadout`. Changes apply at your next automatic, Space-key
+or team-wipe respawn. Manual and defibrillator statue revives keep the kit you had
+when eliminated; your new selection stays pending until you respawn. During the
+pre-match countdown, loadout changes still apply immediately.
+
+**2v2 and 3v3 revivals:** elimination leaves a revive statue. After eight seconds the
+fallen player can press **Space** to respawn; reaching zero does not respawn them
+automatically. They remain available for revival until they actually respawn.
+Teammates see a downed marker at the statue, can right-click to carry or drop it,
+and press **Q** to throw it toward cover. Only teammates can carry the statue.
+Sneak + right-click to begin a four-second manual revive, then stay crouched,
+nearby and aimed at the statue with clear line of sight. Taking damage, attacking,
+opening the loadout menu or breaking the channel cancels it. Manual revives restore
+full health at a safe position beside the statue. A full wipe clears statues and
+pending revives, then automatically returns the team together after 16 seconds.
+
+In 2v2 and 3v3, Defibrillator activation charges for one second while held and aimed at
+the statue, then starts a three-second reconstruction. It restores half health
+and blocks gadgets and specializations for five seconds; weapons remain usable.
+An accepted activation uses a gadget charge even if its initial charge-up is
+interrupted. The reconstruction can finish after the reviver dies, provided the
+team has not been wiped and the target has not respawned or disconnected.
+The original game's [revive-statue interaction](https://www.thefinals.wiki/wiki/Revive_Statue),
+[Defibrillator reconstruction](https://www.reachthefinals.com/patchnotes/200),
+[charge time](https://www.reachthefinals.com/patchnotes/760) and
+[revive sickness](https://www.reachthefinals.com/patchnotes/500) inform this adaptation;
+the eight-second Space unlock and 16-second wipe are this mode's custom timings.
+
+**Five-player matches:** the last player in the lobby's participant/join order
+becomes the **Game Master**. The first four form two teams of two, with the same
+revival rules. The Game Master flies in spectator mode, belongs to neither team,
+earns no match points, and can reconnect without becoming a contestant.
+
+The Game Master opens **`/finals events`** to choose a game-show event after the
+loadout countdown. Events last 30 seconds, one at a time. Commands also work
+directly from spectator mode:
+
+| Command | Effect |
+|---|---|
+| `/finals event low_gravity` | Classic Low Gravity: higher jumps and slower falls for contestants. |
+| `/finals event meteor_shower` | Marked impacts warn players before meteors damage contestants and destroy cover. |
+| `/finals event orbital_lasers` | Standing still attracts a warning beam and a delayed strike; move to evade it. |
+| `/finals event stop` | End the current event and clear pending strikes/effects. |
+| `/finals event status` | Show the active event and remaining time. |
+
+Only the assigned Game Master can operate these controls. Destruction stays within
+the match arena and respects its protected blocks. These are simplified adaptations
+of the original game's events: [Orbital Lasers target stationary contestants](https://www.reachthefinals.com/patchnotes/970),
+and [12.0 confirms Meteor Showers and removes Low Gravity from the rotation](https://www.reachthefinals.com/patchnotes/12-00).
+Low Gravity is included here as a classic event; the 30-second duration and manual
+Game Master controls are custom rules for this mode.
+
 **Loadouts:** `/finals loadout` opens the menu. You can also use
 `/finals class S|M|L` (or `light|medium|heavy`) and `/finals weapon <id>`.
-Choices are saved per player in `finals/loadouts.yml`. Countdown changes apply
+Choose one specialization and three distinct, class-compatible gadgets in the
+menu. Choices are saved per player in `finals/loadouts.yml`; old saved loadouts
+receive the class's default equipment. Countdown changes apply
 immediately; combat changes apply on the next spawn. Opening the menu does not
 protect you from enemy damage. Original health and movement settings return when
 you leave.
 
-| Class | Health / movement | Weapons | Specialization and gadgets |
+| Class | Health / movement | Weapons | Specializations |
 |---|---|---|---|
-| Light (S) | 15 HP / 120% | M11 (`m11`), XP-54 (`xp54`), SR-84 (`sr84`), Sword (`sword`), Dagger (`dagger`) | Evasive Dash; Frag Grenade, Sonar Grenade, Vanishing Bomb |
-| Medium (M) | 25 HP / 100% | AKM (`akm`), FCAR (`fcar`), Model 1887 (`model1887`), Riot Shield (`riotshield`), Dual Blades (`dualblades`) | Healing Beam; Frag Grenade, Jump Pad, Defibrillator |
-| Heavy (L) | 35 HP / 85% | M60 (`m60`), Lewis Gun (`lewisgun`), SA1216 (`sa1216`), Sledgehammer (`sledgehammer`), Spear (`spear`) | Charge 'n' Slam; RPG-7, Dome Shield, Barricade |
+| Light (S) | 15 HP / 120% | M11 (`m11`), XP-54 (`xp54`), SR-84 (`sr84`), Sword (`sword`), Dagger (`dagger`) | Evasive Dash, Cloaking Device, Grappling Hook |
+| Medium (M) | 25 HP / 100% | AKM (`akm`), FCAR (`fcar`), Model 1887 (`model1887`), Riot Shield (`riotshield`), Dual Blades (`dualblades`) | Healing Beam, Guardian Turret, Dematerializer |
+| Heavy (L) | 35 HP / 85% | M60 (`m60`), Lewis Gun (`lewisgun`), SA1216 (`sa1216`), Sledgehammer (`sledgehammer`), Spear (`spear`) | Charge 'n' Slam, Mesh Shield, Winch Claw |
+
+All classes can choose Frag, Smoke, Gas, Pyro and Goo Grenades or Flashbangs.
+Light also has Sonar Grenade, Vanishing Bomb and Breach Charge; Medium has Sonar
+Grenade, Jump Pad, Defibrillator, Explosive Mine, Gas Mine and APS Turret; Heavy has RPG-7,
+Dome Shield, Barricade, Explosive Mine and Pyro Mine. The menu shows charges,
+recharge times and controls for every item.
 
 The primary weapon is in slot 1, three gadgets in slots 2–4, specialization in
 slot 5, demolition pickaxe in slot 8, and loadout menu in slot 9. Right-click to
 fire/use a gadget, left-click for melee, and **F to reload**. Guns have magazines,
 timed reloads and unlimited reserve ammunition. Gadget charges recharge and reset
 on respawn. Weapon values are balanced for Minecraft; team leather armor reduces
-the displayed base damage. The dagger rewards backstabs, the spear has longer
+the displayed base damage. Gun damage is increased by one third for roughly 25%
+shorter time to kill, with the same firing cadence. Gunshots, including reflected
+bullets, do not knock players back. The dagger rewards backstabs, the spear has longer
 reach, and the hammer's right-click destroys nearby cover. Hold right-click with
-the Riot Shield or Dual Blades to reduce frontal damage.
+the Riot Shield to reduce frontal damage. Hold right-click with Dual Blades to guard:
+frontal bullets are reflected back at the shooter, with damage credited to the
+defender. Melee attacks and explosions are not reflected.
+
+Passive health regeneration replaces Minecraft's food healing. After the last
+damage taken, Light waits 8 seconds, Medium 9, and Heavy 10, then heals 4 Minecraft
+health points (2 hearts) per second up to full health. Further damage restarts the
+delay; moving and firing do not. Reviving starts a fresh delay, and Healing Beam
+healing remains independent. Delays follow the current
+[Light patch notes](https://www.reachthefinals.com/patchnotes/12-00),
+[Medium patch notes](https://www.reachthefinals.com/patchnotes/300), and
+[Heavy build documentation](https://www.thefinals.wiki/wiki/Builds). The fixed rate
+uses the [community-reported 40 HP/s](https://www.reddit.com/r/TheFinalsAcademy/comments/1gvc91c/health_regen_stats/)
+at this mode's 1:10 health scale.
 
 Sonar reveals hidden enemies. Carrying a cashbox or attacking ends invisibility.
-The Healing Beam can heal allies (or the user more slowly); Defibrillator revives
-a nearby teammate at their death position during the respawn delay. Dome Shield
+The Healing Beam can heal allies (or the user more slowly); outside 2v2/3v3,
+Defibrillator instantly revives a nearby teammate at their death position during
+the respawn delay. Dome Shield
 blocks enemy attacks from outside while enemies can still enter it; cashbox
 carriers do not receive dome protection. Explosives can hurt their owner.
+Turrets and mines can be destroyed with weapons. APS intercepts enemy grenades
+and rockets. Smoke obscures enemies and extinguishes fire; fire clears gas.
+Dematerializer holes restore once clear of players. Mesh Shield requires holding
+the specialization and blocks attacks from the front. Winch Claw pulls enemies,
+cashboxes and cashouts, with terrain stopping their movement.
 Arena cover and temporary barricades are destructible, while objectives, spawn
 areas and the protected floor remain intact.
+
+Vault and cashout labels show their remaining timers. Eliminations appear in
+chat, cashout starts show a title, and vaults, cashouts, kills, explosions and
+respawns have sound cues.
 
 **Custom maps:** the generated arena is a fallback. You can import a vanilla Java
 overworld folder or ZIP, or register an existing persistent world. Put imports in
 `plugins/PotatoMinigames/finals/imports/`; use quotes around a filename with spaces.
-Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
+You can also give a direct public HTTP/HTTPS download URL:
+`/finals map import rooftop https://example.com/maps/rooftop.zip`.
+The ZIP downloads in the background and imports automatically; wait for the
+completion message before using `goto`. Redirects are supported, but login pages,
+map listing pages, and private-network URLs are not. Failed downloads leave no map
+entry or partial archive. Imports create an editor copy, and matches use a fresh
+copy of a saved snapshot.
 
 1. `/finals map import rooftop "Rooftop.zip"`, then `/finals map goto rooftop`.
    Alternatively, stand in an existing world and run `/finals map create rooftop`.
@@ -103,6 +212,23 @@ Imports create an editor copy, and matches use a fresh copy of a saved snapshot.
 5. `/finals map save rooftop`, wait for the saved message, then `/finals map use rooftop`.
    Use `/finals map info rooftop` or `/finals map list` to inspect setup.
    Select `generated` to return to the fallback arena.
+
+To make several playable areas from one city, import the city once, then create
+additional maps in its editor world:
+
+```text
+/finals map create city_north city
+/finals map create city_south city
+/finals map goto city_north
+```
+
+Here `city` is the existing imported map name. Each new map starts with empty
+setup: select its own `pos1`/`pos2`, add its own spawns, vaults and cashouts, then
+save it. `/finals map create <name>` while standing in the city also reuses that
+world. Both forms retain the imported-world information across server restarts.
+Terrain edits are shared in the editor; each area's saved snapshot and playable
+bounds stay independent until that map is saved again. No second world import or
+city copy is needed. `/finals map use city_north` selects the saved northern area.
 
 Remove one draft point by its preview number with `/finals map vaultremove rooftop 2`,
 `/finals map cashoutremove rooftop 3`, or `/finals map spawnremove rooftop red 1`.
@@ -138,16 +264,34 @@ their allies, including a marker at their death location while they respawn. Nor
 overhead player names are hidden during Finals. Visibility is still subject to the
 server's entity tracking and the client's rendering distance.
 
+The Tab player list shows each contestant's equipped class and match kill count.
+Only teammates (including yourself) see current/max HP or a respawning indicator.
+Rows update during countdown and play, use each viewer's language, and return to
+their normal names when the match ends. Kills persist through respawns and reconnects.
+
+Every match starts with an 18-second loadout selection window. The loadout menu
+opens automatically, movement and combat remain locked, and changes apply immediately.
+You can close it and reopen it with the slot 9 item. The menu closes when play begins.
+`games/finals.yml` can extend `countdownSeconds` up to 60; values below 18 use 18 seconds.
+
 Setup requires admin permission. Saving validates bounds, safe spawn support,
 headroom and objective spacing. Native snapshots retain block data, chest
 contents and sign text, but exclude entities. Draft edits do not change the
 last saved snapshot until another successful save. Match destruction never edits
 the imported source or saved template. There are no plugin-imposed map dimensions,
-volume, import size or file-count caps. ZIP64 imports are supported. Saves and match
-preparation process small native structure sections over multiple server ticks;
-large maps take longer and need sufficient disk space. Existing single-NBT snapshots
-remain usable; saving again converts them to full-height section snapshots. Only the
-overworld is imported. Command blocks and portal blocks are rejected in playable snapshots.
+volume, import size or file-count caps. ZIP64 imports are supported. Saves capture
+native chunk data into a single `.slime` world template and report progress while
+preparing it. Matches use the same disposable AdvancedSlimePaper world clones as
+War: template reading and decompression happen off-thread, then the ready world is
+loaded on the server thread. Empty air does not become thousands of structure files.
+Full-height selections, exact horizontal boundaries, and configured objectives/spawns
+are preserved. Large maps still require sufficient memory and disk space.
+Existing `.nbt` and `.tiles` snapshots are automatically converted once during their
+first load, which can take longer; subsequent matches use the prepared template.
+Alternatively, `/finals map save <name>` captures the editor's current contents directly
+in the new format. Failed or cancelled saves leave the previous saved map usable.
+Only the overworld is imported. Command blocks and portal blocks are rejected in
+playable snapshots.
 
 Admins can use `/finals test` for solo practice, `/finals start @a` to launch a
 match, or `/finals start @a rooftop` to force a saved map. `/finals stop` ends it.
@@ -1771,9 +1915,18 @@ independent cloaks, on-hit wand cooldown and blocked-hit rejection, alongside al
 
 `checkFinals` checks cash-box ownership, deposits, theft, payouts and match results.
 `checkFinalsSession` exercises combat attribution, protection, interrupted steals,
-respawn/reconnect handling, frozen movement and TNT routing through event handlers.
+respawn/reconnect handling, game-master isolation, team wipes, frozen movement and TNT routing
+through event handlers. `checkFinalsEquipment` and `checkFinalsLoadouts` cover class
+restrictions, localized equipment and saved choices. `checkFinalsTeamWipes` covers
+shared deadlines and keeps duo wipes limited to 2v2; `checkFinalsRevives` covers persistent downed statues, manual
+channels and charged Defibrillator reconstruction. `checkFinalsCashboxFlight`
+checks swept throw-to-deposit collisions.
 `checkFinalsArena` checks the generated arena's protected objectives, safe spawns,
-traversable layout and destructible cover. Both run as part of `build`.
+traversable layout and destructible cover. All run as part of `build`.
+The live Paper fixtures in `native-checks/finals` additionally cover actual 2v2/3v3
+respawns, five-player spectator event controls, private Tab packets, and
+`FinalsGameEventsSmoke` checks gravity restoration, telegraphed impacts and protected
+map boundaries against native attributes, blocks and ray tracing.
 
 ## License
 

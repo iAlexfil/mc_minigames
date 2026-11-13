@@ -76,8 +76,10 @@ final class FinalsWeapons {
             } else {
                 lore.add(I18n.tr("finals.weapon.melee_controls"));
                 if (weapon == FinalsWeapon.DAGGER) lore.add(I18n.tr("finals.weapon.dagger_hint"));
-                if (weapon == FinalsWeapon.RIOT_SHIELD || weapon == FinalsWeapon.DUAL_BLADES)
+                if (weapon == FinalsWeapon.RIOT_SHIELD)
                     lore.add(I18n.tr("finals.weapon.guard_hint"));
+                if (weapon == FinalsWeapon.DUAL_BLADES)
+                    lore.add(I18n.tr("finals.weapon.deflect_hint"));
                 if (weapon == FinalsWeapon.SLEDGEHAMMER)
                     lore.add(I18n.tr("finals.weapon.hammer_hint"));
                 if (weapon == FinalsWeapon.SPEAR) lore.add(I18n.tr("finals.weapon.spear_hint"));
@@ -109,6 +111,7 @@ final class FinalsWeapons {
     private boolean usable(Player player, Equipped held) {
         return held != null
                 && context.canAct(player)
+                && !context.weaponBlocked(player)
                 && context.active(player)
                 && context.inside(player.getLocation())
                 && context.playerClass(player) == held.weapon.playerClass()
@@ -194,6 +197,13 @@ final class FinalsWeapons {
             RayTraceResult hit = trace(source, eye, direction, weapon.range(), .04);
             double distance =
                     hit == null ? weapon.range() : eye.toVector().distance(hit.getHitPosition());
+            double device = context.deviceDistance(source, eye, direction, distance);
+            if (Double.isFinite(device) && device <= distance) {
+                context.attackDevice(
+                        source, eye, direction, device + .001, weapon.damageAt(device, false));
+                if (pellet == 0) tracer(eye, direction, device);
+                continue;
+            }
             // One tracer per shot keeps the LMG/shotgun effect bounded.
             if (pellet == 0) tracer(eye, direction, distance);
             if (hit != null
@@ -215,7 +225,8 @@ final class FinalsWeapons {
         // A shotgun deals one attributed damage event per target, avoiding per-pellet immunity
         // artifacts.
         for (var hit : hits.entrySet()) {
-            if (enemy(source, hit.getKey())) context.damage(hit.getKey(), source, hit.getValue());
+            if (enemy(source, hit.getKey()))
+                context.damageBullet(hit.getKey(), source, hit.getValue(), eye);
         }
         if (!hits.isEmpty())
             source.playSound(source.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .35f, 1.7f);
@@ -281,10 +292,8 @@ final class FinalsWeapons {
         Equipped held = equipped.get(source.getUniqueId());
         if (held == null) return;
         event.setCancelled(true);
-        if (!(event.getEntity() instanceof Player target)
-                || held.weapon.isGun()
-                || !usable(source, held)) return;
-        swing(source, held, target);
+        if (held.weapon.isGun() || !usable(source, held)) return;
+        swing(source, held, event.getEntity() instanceof Player target ? target : null);
     }
 
     private void swing(Player source, Equipped held, Player expected) {
@@ -305,6 +314,15 @@ final class FinalsWeapons {
                         Sound.ENTITY_PLAYER_ATTACK_SWEEP,
                         .6f,
                         held.weapon == FinalsWeapon.SLEDGEHAMMER ? .65f : 1.3f);
+        Location eye = source.getEyeLocation();
+        double reach =
+                hit == null ? held.weapon.range() : eye.toVector().distance(hit.getHitPosition());
+        double device = context.deviceDistance(source, eye, eye.getDirection(), reach);
+        if (Double.isFinite(device)
+                && device <= reach
+                && context.attackDevice(
+                        source, eye, eye.getDirection(), device + .001, held.weapon.damage()))
+            return;
         if (hit == null
                 || !(hit.getHitEntity() instanceof Player target)
                 || expected != null && !expected.getUniqueId().equals(target.getUniqueId())
@@ -315,7 +333,7 @@ final class FinalsWeapons {
                         target.getLocation().getDirection(),
                         source.getLocation().toVector().subtract(target.getLocation().toVector())))
             damage *= 4;
-        context.damage(target, source, damage);
+        context.damage(target, source, damage, eye);
         source.playSound(source.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, .35f, 1.7f);
     }
 
@@ -346,18 +364,42 @@ final class FinalsWeapons {
         context.world().playSound(center.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, .55f, .75f);
     }
 
+    boolean canReflectBullet(Player defender, Player shooter) {
+        Equipped held = equipped.get(defender.getUniqueId());
+        return held != null && held.weapon == FinalsWeapon.DUAL_BLADES
+                && guarding(defender, shooter, held) && enemy(defender, shooter);
+    }
+
+    /** Called after the session validates the guard and cancels the original gun hit. */
+    void reflectBullet(Player defender, Player shooter, double damage) {
+        Location origin = defender.getEyeLocation();
+        Vector direction = shooter.getEyeLocation().toVector().subtract(origin.toVector());
+        double distance = direction.length();
+        if (distance > 1e-6) tracer(origin, direction.multiply(1 / distance), distance);
+        context.world().playSound(origin, Sound.ITEM_SHIELD_BLOCK, .7f, 1.4f);
+        context.reveal(defender);
+        // The original ray already reached the defender. Return its aggregated damage once,
+        // credited to the defender, through normal protection/shield/kill handling. The return
+        // hit deliberately cannot bounce again between two guarding players.
+        context.damageReflectedBullet(shooter, defender, damage, origin);
+    }
+
+    private boolean guarding(Player target, Player source, Equipped held) {
+        if (!usable(target, held) || context.tick() >= held.guardUntil) return false;
+        Vector attacker = source.getLocation().toVector().subtract(target.getLocation().toVector());
+        return frontal(target.getLocation().getDirection(), attacker);
+    }
+
     /**
      * Applied by the session once, after team/protection validation, for every attributed enemy
      * hit.
      */
     double incomingMultiplier(Player target, Player source) {
         Equipped held = equipped.get(target.getUniqueId());
-        if (!usable(target, held)
-                || context.tick() >= held.guardUntil
+        if (held == null
                 || held.weapon != FinalsWeapon.RIOT_SHIELD
-                        && held.weapon != FinalsWeapon.DUAL_BLADES) return 1;
-        Vector attacker = source.getLocation().toVector().subtract(target.getLocation().toVector());
-        if (!frontal(target.getLocation().getDirection(), attacker)) return 1;
+                        && held.weapon != FinalsWeapon.DUAL_BLADES
+                || !guarding(target, source, held)) return 1;
         return held.weapon == FinalsWeapon.RIOT_SHIELD ? .35 : .7;
     }
 

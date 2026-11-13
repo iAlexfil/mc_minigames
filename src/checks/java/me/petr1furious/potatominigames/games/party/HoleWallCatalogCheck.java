@@ -36,15 +36,20 @@ final class HoleWallCatalogCheck {
                                 pattern.gates().stream()
                                         .allMatch(g -> g.width() >= 1 && g.height() >= 1.8),
                                 "Easy walls need no crouching or precision");
+                    if (layout.difficulty(stage) == HoleWallDifficulty.NORMAL)
+                        check(
+                                pattern.gates().stream().allMatch(g -> g.width() >= 1),
+                                "Medium walls do not introduce precision slits");
                 }
                 check(artwork.add(shape), "Duplicate geometry in " + layout + " stage " + stage);
             }
-            check(tiers.size() == 36, "Every authored wall has its own title on " + layout);
+            check(tiers.size() == 48, "Every authored wall has its own title on " + layout);
             for (var tier : HoleWallDifficulty.values()) {
                 var stages = layout.shuffledStages(new Random(0), tier);
+                int expected = tier == HoleWallDifficulty.HARD ? 12 : 18;
                 check(
-                        stages.size() == 12 && new HashSet<>(stages).size() == 12,
-                        "Twelve distinct " + tier + " patterns on " + layout);
+                        stages.size() == expected && new HashSet<>(stages).size() == expected,
+                        "Expected distinct " + tier + " patterns on " + layout);
                 check(
                         stages.stream().allMatch(s -> layout.difficulty(s) == tier),
                         "Tier deck is isolated");

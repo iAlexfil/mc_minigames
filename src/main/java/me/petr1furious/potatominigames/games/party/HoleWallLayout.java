@@ -21,7 +21,7 @@ enum HoleWallLayout {
     }
 
     int patternCount() {
-        return 36;
+        return 48;
     }
 
     HoleWallDifficulty difficulty(int stage) {

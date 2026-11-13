@@ -13,9 +13,10 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
     static final int HALF_WIDTH = 13, HEIGHT = 5;
     static final int[] KINDS = {
         0, 12, 1, 2, 3, 4, 5, 18, 6, 19, 13, 7, 15, 8, 16, 9, 17, 10, 14, 11, 20, 21, 22, 23, 24,
-        25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
+        25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47
     };
-    private static final Set<Integer> INTRO = Set.of(0, 1, 2, 3, 4, 6, 7, 10, 11, 18, 20, 21);
+    private static final Set<Integer> INTRO =
+            Set.of(0, 1, 2, 3, 4, 6, 7, 10, 11, 18, 20, 21, 36, 37, 38, 39, 40, 41);
     private static final Set<Integer> HARD = Set.of(13, 14, 15, 16, 17, 29, 30, 31, 32, 33, 34, 35);
     private static final String[] NAMES = {
         "arch",
@@ -53,7 +54,19 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
         "low_crossroads",
         "drawbridge",
         "vaulted_hurdles",
-        "staggered_lofts"
+        "staggered_lofts",
+        "paired_obelisks",
+        "stepped_arcade",
+        "forked_spires",
+        "bridge_piers",
+        "lantern_arcade",
+        "terrace_garden",
+        "crossed_galleries",
+        "roofed_stairs",
+        "twin_belfries",
+        "scalloped_gateway",
+        "terraced_balconies",
+        "crenellated_gallery"
     };
 
     record Cell(int u, int y, HoleWallBlock block) {
@@ -283,6 +296,18 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
             case 34 ->
                     List.of(new Gate(-radius, radius, 1, 2), new Gate(0, 1, 0, 1.5), lowJumpRight);
             case 35 -> List.of(new Gate(-radius, radius + 1, 1, 1.5), new Gate(1, radius, 0, 1.5));
+            case 36 -> List.of(new Gate(-radius, radius * 2 + 1, 0, 2));
+            case 37 -> List.of(shortLeft, right);
+            case 38 -> List.of(new Gate(-radius, radius + 1, 0, 3), new Gate(1, radius, 0, 4));
+            case 39 -> List.of(shortLeft, new Gate(0, 1, 0, 4), shortRight);
+            case 40 -> List.of(new Gate(-radius, radius, 1, 3), center, shortRight);
+            case 41 -> List.of(new Gate(-radius, radius, 0, 4), shortRight);
+            case 42 -> List.of(duckLeft, new Gate(1, radius, 0, 4));
+            case 43 -> List.of(shortLeft, new Gate(0, 1, 1, 2), new Gate(1, radius, 0, 1.5));
+            case 44 -> List.of(new Gate(-radius, radius, 1, 3), new Gate(1, radius, 0, 1.5));
+            case 45 -> List.of(shortLeft, duckCenter, jumpRight);
+            case 46 -> List.of(new Gate(-radius, radius + 1, 1, 2), right);
+            case 47 -> List.of(new Gate(-radius, radius + 1, 0, 1.5), new Gate(1, radius, 0, 4));
             default -> List.of(duckLeft, jumpRight);
         };
     }
@@ -356,6 +381,30 @@ record HoleWallPattern(List<Cell> cells, List<Gate> gates, Component title) {
                     new String[] {"..#...#..", ".###.###.", "#########", "##.....##", "#########"};
             case 35 ->
                     new String[] {"###..##..", "#########", "##..###..", "#########", "#..##..##"};
+            case 36 ->
+                    new String[] {".#.....#.", "###...###", ".#.....#.", ".##...##.", "###...###"};
+            case 37 ->
+                    new String[] {"..#####..", ".#######.", "##..#..##", "##..#..##", "##..#..##"};
+            case 38 ->
+                    new String[] {".#..#..#.", "#########", ".#..#..#.", ".#######.", ".#..#..#."};
+            case 39 ->
+                    new String[] {"#########", ".##...##.", ".##...##.", "####.####", "#..#.#..#"};
+            case 40 ->
+                    new String[] {".###.###.", ".#.#.#.#.", "#########", "##..#..##", "##..#..##"};
+            case 41 ->
+                    new String[] {"#.......#", "##..#..##", "##.###.##", "####.####", "#########"};
+            case 42 ->
+                    new String[] {"##..#..##", "#########", "##.....##", "#########", "##..#..##"};
+            case 43 ->
+                    new String[] {"#........", "###......", "#####....", "#######..", "#########"};
+            case 44 ->
+                    new String[] {".##...##.", ".##...##.", "####.####", "#..#.#..#", "#########"};
+            case 45 ->
+                    new String[] {"##..#..##", "#########", "#...#...#", "###...###", "#########"};
+            case 46 ->
+                    new String[] {"###......", "#####....", "#######..", "##..#.###", "#########"};
+            case 47 ->
+                    new String[] {"#.#...#.#", "#########", "###...###", "##.....##", "#########"};
             default ->
                     new String[] {"##.....##", "###...###", "####.####", "#########", "#########"};
         };

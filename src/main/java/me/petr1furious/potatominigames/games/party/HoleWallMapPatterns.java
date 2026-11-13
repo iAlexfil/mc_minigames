@@ -9,14 +9,15 @@ import java.util.*;
 /** Authored repeating ribbons and eyelets, aligned with the surviving side lanes. */
 final class HoleWallMapPatterns {
     static HoleWallDifficulty difficulty(int stage) {
-        int kind = Math.floorMod(stage - 1, 36);
-        if (kind <= 4 || kind >= 12 && kind <= 18) return HoleWallDifficulty.EASY;
-        if (kind <= 9 || kind >= 19 && kind <= 25) return HoleWallDifficulty.NORMAL;
+        int kind = Math.floorMod(stage - 1, 48);
+        if (kind <= 4 || kind >= 12 && kind <= 18 || kind >= 36 && kind <= 41)
+            return HoleWallDifficulty.EASY;
+        if (kind <= 9 || kind >= 19 && kind <= 25 || kind >= 42) return HoleWallDifficulty.NORMAL;
         return HoleWallDifficulty.HARD;
     }
 
     static HoleWallPattern generate(HoleWallLayout layout, int stage, Random random) {
-        int kind = Math.floorMod(stage - 1, 36);
+        int kind = Math.floorMod(stage - 1, 48);
         var walkLeft = new HoleWallPattern.Gate(-4, 2, 0, 3);
         var walkRight = new HoleWallPattern.Gate(3, 2, 0, 3);
         var jumpLeft = new HoleWallPattern.Gate(-4, 2, 1, 3);
@@ -63,7 +64,20 @@ final class HoleWallMapPatterns {
                             case 32 -> List.of(gate(-4, 2, 1, 1.5), gate(4, 1, 1, 3));
                             case 33 -> List.of(gate(-4, 1, 1, 2), gate(3, 2, 1, 1.5));
                             case 34 -> List.of(gate(-4, 2, 1, 1.5), gate(3, 2, 1, 1.5));
-                            default -> List.of(gate(-3, 1, 0, 1.5), gate(3, 1, 1, 1.5));
+                            case 35 -> List.of(gate(-3, 1, 0, 1.5), gate(3, 1, 1, 1.5));
+                            case 36 -> List.of(gate(-4, 2, 0, 2), gate(3, 2, 0, 2));
+                            case 37 -> List.of(gate(-4, 2, 1, 2), walkRight);
+                            case 38 -> List.of(walkLeft, gate(3, 2, 1, 2));
+                            case 39 -> List.of(gate(-4, 2, 0, 4), gate(3, 2, 0, 2));
+                            case 40 -> List.of(jumpLeft, jumpRight);
+                            case 41 -> List.of(gate(-4, 2, 0, 2), walkRight);
+                            case 42 -> List.of(duckLeft, gate(3, 2, 0, 2));
+                            case 43 -> List.of(gate(-4, 2, 0, 2), duckRight);
+                            case 44 -> List.of(duckLeft, gate(3, 2, 1, 2));
+                            case 45 -> List.of(gate(-4, 2, 1, 2), duckRight);
+                            case 46 -> List.of(duckLeft, duckRight);
+                            case 47 -> List.of(duckLeft, gate(3, 2, 0, 4));
+                            default -> throw new IllegalStateException("Unknown map wall: " + kind);
                         });
         if (layout == HoleWallLayout.SNAKE && (kind == 2 || kind == 5 || kind == 8 || kind == 11))
             gates.add(
@@ -323,7 +337,94 @@ final class HoleWallMapPatterns {
         }
     };
 
+    // Fourteen-column bays alternate two authored elevations. Columns 1/4 in each
+    // half remain vertical supports, including beside every carved side route. Thus each
+    // crown reaches the floor by shared faces before the general grounding filter runs.
+    private static final String[][] SNAKE_APPROACHES = {
+        { // 36: twin low valleys.
+            ".#..#...#..#..", "##..##..#..###", "##..#####..###", "##..######.###", "##..#####..###"
+        },
+        { // 37: shelf beside a spire.
+            "#####...#..#..", "#####...#..##.", "##..###.#..###", "##..#####..###", "###.#####..###"
+        },
+        { // 38: paired broad shoulders.
+            "##..#...#..##.", "##..##.##..##.", "##..#####..###", "###.######.###", "##..######.###"
+        },
+        { // 39: high rails and a low terrace.
+            ".#..#..##..###", ".#..#...#..###", ".#..#..##..##.", "##..##.##..###", "##..#####..###"
+        },
+        { // 40: raised stair saddle.
+            ".#..##.##..#..", ".#..#####..##.", "##..#####..###", "###.######.###", "##############"
+        },
+        { // 41: uneven skyline.
+            "##..#...#..###", "##..##.##..###", "##..#####..###", "##..##########", "#########..###"
+        },
+        { // 42: long ducking veranda.
+            "############..", ".#..#..##..##.", "##..##.##..###", "##..######.###", "##..#####..###"
+        },
+        { // 43: offset towers.
+            "##..###.#..#..", "##..##..#..#..", "##..#####..##.", "###.#####..###", "##..#####..###"
+        },
+        { // 44: sunken connecting rail.
+            ".#..#...#..##.", "##..##..#..###", "#########..###", "##..#####..###", "##..##########"
+        },
+        { // 45: vaulted stair landings.
+            "#####...#####.", "##..#####..##.", "###.##########", "##..#####..###", "#########..###"
+        },
+        { // 46: double overhead ribbon.
+            "##############", "###.#####..###", "##..##.###.###", "##..#####..###", "##..#####..###"
+        },
+        { // 47: crowned trees.
+            ".#####.#####..", "##..##.##..##.", "##..###.#..#..", "###.#####..##.", "##..#####..###"
+        }
+    };
+
+    private static final String[][] DONUT_APPROACHES = {
+        { // 36: paired square collars.
+            ".#####..#####.", "##..##.##..##.", "##..##.##..##.", "##..#####..###", "##############"
+        },
+        { // 37: wide and rounded eyelets.
+            "#######.#####.", "##..##.##..###", ".#..#..##..##.", "##..##.##..###", "##############"
+        },
+        { // 38: round and wide eyelets.
+            ".#####.#######", "##..#####..##.", "##..##..#..#..", "##..#####..##.", "##############"
+        },
+        { // 39: offset ring crowns.
+            "############..", "##..##.##..##.", "##..#####..##.", "##..##.##..###", "##############"
+        },
+        { // 40: raised double sockets.
+            "#####...#####.", "##..#####..###", "##..##.##..##.", "##..#####..###", "##############"
+        },
+        { // 41: ring and crossbar.
+            ".#####.#####..", "##..##.##..###", "#########..##.", "##..##.##..###", "##############"
+        },
+        { // 42: low arch gallery.
+            "#######.#####.", "##..#####..##.", ".#..#..##..##.", "##..#####..###", "##############"
+        },
+        { // 43: alternating low arches.
+            ".#####.#######", "##..##.##..###", "##..##..#..#..", "##..#####..###", "##############"
+        },
+        { // 44: upper tie between eyelets.
+            ".#####..#####.", "#########..##.", "##..##.##..###", "##..#####..##.", "##############"
+        },
+        { // 45: right-hand bridge ring.
+            "#######.#####.", "##..##.#######", "##..#####..##.", "##..##.##..###", "##############"
+        },
+        { // 46: double-belt arcade.
+            "#####..#######", "##..#####..##.", "##############", "##..#####..###", "##############"
+        },
+        { // 47: bowl beneath a broad crown.
+            "############..", "##..##.##..###", "##..##.##..##.", "#########..###", "##############"
+        }
+    };
+
     private static boolean outline(HoleWallLayout layout, int kind, int u, int y) {
+        if (kind >= 36) {
+            String[] rows =
+                    (layout == HoleWallLayout.SNAKE ? SNAKE_APPROACHES : DONUT_APPROACHES)
+                            [kind - 36];
+            return rows[HoleWallPattern.HEIGHT - 1 - y].charAt(Math.floorMod(u + 6, 14)) == '#';
+        }
         if (kind >= 12) {
             String[] rows =
                     (layout == HoleWallLayout.SNAKE ? SNAKE_EXTENSIONS : DONUT_EXTENSIONS)

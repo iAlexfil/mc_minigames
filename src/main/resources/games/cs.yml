@@ -5,3 +5,7 @@ freezeSeconds: 15
 roundSeconds: 115
 bombSeconds: 40
 buySeconds: 20
+
+deathmatch:
+  durationSeconds: 300
+  countdownSeconds: 5

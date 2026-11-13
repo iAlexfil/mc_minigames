@@ -20,6 +20,13 @@ final class CsConfig {
     final Property<Integer> buy =
             bag.define("buySeconds", PropertyCodec.INT, 20).validate(n -> n >= 5 && n <= 60);
 
+    final Property<Integer> dmDuration =
+            bag.define("deathmatch.durationSeconds", PropertyCodec.INT, 300)
+                    .validate(n -> n >= 60 && n <= 1800);
+    final Property<Integer> dmCountdown =
+            bag.define("deathmatch.countdownSeconds", PropertyCodec.INT, 5)
+                    .validate(n -> n >= 3 && n <= 30);
+
     CsConfig(ConfigRegistry registry) {
         if (migrateFormat(registry.file(FILE))) registry.saveFile(FILE);
         registry.hide(FILE, "formatVersion");

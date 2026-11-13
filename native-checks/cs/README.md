@@ -63,6 +63,8 @@ Client playtest before merging:
 - Throw each grenade level, upward and downward, from standing/moving/jumping
   positions and next to thin cover. Compare the arc with a vanilla snowball;
   utility must still bounce, detonate once and clean up at round end.
+  Check both left-click long throws and right-click short, splash-potion-like
+  throws; one click must consume exactly one grenade.
 - Check 2v2 (40% earned payouts), 2v3 (90% vs 60%, with $1,200 vs $800 pistol
   cash), and 5v5 (baseline). Deaths or disconnects during a round must not boost
   that round's payouts; the following round must update the roster snapshot.
@@ -82,6 +84,16 @@ Client playtest before merging:
   Test with opponents, a spectator, another active game, a disconnected/rejoined
   teammate and after halftime. Private messages must reach only current allies;
   ordinary messages keep the server's existing chat behavior.
+
+- Check the continuous ammo/reload action bar, including its changing tenths of
+  a second and the final completion time for multi-shell shotgun reloads.
+  Verify weapon/headshot kill messages against the lethal hit, including a
+  nonlethal headshot followed by a body-shot kill.
+- Open CS from the game menu and select both Classic and Deathmatch. In
+  Deathmatch, check the five-minute timer, three-second death screen/respawn,
+  spawn protection ending on attack, all-player damage, individual results and
+  free weapon selection. A combat loadout change must apply on the next respawn;
+  it must not refill the current magazine. Check reconnect and match cleanup.
 
 ## Validation evidence
 
@@ -120,3 +132,31 @@ unmodified production JAR. Tested copy SHA-256 values:
 
 Build logs, native console logs, runtime worlds and generated binaries are kept
 outside Git in the task's `work/` directories.
+
+### Deathmatch follow-up after merging upstream
+
+On 2026-11-13, the combined tree at `132f1b7` (feature commit `e47b8da` plus
+upstream `8b64d1c`) passed full Gradle builds for 26.2 and 26.3. Each build passed
+**5,872 CS assertions**, both localization catalogs and all upstream game checks.
+The updated native fixture also passed on Paper 26.2 #135 and 26.3 #249: flash
+detonation, stronger scope FOV ratios and movement restoration, cosmetic armor,
+private name visibility, fire overlays/cleanup and **43 shared glow packet
+assertions** per version. Both disposable servers shut down cleanly.
+
+Production JAR SHA-256 (both classifiers):
+
+```text
+90a258d3e0560b4447c6eea0db61e59ebbaeee151060d2d2bbe30b32de257bbf
+```
+
+Disposable native-copy SHA-256 (both versions, with only the same ASP API
+class-loading workaround described above):
+
+```text
+6edb698b513b668b8a2a7db83b03ca4369a1bce65519370b9eabdc265aa8b55a
+```
+
+Deathmatch rules, loadouts, ranking, timer, protections, menu/queue wiring and
+imported-map spawn geometry are covered by server-free checks. Native fixtures
+still use simulated player transport; they do not exercise a complete connected
+client match. The client playtest checklist above remains outstanding.

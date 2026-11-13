@@ -68,6 +68,17 @@ final class CsGun {
         return true;
     }
 
+    /** Time until the entire reload finishes, including every remaining tube-fed shell. */
+    long reloadTicksRemaining(long now) {
+        if (reloadAt < 0) return 0;
+        long finish = reloadAt;
+        if (weapon.shellReload()) {
+            int shells = Math.min(weapon.magazine - magazine, reserve);
+            finish += Math.max(0, shells - 1) * (long) weapon.shellTicks();
+        }
+        return Math.max(0, finish - now);
+    }
+
     boolean toggleScope(long now) {
         tick(now);
         if (!weapon.scope() || reloadAt >= 0 || now < deployUntil || now - scopeClickAt < 4)

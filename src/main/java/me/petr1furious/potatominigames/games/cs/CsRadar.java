@@ -22,6 +22,7 @@ final class CsRadar extends MapRenderer {
 
     private final Map<Integer, Map<UUID, Spotted>> spotted =
             Map.of(0, new HashMap<>(), 1, new HashMap<>());
+    private final Map<UUID, Map<UUID, Spotted>> deathmatchSpotted = new HashMap<>();
     private long updated = -1;
 
     CsRadar(CsSession session) {
@@ -45,6 +46,28 @@ final class CsRadar extends MapRenderer {
     public void render(MapView map, MapCanvas canvas, Player viewer) {
         var actor = session.actor(viewer);
         if (actor == null) return;
+        if (session.deathmatch()) {
+            canvas.drawImage(0, 0, image);
+            Map<UUID, Spotted> seen =
+                    deathmatchSpotted.computeIfAbsent(viewer.getUniqueId(), id -> new HashMap<>());
+            for (Player p : session.players()) {
+                if (!session.active(p)) {
+                    seen.remove(p.getUniqueId());
+                    continue;
+                }
+                if (p == viewer) {
+                    dot(canvas, p.getLocation(), Color.GREEN);
+                    continue;
+                }
+                if (session.active(viewer) && session.visible(viewer, p))
+                    seen.put(
+                            p.getUniqueId(),
+                            new Spotted(p.getLocation().clone(), session.now() + 30));
+                Spotted spot = seen.get(p.getUniqueId());
+                if (spot != null && session.now() < spot.until) dot(canvas, spot.at, Color.RED);
+            }
+            return;
+        }
         if (updated < 0 || session.now() - updated >= 5) {
             updated = session.now();
             for (Player observer : session.players())
@@ -96,6 +119,7 @@ final class CsRadar extends MapRenderer {
     }
 
     void clear() {
+        deathmatchSpotted.clear();
         for (var entries : spotted.values()) entries.clear();
         view.removeRenderer(this);
     }

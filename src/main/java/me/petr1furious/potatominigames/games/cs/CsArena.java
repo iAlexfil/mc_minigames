@@ -57,10 +57,52 @@ final class CsArena {
         static final Blueprint DATA = Blueprint.load();
     }
 
-    private static final double[][][] SPAWNS = {
-        {{.5, 78, 50.5}, {2.5, 78, 50.5}, {4.5, 78, 50.5}, {.5, 78, 53.5}, {4.5, 78, 53.5}},
-        {{93.5, 75, 39.5}, {96.5, 75, 39.5}, {99.5, 75, 39.5}, {93.5, 75, 41.5}, {97.5, 75, 41.5}}
+    record Spawn(double x, double y, double z, float yaw) {}
+
+    // CS2's three T groups and CT arc, fitted to the older Minecraft map's walkable floors.
+    // See assets/maps/lesraisins-dust2/SPAWNS-Dust2.md for the reference and adaptation.
+    private static final List<List<Spawn>> SPAWNS =
+            List.of(
+                    List.of(
+                            new Spawn(1.5, 78, 21.5, -90),
+                            new Spawn(-.5, 78, 22.5, -90),
+                            new Spawn(-1.5, 78, 24.5, -90),
+                            new Spawn(-.5, 78, 25.5, -90),
+                            new Spawn(1.5, 78, 26.5, -90),
+                            new Spawn(1.5, 78, 27.5, -90),
+                            new Spawn(-.5, 78, 28.5, -90),
+                            new Spawn(-1.5, 78, 30.5, -90),
+                            new Spawn(-.5, 78, 31.5, -90),
+                            new Spawn(1.5, 78, 32.5, -90),
+                            new Spawn(1.5, 78, 33.5, -90),
+                            new Spawn(-.5, 78, 34.5, -90),
+                            new Spawn(-1.5, 78, 36.5, -90),
+                            new Spawn(-.5, 78, 37.5, -90),
+                            new Spawn(1.5, 78, 38.5, -90)),
+                    List.of(
+                            new Spawn(93.5, 75, 66.5, 180),
+                            new Spawn(95.5, 75, 66.5, 180),
+                            new Spawn(97.5, 75, 63.5, 180),
+                            new Spawn(95.5, 75, 61.5, 180),
+                            new Spawn(93.5, 75, 60.5, 180)));
+    private static final org.bukkit.util.BoundingBox[] BUY_ZONES = {
+        new org.bukkit.util.BoundingBox(-3, 77, 19, 4, 81, 40),
+        new org.bukkit.util.BoundingBox(91, 74, 57, 100, 79, 71)
     };
+    private final List<List<Spawn>> spawnOrder = new ArrayList<>();
+
+    static List<Spawn> spawnPoints(int side) {
+        return SPAWNS.get(side);
+    }
+
+    static boolean buyPosition(int side, double x, double y, double z) {
+        return BUY_ZONES[side].contains(x, y, z);
+    }
+
+    void shuffleSpawns(Random random) {
+        for (var points : spawnOrder) Collections.shuffle(points, random);
+    }
+
     private final World world;
     private final Blueprint source = Source.DATA;
     private final List<BlockData> states;
@@ -70,6 +112,7 @@ final class CsArena {
 
     CsArena(World world) {
         this.world = world;
+        for (var points : SPAWNS) spawnOrder.add(new ArrayList<>(points));
         states = source.palette.stream().map(Bukkit::createBlockData).toList();
         for (int y = 72; y <= 128; y++) {
             for (int x = -26; x <= 131; x++) {
@@ -103,10 +146,142 @@ final class CsArena {
     }
 
     Location spawn(int side, int index) {
-        var p = SPAWNS[side][Math.floorMod(index, 5)];
-        Location at = new Location(world, p[0], p[1], p[2], side == 0 ? -90 : 90, 0);
-        if (!at.getBlock().isPassable() || !at.clone().add(0, 1, 0).getBlock().isPassable())
+        var points = spawnOrder.get(side);
+        var p = points.get(Math.floorMod(index, points.size()));
+        Location at = new Location(world, p.x(), p.y(), p.z(), p.yaw(), 0);
+        if (!at.getBlock().isPassable()
+                || !at.clone().add(0, 1, 0).getBlock().isPassable()
+                || at.clone().subtract(0, .05, 0).getBlock().isPassable())
             throw new IllegalStateException("Imported spawn obstructed");
+        return at;
+    }
+
+    private static final class DeathmatchSpawns {
+        static final List<Spawn> POINTS = buildDeathmatchSpawns(Source.DATA);
+    }
+
+    static List<Spawn> deathmatchSpawns() {
+        return DeathmatchSpawns.POINTS;
+    }
+
+    private static boolean fullFloor(String state) {
+        String name = state.split("\\[", 2)[0].substring("minecraft:".length());
+        return Set.of(
+                                "stone",
+                                "sand",
+                                "sandstone",
+                                "smooth_sandstone",
+                                "cut_sandstone",
+                                "gravel",
+                                "stone_bricks",
+                                "smooth_stone",
+                                "cobblestone",
+                                "andesite",
+                                "diorite",
+                                "granite",
+                                "polished_andesite",
+                                "polished_diorite",
+                                "polished_granite")
+                        .contains(name)
+                || name.endsWith("_concrete")
+                || name.endsWith("_terracotta")
+                || name.endsWith("_planks");
+    }
+
+    private static List<Spawn> buildDeathmatchSpawns(Blueprint source) {
+        Map<Pos, String> blocks = new HashMap<>();
+        for (var cell : source.cells()) blocks.put(cell.pos(), source.palette().get(cell.state()));
+        boolean[] full = new boolean[source.palette().size()];
+        for (int i = 0; i < full.length; i++) full[i] = fullFloor(source.palette().get(i));
+        Set<Pos> floors = new HashSet<>();
+        for (var cell : source.cells()) {
+            Pos floor = cell.pos();
+            Pos feet = new Pos(floor.x(), floor.y() + 1, floor.z());
+            if (feet.y() >= 74
+                    && feet.y() <= 89
+                    && full[cell.state()]
+                    && !blocks.containsKey(feet)
+                    && !blocks.containsKey(new Pos(feet.x(), feet.y() + 1, feet.z())))
+                floors.add(feet);
+        }
+        ArrayDeque<Pos> pending = new ArrayDeque<>();
+        for (var side : SPAWNS)
+            for (var point : side)
+                pending.add(
+                        new Pos(
+                                (int) Math.floor(point.x()),
+                                (int) point.y(),
+                                (int) Math.floor(point.z())));
+        // Both original bomb platforms are known walkable map regions.
+        pending.add(new Pos(103, 82, 88));
+        pending.add(new Pos(114, 79, 6));
+        for (Pos feet : floors)
+            if (feet.y() == 82
+                            && feet.x() >= 97
+                            && feet.x() <= 111
+                            && feet.z() >= 82
+                            && feet.z() <= 96
+                    || feet.y() == 79
+                            && feet.x() >= 107
+                            && feet.x() <= 122
+                            && feet.z() >= 0
+                            && feet.z() <= 14) pending.add(feet);
+        Set<Pos> connected = new HashSet<>();
+        while (!pending.isEmpty()) {
+            Pos p = pending.removeFirst();
+            if (!floors.contains(p) || !connected.add(p)) continue;
+            for (int[] step : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}})
+                for (int dy = 1; dy >= -3; dy--) {
+                    Pos next = new Pos(p.x() + step[0], p.y() + dy, p.z() + step[1]);
+                    if (floors.contains(next)
+                            && !connected.contains(next)
+                            && (dy <= 0 || !blocks.containsKey(new Pos(p.x(), p.y() + 2, p.z())))
+                            && (dy >= 0
+                                    || !blocks.containsKey(new Pos(next.x(), p.y(), next.z()))
+                                            && !blocks.containsKey(
+                                                    new Pos(next.x(), p.y() + 1, next.z()))))
+                        pending.add(next);
+                }
+        }
+        List<Spawn> result = new ArrayList<>();
+        for (Pos p :
+                connected.stream()
+                        .sorted(
+                                Comparator.comparingInt(Pos::x)
+                                        .thenComparingInt(Pos::z)
+                                        .thenComparingInt(Pos::y))
+                        .toList())
+            if (Math.floorMod(p.x(), 6) == 0 && Math.floorMod(p.z(), 6) == 0)
+                result.add(new Spawn(p.x() + .5, p.y(), p.z() + .5, 0));
+        for (var side : SPAWNS)
+            for (var p : side)
+                if (result.stream().noneMatch(other -> other.x() == p.x() && other.z() == p.z()))
+                    result.add(p);
+        return List.copyOf(result);
+    }
+
+    Location deathmatchSpawn(Collection<Location> opponents, Random random) {
+        List<Spawn> points = new ArrayList<>(deathmatchSpawns());
+        Collections.shuffle(points, random);
+        Spawn best = points.getFirst();
+        double bestDistance = -1;
+        for (var point : points) {
+            double distance = Double.POSITIVE_INFINITY;
+            for (var opponent : opponents) {
+                double dx = point.x() - opponent.getX(), dz = point.z() - opponent.getZ();
+                distance = Math.min(distance, dx * dx + dz * dz);
+            }
+            if (distance > bestDistance) {
+                bestDistance = distance;
+                best = point;
+            }
+        }
+        Location at = new Location(world, best.x(), best.y(), best.z());
+        at.setDirection(center().toVector().subtract(at.toVector()).setY(0));
+        if (!at.getBlock().isPassable()
+                || !at.clone().add(0, 1, 0).getBlock().isPassable()
+                || at.clone().subtract(0, .05, 0).getBlock().isPassable())
+            throw new IllegalStateException("Deathmatch spawn obstructed");
         return at;
     }
 
@@ -130,11 +305,9 @@ final class CsArena {
     }
 
     boolean buyZone(Location at, int side) {
-        Location center = spawn(side, 2);
-        return world.equals(at.getWorld())
-                && Math.abs(at.getY() - center.getY()) < 4
-                && Math.abs(at.getX() - center.getX()) <= 10
-                && Math.abs(at.getZ() - center.getZ()) <= 9;
+        return at != null
+                && world.equals(at.getWorld())
+                && buyPosition(side, at.getX(), at.getY(), at.getZ());
     }
 
     int site(Location at) {

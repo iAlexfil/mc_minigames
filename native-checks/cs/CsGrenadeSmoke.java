@@ -30,7 +30,13 @@ public final class CsGrenadeSmoke extends JavaPlugin {
                                 Class<?> sessionType =
                                         Class.forName(pkg + "CsSession", true, loader);
                                 Constructor<?> sessionConstructor =
-                                        sessionType.getDeclaredConstructors()[0];
+                                        sessionType.getDeclaredConstructor(
+                                                Class.forName(
+                                                        "me.petr1furious.potatominigames.core.game.SessionServices",
+                                                        true,
+                                                        loader),
+                                                Class.forName(pkg + "CsConfig", true, loader),
+                                                Class.forName(pkg + "CsGame", true, loader));
                                 sessionConstructor.setAccessible(true);
                                 Object session = sessionConstructor.newInstance(null, null, null);
                                 World world = Bukkit.getWorlds().getFirst();
@@ -52,6 +58,9 @@ public final class CsGrenadeSmoke extends JavaPlugin {
                                 Object grenades = grenadesConstructor.newInstance(session);
                                 Class<?> flight =
                                         Class.forName(pkg + "CsGrenades$Flight", true, loader);
+                                Class<?> throwMode =
+                                        Class.forName(
+                                                pkg + "CsGrenadePhysics$ThrowMode", true, loader);
                                 Constructor<?> constructor =
                                         flight.getDeclaredConstructor(
                                                 UUID.class,
@@ -59,7 +68,8 @@ public final class CsGrenadeSmoke extends JavaPlugin {
                                                 Item.class,
                                                 Location.class,
                                                 Vector.class,
-                                                long.class);
+                                                long.class,
+                                                throwMode);
                                 constructor.setAccessible(true);
                                 Location at = world.getSpawnLocation().add(0, 2, 0);
                                 Object payload =
@@ -69,7 +79,13 @@ public final class CsGrenadeSmoke extends JavaPlugin {
                                                 null,
                                                 at,
                                                 new Vector(),
-                                                0L);
+                                                0L,
+                                                java.util.Arrays.stream(
+                                                                throwMode.getEnumConstants())
+                                                        .filter(value ->
+                                                                value.toString().equals("LONG"))
+                                                        .findFirst()
+                                                        .orElseThrow());
                                 Method detonate =
                                         grenadesType.getDeclaredMethod("detonate", flight);
                                 detonate.setAccessible(true);

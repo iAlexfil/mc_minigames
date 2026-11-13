@@ -71,7 +71,7 @@ final class CsScopeSmoke {
                 apply.invoke(scope, player, weapon, .2);
                 double ratio = attribute.getValue() / (walking[0] / 2);
                 require(
-                        Math.abs((ratio + 1) / 2 - (sniper ? .6 : .7)) < .000001,
+                        Math.abs((ratio + 1) / 2 - (sniper ? .555 : .57)) < .000001,
                         "native FOV ratio for " + name);
                 require(
                         Math.abs(attribute.getValue() - .045) < .000001,

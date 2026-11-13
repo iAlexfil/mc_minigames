@@ -26,13 +26,16 @@ public final class CsCheck {
     private static int checks;
 
     public static void main(String[] args) throws Exception {
+        checks += CsDeathmatchCheck.run();
         hudTranslations();
+        killMessages();
         buying();
         cs2Economy();
         sizedEconomy();
         grenadeFlight();
         distantBullets();
         ammunition();
+        reloadHud();
         scopedControls();
         expandedArsenal();
         damageAndRewards();
@@ -80,6 +83,90 @@ public final class CsCheck {
                         me.petr1furious.potatominigames.i18n.I18n.plain(line, locale)
                                 .contains(message),
                         "private team messages preserve literal markup and placeholders");
+            }
+        } finally {
+            me.petr1furious.potatominigames.i18n.I18n.unregister();
+        }
+    }
+
+    private static void killMessages() {
+        me.petr1furious.potatominigames.i18n.I18n.register();
+        try {
+            for (boolean head : new boolean[] {false, true}) {
+                CsMatch m = live();
+                m.hurt(CT, T, 5, !head, false, CsWeapon.AWP, false);
+                check(
+                        m.actor(CT).killInfo == null,
+                        "nonlethal damage does not become kill metadata");
+                m.hurt(CT, T, 1000, head, false, CsWeapon.AK47, false);
+                var victim = m.actor(CT);
+                m.actor(T).primary = new CsGun(CsWeapon.AWP);
+                victim.loseEquipment();
+                check(
+                        victim.killInfo.weapon() == CsWeapon.AK47
+                                && victim.killInfo.headshot() == head,
+                        "kill attribution snapshots the lethal weapon and hit, surviving equipment"
+                                + " changes");
+                // Repeated damage after elimination cannot rewrite the original kill.
+                m.hurt(CT, CT2, 1000, !head, false, CsWeapon.USP, false);
+                for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                    String line =
+                            me.petr1furious.potatominigames.i18n.I18n.plain(
+                                    CsItems.killMessage(
+                                            victim,
+                                            net.kyori.adventure.text.Component.text("Killer"),
+                                            net.kyori.adventure.text.Component.text("Victim")),
+                                    locale);
+                    String hit =
+                            me.petr1furious.potatominigames.i18n.I18n.plain(
+                                    CsItems.tr(head ? "kill.headshot" : "kill.no_headshot"),
+                                    locale);
+                    check(
+                            line.contains("AK-47")
+                                    && !line.contains("AWP")
+                                    && line.contains(hit)
+                                    && line.contains("Killer")
+                                    && line.contains("Victim"),
+                            "localized kill feed includes both players, the lethal gun and headshot"
+                                    + " status");
+                }
+            }
+            for (var cause :
+                    List.of(
+                            CsMatch.KillCause.KNIFE,
+                            CsMatch.KillCause.HE,
+                            CsMatch.KillCause.FIRE,
+                            CsMatch.KillCause.C4)) {
+                CsMatch m = live();
+                m.hurt(
+                        CT,
+                        cause == CsMatch.KillCause.C4 ? null : T,
+                        1000,
+                        true,
+                        false,
+                        null,
+                        cause);
+                check(
+                        !m.actor(CT).killInfo.headshot() && m.actor(CT).killInfo.cause() == cause,
+                        "knife, utility and bomb deaths retain their actual source without a"
+                                + " headshot");
+                for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                    String source =
+                            me.petr1furious.potatominigames.i18n.I18n.plain(
+                                    CsItems.tr(
+                                            "kill.source." + cause.name().toLowerCase(Locale.ROOT)),
+                                    locale);
+                    String line =
+                            me.petr1furious.potatominigames.i18n.I18n.plain(
+                                    CsItems.killMessage(
+                                            m.actor(CT),
+                                            net.kyori.adventure.text.Component.text("Killer"),
+                                            net.kyori.adventure.text.Component.text("Victim")),
+                                    locale);
+                    check(
+                            line.contains(source) && !line.contains("potatominigames."),
+                            "non-gun kill sources resolve in both languages");
+                }
             }
         } finally {
             me.petr1furious.potatominigames.i18n.I18n.unregister();
@@ -195,21 +282,59 @@ public final class CsCheck {
 
     private static void grenadeFlight() {
         Vector look = new Vector(0, 0, 1);
-        Vector launch = CsGrenadePhysics.launch(look, new Vector(), true);
+        Vector shortThrow =
+                CsGrenadePhysics.launch(look, new Vector(), true, CsGrenadePhysics.ThrowMode.SHORT);
+        check(
+                Math.abs(shortThrow.length() - .5) < .000001
+                        && shortThrow.getY() > 0
+                        && shortThrow.getZ() < .5
+                        && look.equals(new Vector(0, 0, 1)),
+                "short throws use potion speed and upward arc without modifying the aim");
+        Vector falling = new Vector(0, 0, 1);
+        CsGrenadePhysics.airTick(falling, CsGrenadePhysics.ThrowMode.SHORT);
+        check(Math.abs(falling.getY() + .05 * .99) < .000001, "short throws use potion gravity");
+        for (var mode : CsGrenadePhysics.ThrowMode.values()) {
+            Vector standing = CsGrenadePhysics.launch(look, new Vector(), true, mode);
+            Vector movingGround = CsGrenadePhysics.launch(look, new Vector(.2, .4, .3), true, mode);
+            Vector movingAir = CsGrenadePhysics.launch(look, new Vector(.2, .4, .3), false, mode);
+            check(
+                    movingGround.distance(standing.clone().add(new Vector(.2, 0, .3))) < .000001
+                            && movingAir.distance(standing.clone().add(new Vector(.2, .4, .3)))
+                                    < .000001,
+                    "both throws inherit horizontal motion and airborne vertical motion");
+        }
+        Vector longThrow =
+                CsGrenadePhysics.launch(look, new Vector(), true, CsGrenadePhysics.ThrowMode.LONG);
+        double shortDistance = 0, longDistance = 0;
+        for (int tick = 0; tick < 30; tick++) {
+            CsGrenadePhysics.airTick(shortThrow, CsGrenadePhysics.ThrowMode.SHORT);
+            CsGrenadePhysics.airTick(longThrow, CsGrenadePhysics.ThrowMode.LONG);
+            shortDistance += shortThrow.getZ();
+            longDistance += longThrow.getZ();
+        }
+        check(
+                longDistance > shortDistance * 3,
+                "the long throw covers substantially more distance over the same utility fuse");
+        Vector launch =
+                CsGrenadePhysics.launch(look, new Vector(), true, CsGrenadePhysics.ThrowMode.LONG);
         check(
                 launch.getZ() == 1.5 && launch.getY() == 0 && look.getZ() == 1,
                 "level throws follow the crosshair without an upward boost or mutating aim");
-        Vector moving = CsGrenadePhysics.launch(look, new Vector(.2, .4, .3), true);
+        Vector moving =
+                CsGrenadePhysics.launch(
+                        look, new Vector(.2, .4, .3), true, CsGrenadePhysics.ThrowMode.LONG);
         check(
                 moving.equals(new Vector(.2, 0, 1.8)),
                 "grounded throws inherit only horizontal motion");
-        moving = CsGrenadePhysics.launch(look, new Vector(.2, .4, .3), false);
+        moving =
+                CsGrenadePhysics.launch(
+                        look, new Vector(.2, .4, .3), false, CsGrenadePhysics.ThrowMode.LONG);
         check(
                 moving.equals(new Vector(.2, .4, 1.8)),
                 "airborne throws inherit vertical motion too");
         double travelled = 0;
         for (int tick = 0; tick < 20; tick++) {
-            CsGrenadePhysics.airTick(launch);
+            CsGrenadePhysics.airTick(launch, CsGrenadePhysics.ThrowMode.LONG);
             travelled += launch.getZ();
         }
         check(
@@ -281,7 +406,7 @@ public final class CsCheck {
                             && weapon.damageScale(0) == 1
                             && weapon.damageScale(100) < weapon.damageScale(64),
                     "the old 100-block damage curve is reached at 64 blocks, without reducing base"
-                        + " damage");
+                            + " damage");
         }
         for (CsWeapon weapon :
                 List.of(CsWeapon.FAMAS, CsWeapon.AK47, CsWeapon.M4A4, CsWeapon.AWP)) {
@@ -481,6 +606,64 @@ public final class CsCheck {
                 "loaded shell can interrupt shotgun reload");
     }
 
+    private static void reloadHud() {
+        me.petr1furious.potatominigames.i18n.I18n.register();
+        try {
+            for (var weapon : CsWeapon.values()) {
+                for (int reserve : new int[] {2, weapon.reserve}) {
+                    CsGun gun = new CsGun(weapon);
+                    gun.magazine = weapon.magazine - 3;
+                    gun.reserve = reserve;
+                    check(gun.reload(100), "partial magazine starts the reload countdown");
+                    long total = gun.reloadTicksRemaining(100);
+                    long now = 100;
+                    while (gun.reloadAt >= 0 && now < 1100) {
+                        check(
+                                gun.reloadTicksRemaining(now) == total - (now - 100),
+                                "full-reload countdown stays continuous while individual shells"
+                                        + " load");
+                        now++;
+                        gun.tick(now);
+                    }
+                    check(
+                            gun.reloadAt < 0
+                                    && now - 100 == total
+                                    && gun.reloadTicksRemaining(now) == 0,
+                            "countdown ends when the real reload finishes, including reserve"
+                                    + " exhaustion");
+                    for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                        String ready =
+                                me.petr1furious.potatominigames.i18n.I18n.plain(
+                                        CsItems.ammoHud(gun, now), locale);
+                        check(
+                                ready.contains("F")
+                                        && ready.contains(Integer.toString(gun.magazine)),
+                                "ready HUD includes ammunition and reload key in both languages");
+                    }
+                    gun.magazine--;
+                    gun.reserve = 2;
+                    gun.reload(now);
+                    long lastTick = now + gun.reloadTicksRemaining(now) - 1;
+                    for (Locale locale : List.of(Locale.ENGLISH, Locale.forLanguageTag("ru"))) {
+                        String reloading =
+                                me.petr1furious.potatominigames.i18n.I18n.plain(
+                                        CsItems.ammoHud(gun, lastTick), locale);
+                        check(
+                                reloading.contains("0.1")
+                                        && !reloading.contains("potatominigames."),
+                                "reload HUD rounds up its last tenth and resolves in both locales");
+                    }
+                    gun.switchAway();
+                    check(
+                            gun.reloadTicksRemaining(now) == 0,
+                            "switching weapons immediately cancels its countdown");
+                }
+            }
+        } finally {
+            me.petr1furious.potatominigames.i18n.I18n.unregister();
+        }
+    }
+
     private static void scopedControls() {
         for (var weapon : CsWeapon.values()) {
             CsGun gun = new CsGun(weapon);
@@ -526,7 +709,7 @@ public final class CsCheck {
             }
             double fov = (CsScope.speedFactor(weapon) + 1) / 2;
             check(
-                    Math.abs(fov - (weapon.category == CsWeapon.Category.SNIPER ? .6 : .7))
+                    Math.abs(fov - (weapon.category == CsWeapon.Category.SNIPER ? .555 : .57))
                             < .000001,
                     "vanilla attribute-to-ability ratio produces stronger zoom for sniper rifles");
         }
@@ -948,26 +1131,44 @@ public final class CsCheck {
                 "full imported architecture, not a generated substitute");
         Map<CsArena.Pos, String> blocks = new HashMap<>();
         for (var cell : bp.cells()) blocks.put(cell.pos(), bp.palette().get(cell.state()));
-        int[][] spawn = {
-            {0, 78, 50},
-            {2, 78, 50},
-            {4, 78, 50},
-            {0, 78, 53},
-            {4, 78, 53},
-            {93, 75, 39},
-            {96, 75, 39},
-            {99, 75, 39},
-            {93, 75, 41},
-            {97, 75, 41}
-        };
-        for (int[] p : spawn) {
+        for (int side = 0; side < 2; side++) {
+            var points = CsArena.spawnPoints(side);
+            check(points.size() == (side == 0 ? 15 : 5), "CS2-style T and CT spawn pools");
+            for (var point : points) {
+                int x = (int) Math.floor(point.x()),
+                        y = (int) point.y(),
+                        z = (int) Math.floor(point.z());
+                check(
+                        !blocks.containsKey(new CsArena.Pos(x, y, z))
+                                && !blocks.containsKey(new CsArena.Pos(x, y + 1, z)),
+                        "every spawn in both full pools has headroom in the imported map");
+                check(
+                        blocks.containsKey(new CsArena.Pos(x, y - 1, z)),
+                        "every spawn has original floor support");
+                check(
+                        CsArena.buyPosition(side, point.x(), point.y(), point.z())
+                                && !CsArena.buyPosition(1 - side, point.x(), point.y(), point.z()),
+                        "all possible round starts belong to only their own buy area");
+                for (var other : points)
+                    if (other != point)
+                        check(
+                                Math.hypot(point.x() - other.x(), point.z() - other.z()) >= .7,
+                                "randomly selected spawn slots cannot overlap player hitboxes");
+            }
+        }
+        check(
+                !CsArena.buyPosition(0, .5, 78, 50.5) && !CsArena.buyPosition(1, 93.5, 75, 39.5),
+                "old out-of-spawn road/mid positions no longer extend the buy areas");
+        for (var point : CsArena.deathmatchSpawns()) {
+            int x = (int) Math.floor(point.x()),
+                    y = (int) point.y(),
+                    z = (int) Math.floor(point.z());
             check(
-                    !blocks.containsKey(new CsArena.Pos(p[0], p[1], p[2]))
-                            && !blocks.containsKey(new CsArena.Pos(p[0], p[1] + 1, p[2])),
-                    "spawn has headroom");
-            check(
-                    blocks.containsKey(new CsArena.Pos(p[0], p[1] - 1, p[2])),
-                    "spawn supported by original geometry");
+                    !blocks.containsKey(new CsArena.Pos(x, y, z))
+                            && !blocks.containsKey(new CsArena.Pos(x, y + 1, z))
+                            && blocks.containsKey(new CsArena.Pos(x, y - 1, z)),
+                    "every distributed deathmatch candidate has two clear body blocks and an"
+                        + " imported floor");
         }
         check(
                 blocks.get(new CsArena.Pos(103, 81, 88)).startsWith("minecraft:red_concrete"),

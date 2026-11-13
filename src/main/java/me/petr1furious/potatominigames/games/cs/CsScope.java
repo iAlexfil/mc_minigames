@@ -18,7 +18,9 @@ final class CsScope {
     private final Map<UUID, View> views = new HashMap<>();
 
     static double speedFactor(CsWeapon weapon) {
-        return weapon.category == CsWeapon.Category.SNIPER ? .2 : .4;
+        // Vanilla FOV is (factor + 1) / 2 at full FOV Effects. Keep enough headroom
+        // for SSG 08's compensated walk speed to remain within Bukkit's maximum of 1.
+        return weapon.category == CsWeapon.Category.SNIPER ? .11 : .14;
     }
 
     static float walkSpeed(double normalSpeed, CsWeapon weapon) {

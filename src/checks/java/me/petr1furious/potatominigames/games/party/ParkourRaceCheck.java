@@ -28,12 +28,14 @@ public final class ParkourRaceCheck {
         model();
         sampling();
         neighbouringTasks();
+        waterEntryIsolation();
+        chestDrop();
         expandedTasks();
-        frostRollback();
         vehicleIsolation();
         navigation();
         geometry();
         swimRoute();
+        iceRoute();
         staircase();
         flightBoundary();
         rollback();
@@ -101,9 +103,10 @@ public final class ParkourRaceCheck {
                         ParkourCourse.Kind.BRIDGE,
                         ParkourCourse.Kind.BOAT_ICE,
                         ParkourCourse.Kind.BOAT_WATER,
-                        ParkourCourse.Kind.MINECART_RIDE,
-                        ParkourCourse.Kind.FROST_WALKER,
-                        ParkourCourse.Kind.SOUL_SPEED,
+                        ParkourCourse.Kind.WATER_ELEVATOR,
+                        ParkourCourse.Kind.WIND_HOPS,
+                        ParkourCourse.Kind.LOW_CEILING,
+                        ParkourCourse.Kind.WIND_WALL,
                         ParkourCourse.Kind.SWIM))
             if (full.size() < ParkourCourse.MIN_LENGTH && !full.contains(kind)) full.add(kind);
         return new ParkourCourse(full, mirror);
@@ -161,6 +164,12 @@ public final class ParkourRaceCheck {
                         "Random vertical profiles fit inside the sealed arena");
             for (int checkpoint = 0; checkpoint <= sampled.stages(); checkpoint++) {
                 var island = sampled.island(checkpoint);
+                if (checkpoint < sampled.stages()) {
+                    var next = sampled.island(checkpoint + 1);
+                    check(
+                            next.z() > island.z() && next.centerX() == island.centerX(),
+                            "Every sampled task continues straight ahead without a sideways turn");
+                }
                 int x = (int) island.centerX();
                 check(
                         sampled.blocks().get(new ParkourCourse.Pos(x, island.y(), island.z() + 3))
@@ -179,29 +188,30 @@ public final class ParkourRaceCheck {
             }
         }
         check(
-                seen.size() == ParkourCourse.Kind.values().length && seen.size() >= 30,
+                seen.size() == ParkourCourse.Kind.values().length && seen.size() == 24,
                 "Every original and new building task is eligible");
         check(lengths.equals(Set.of(7, 8)), "Both course lengths are generated");
         check(orders.size() > 100, "The seven/eight-task order varies between games");
-        ParkourCourse lateral = buildingCourse();
-        var from = lateral.island(5);
-        var to = lateral.island(6);
+        ParkourCourse traverse = buildingCourse();
+        var from = traverse.island(5);
+        var to = traverse.island(6);
         check(
-                Math.abs(to.centerX() - from.centerX()) == 20
-                        && to.z() == from.z()
+                to.centerX() == from.centerX()
+                        && to.z() - from.z() - from.depth() == 20
+                        && to.y() == from.y()
                         && from.width() == 3
                         && to.width() == 3,
-                "Ladder traverse moves sideways twenty blocks between narrow ledges");
+                "Ladder traverse crosses a twenty-block gap straight ahead between narrow ledges");
         check(
-                lateral.supplies(5)
+                traverse.supplies(5)
                         .equals(
                                 List.of(
                                         new ParkourCourse.Supply(Material.CYAN_WOOL, 12),
                                         new ParkourCourse.Supply(Material.LADDER, 12))),
                 "The traverse grants exactly twelve blocks and twelve ladders");
         check(
-                lateral.distance(5, to.centerX(), to.z() + 3.5) == 20,
-                "Sideways distance counts in live race ranking");
+                traverse.distance(5, to.centerX(), to.z() + 3.5) == to.z() - from.z(),
+                "Forward traverse distance counts in live race ranking");
     }
 
     private static void neighbouringTasks() {
@@ -219,20 +229,17 @@ public final class ParkourRaceCheck {
                         if (course.stage(stage) == ParkourCourse.Kind.LADDER_TRAVERSE) {
                             var from = course.island(stage);
                             var to = course.island(stage + 1);
-                            for (int x = (int) Math.min(from.centerX(), to.centerX());
-                                    x <= Math.max(from.centerX(), to.centerX());
-                                    x++)
+                            for (int z = from.z() + 3; z <= to.z() + 3; z++)
                                 for (int y = from.y() + 1; y <= from.y() + 2; y++)
                                     check(
                                             !course.blocks()
                                                     .containsKey(
                                                             new ParkourCourse.Pos(
-                                                                    x, y, from.z() + 3)),
-                                            "neighbouring task terrain must not block the lateral"
+                                                                    (int) from.centerX(), y, z)),
+                                            "neighbouring task terrain must not block the forward"
                                                     + " route");
                         }
-                    if (first == ParkourCourse.Kind.LADDER_DROP
-                            || first == ParkourCourse.Kind.HONEY_DROP) {
+                    if (first == ParkourCourse.Kind.LADDER_DROP) {
                         var from = course.island(0);
                         var goal = course.island(1);
                         int wall =
@@ -254,8 +261,7 @@ public final class ParkourRaceCheck {
                                         0, new ParkourCourse.Pos(wall, goal.y() - 1, from.z() + 7)),
                                 "Clutch placement stays at the final catch rather than below it");
                     }
-                    if ((first == ParkourCourse.Kind.LADDER_DROP
-                                    || first == ParkourCourse.Kind.HONEY_DROP)
+                    if (first == ParkourCourse.Kind.LADDER_DROP
                             && second == ParkourCourse.Kind.LADDER_TRAVERSE) {
                         var from = course.island(0);
                         var goal = course.island(1);
@@ -279,6 +285,161 @@ public final class ParkourRaceCheck {
                     }
                 }
             }
+    }
+
+    private static void waterEntryIsolation() {
+        for (var wet :
+                List.of(
+                        ParkourCourse.Kind.SWIM,
+                        ParkourCourse.Kind.RIPTIDE_LAUNCH,
+                        ParkourCourse.Kind.BOAT_WATER))
+            for (var previous : ParkourCourse.Kind.values()) {
+                if (previous == wet) continue;
+                for (boolean mirror : List.of(false, true)) {
+                    var course = layout(List.of(previous, wet), mirror);
+                    var landing = course.island(1);
+                    var goal = course.island(2);
+                    check(
+                            goal.z() - landing.z() - landing.depth() == wet.gap
+                                    && goal.y() - landing.y() == wet.rise,
+                            "The dry run-up preserves the water task's original gap and height");
+                    check(
+                            course.island(0).depth() == (previous.wetStart() ? 19 : 7)
+                                    && landing.depth() == 19,
+                            "Only wet starts gain the twelve-block extension, including narrow"
+                                    + " traverse checkpoints");
+                    for (int x = landing.x(); x < landing.x() + landing.width(); x++)
+                        for (int z = landing.z(); z < landing.z() + 16; z++) {
+                            var deck =
+                                    course.blocks().get(new ParkourCourse.Pos(x, landing.y(), z));
+                            check(
+                                    deck != null && deck != Material.WATER,
+                                    "Incoming racers have a solid dry landing and run-up");
+                            for (int y = landing.y() + 1; y <= landing.y() + 2; y++)
+                                check(
+                                        course.blocks().get(new ParkourCourse.Pos(x, y, z))
+                                                != Material.WATER,
+                                        "Future water cannot absorb the previous task's fall");
+                        }
+                    int waterCells = 0;
+                    for (var entry : course.blocks().entrySet()) {
+                        var pos = entry.getKey();
+                        if (entry.getValue() != Material.WATER
+                                || pos.z() < landing.z()
+                                || pos.z() >= goal.z()) continue;
+                        waterCells++;
+                        check(
+                                pos.z() >= landing.z() + 16,
+                                "The next water begins beyond the entire dry arrival zone");
+                        check(
+                                !course.attempt(0, pos.x() + .5, pos.y() + .1, pos.z() + .5)
+                                        && course.attempt(
+                                                1, pos.x() + .5, pos.y() + .1, pos.z() + .5),
+                                "A dive into future water is rejected until the checkpoint is"
+                                        + " reached");
+                    }
+                    check(
+                            (waterCells > 0) == (wet != ParkourCourse.Kind.SWIM),
+                            "Boat and trident starts keep native water; the swim task starts dry");
+                    check(
+                            landing.landing(landing.centerX(), landing.y() + 1, landing.z() + 3.5)
+                                    && !landing.landing(
+                                            landing.centerX(), landing.y() + 1, landing.z() + 16.5),
+                            "The goal marker and checkpoint remain on the dry front pad");
+                }
+            }
+    }
+
+    private static void chestDrop() throws ReflectiveOperationException {
+        for (boolean mirror : List.of(false, true)) {
+            var course = layout(List.of(ParkourCourse.Kind.CHEST_DROP), mirror);
+            var from = course.island(0);
+            var to = course.island(1);
+            var chest = course.dropChest(0);
+            check(
+                    course.supplies(0).isEmpty()
+                            && chest != null
+                            && from.y() - chest.y() == 28
+                            && chest.y() - to.y() == 28,
+                    "The chest clutch starts empty-handed with its chest halfway down the fall");
+            check(
+                    course.blocks().get(chest) == Material.CHEST
+                            && Math.abs(chest.x() + .5 - from.centerX()) == 2
+                            && chest.z() >= to.z()
+                            && chest.z() < to.z() + 7,
+                    "The native chest is in reach beside the fall line above the landing island");
+            for (int y = chest.y() + 1; y <= from.y() + 3; y++) {
+                check(
+                        course.blocks().get(new ParkourCourse.Pos(chest.x(), y, chest.z()))
+                                == Material.YELLOW_STAINED_GLASS,
+                        "Glass blocks chest-lid landings without blocking native chest opening");
+                check(
+                        !course.blocks()
+                                .containsKey(
+                                        new ParkourCourse.Pos((int) from.centerX(), y, chest.z())),
+                        "The falling player's body has a clear path beside the covered chest");
+            }
+            UUID id = new UUID(13, 1), rival = new UUID(13, 2);
+            FakeWorld world = new FakeWorld();
+            ParkourArena arena = new ParkourArena(world.world, List.of(id, rival), course);
+            Location own = arena.chestLocation(id, 0), other = arena.chestLocation(rival, 0);
+            check(
+                    arena.isChest(id, 0, own)
+                            && !arena.isChest(id, 0, other)
+                            && !arena.isChest(id, 1, own)
+                            && !arena.isChest(rival, 0, own),
+                    "Chest access is tied to the owner's lane and active checkpoint");
+            check(
+                    arena.mutable(id, 0, world.block((int) from.centerX(), to.y() + 1, to.z() + 3))
+                            && !arena.mutable(
+                                    id, 0, world.block((int) from.centerX(), chest.y(), chest.z())),
+                    "Water can clutch at the bottom but cannot stop the fall at the chest column");
+            boolean[] grounded = {false};
+            Player player =
+                    (Player)
+                            Proxy.newProxyInstance(
+                                    Player.class.getClassLoader(),
+                                    new Class<?>[] {Player.class},
+                                    (proxy, method, args) ->
+                                            switch (method.getName()) {
+                                                case "getUniqueId" -> id;
+                                                case "getWorld" -> world.world;
+                                                case "getGameMode" -> GameMode.SURVIVAL;
+                                                case "isDead" -> false;
+                                                case "isOnGround" -> grounded[0];
+                                                default ->
+                                                        throw new AssertionError(
+                                                                "Unexpected chest access call: "
+                                                                        + method.getName());
+                                            });
+            ParkourRaceSession session =
+                    new ParkourRaceSession(null, null, PartyRoundContext.standalone(null));
+            session.world = world.world;
+            session.standings = new SurvivalStandings(List.of(id, rival));
+            session.connected.addAll(List.of(id, rival));
+            field(PartySurvivalSession.class, "playing").set(session, true);
+            field(ParkourRaceSession.class, "course").set(session, course);
+            field(ParkourRaceSession.class, "arena").set(session, arena);
+            ParkourRace race = new ParkourRace(List.of(id, rival), course.stages());
+            field(ParkourRaceSession.class, "race").set(session, race);
+            var access =
+                    ParkourRaceSession.class.getDeclaredMethod(
+                            "chestAccess", Player.class, Location.class);
+            access.setAccessible(true);
+            check(
+                    (boolean) access.invoke(session, player, own)
+                            && !(boolean) access.invoke(session, player, other),
+                    "A falling player can open their chest but cannot loot a rival's chest");
+            grounded[0] = true;
+            check(
+                    !(boolean) access.invoke(session, player, own),
+                    "Grounded players cannot loot the midair chest");
+            grounded[0] = false;
+            race.reach(id, 1, 100);
+            check(
+                    !(boolean) access.invoke(session, player, own),
+                    "Old chest access ends on the next checkpoint");
+        }
     }
 
     private static void navigation() {
@@ -314,13 +475,13 @@ public final class ParkourRaceCheck {
                     start.getDirection()
                                     .dot(target.toVector().subtract(start.toVector()).normalize())
                             > .99,
-                    "clock/spawn faces the next lateral checkpoint in both mirrored layouts");
+                    "clock/spawn faces the forward traverse goal in both mirrored layouts");
         }
         Location rotated = new Location(null, 23.5, 100, 50.5, 90, 0);
         Location frame = ParkourGuide.frameOrigin(rotated, 3);
         check(
                 frame.getYaw() == 0 && frame.getX() == 22 && frame.getZ() == 47,
-                "narrow goal overlay remains aligned when the following task goes sideways");
+                "narrow goal overlay remains aligned independently of the checkpoint yaw");
         me.petr1furious.potatominigames.i18n.I18n.register();
         try {
             for (double rise : new double[] {-44, 0, 64}) {
@@ -347,14 +508,14 @@ public final class ParkourRaceCheck {
     private static void expandedTasks() {
         var course =
                 course(
-                        ParkourCourse.Kind.LEAPING_PILLARS,
+                        ParkourCourse.Kind.LOW_CEILING,
                         ParkourCourse.Kind.RIPTIDE_LAUNCH,
                         ParkourCourse.Kind.BOAT_WATER,
-                        ParkourCourse.Kind.MINECART_RIDE,
-                        ParkourCourse.Kind.SLOW_FALLING,
+                        ParkourCourse.Kind.BOAT_ICE,
+                        ParkourCourse.Kind.HONEY_TRAVERSE,
                         ParkourCourse.Kind.WIND_HOPS);
         for (int stage = 0; stage < course.stages(); stage++) {
-            var from = course.island(stage);
+            var from = course.island(stage).obstacleStart();
             var to = course.island(stage + 1);
             check(
                     course.attempt(stage, to.centerX(), to.y() + 1, to.z() + 3.5),
@@ -370,24 +531,6 @@ public final class ParkourRaceCheck {
                 }
             }
         }
-        check(!course.states().isEmpty(), "rail task includes native block states");
-        for (var state : course.states().entrySet()) {
-            check(
-                    course.blocks().get(state.getKey()) == Material.POWERED_RAIL,
-                    "native rail properties only apply to rail blocks");
-            check(
-                    state.getValue().contains("shape=north_south")
-                            && state.getValue().contains("powered=true"),
-                    "cart rails remain straight and powered on initial construction");
-        }
-        var leap = course.island(0);
-        check(
-                course.blocks()
-                                .get(
-                                        new ParkourCourse.Pos(
-                                                (int) leap.centerX(), leap.y() + 2, leap.z() + 9))
-                        == Material.LIGHT_BLUE_CONCRETE,
-                "leaping task has a two-block first rise rather than another ordinary bridge");
         var trident = course.supplies(1).getFirst();
         check(
                 trident.material() == Material.TRIDENT
@@ -411,37 +554,6 @@ public final class ParkourRaceCheck {
         } finally {
             me.petr1furious.potatominigames.i18n.I18n.unregister();
         }
-    }
-
-    private static void frostRollback() {
-        var course =
-                course(
-                        ParkourCourse.Kind.FROST_WALKER,
-                        ParkourCourse.Kind.BRIDGE,
-                        ParkourCourse.Kind.WIND_WALL,
-                        ParkourCourse.Kind.WATER_DROP,
-                        ParkourCourse.Kind.SCAFFOLD,
-                        ParkourCourse.Kind.PEARL);
-        UUID owner = new UUID(10, 1), other = new UUID(10, 2);
-        FakeWorld world = new FakeWorld();
-        ParkourArena arena = new ParkourArena(world.world, List.of(owner, other), course);
-        while (!arena.buildSlice(4096)) {}
-        var from = course.island(0);
-        Block water = world.block((int) from.centerX(), from.y(), from.z() + 9);
-        check(
-                arena.rememberFrost(owner, 0, water),
-                "frost walker can journal protected source water in its own section");
-        check(
-                !arena.rememberFrost(other, 0, water) && !arena.rememberFrost(owner, 1, water),
-                "freeze permission does not cross lanes or tasks");
-        water.setType(Material.FROSTED_ICE, false);
-        check(
-                !arena.mutable(owner, 0, water),
-                "temporary frost does not make protected lake terrain mineable");
-        arena.reset(owner);
-        check(
-                water.getType() == Material.WATER && !arena.changed(owner, water),
-                "clock/checkpoint restores frozen terrain to the original water");
     }
 
     @SuppressWarnings("unchecked")
@@ -612,17 +724,16 @@ public final class ParkourRaceCheck {
                         ParkourCourse.Kind.POT_ASCENT,
                         ParkourCourse.Kind.BRIDGE,
                         ParkourCourse.Kind.PEARL);
-        var swim = extras.island(0);
+        var swim = extras.island(0).obstacleStart();
         int center = (int) swim.centerX();
         check(
-                extras.blocks().get(new ParkourCourse.Pos(center, swim.y() + 1, swim.z() + 8))
-                                == Material.WATER
+                !extras.blocks().containsKey(new ParkourCourse.Pos(center, swim.y() + 1, swim.z() + 8))
                         && extras.blocks()
                                         .get(
                                                 new ParkourCourse.Pos(
                                                         center, swim.y() + 2, swim.z() + 8))
                                 == Material.DEEPSLATE_TILES,
-                "Swim geometry follows its sampled index");
+                "The dry swim passage and its protected ceiling follow the sampled index");
         var bounce = extras.island(1);
         check(
                 extras.blocks()
@@ -647,8 +758,19 @@ public final class ParkourRaceCheck {
                                     ParkourCourse.Kind.BLOCK_ASCENT,
                                     ParkourCourse.Kind.PEARL),
                             mirror);
-            var from = course.island(3);
+            var from = course.island(3).obstacleStart();
             int center = (int) from.centerX(), start = from.z() + 7, end = course.island(4).z() - 1;
+            check(
+                    course.supplies(3)
+                            .equals(List.of(new ParkourCourse.Supply(Material.WATER_BUCKET, 1))),
+                    "The dry swim task grants one full water bucket");
+            check(
+                    course.blocks().entrySet().stream()
+                            .noneMatch(entry ->
+                                    entry.getValue() == Material.WATER
+                                            && entry.getKey().z() >= from.z() + 4
+                                            && entry.getKey().z() <= end),
+                    "Both the entrance and the full tunnel start without generated water");
             var pending = new java.util.ArrayDeque<ParkourCourse.Pos>();
             var seen = new java.util.HashSet<ParkourCourse.Pos>();
             pending.add(new ParkourCourse.Pos(center, from.y() + 1, start));
@@ -656,15 +778,15 @@ public final class ParkourRaceCheck {
                 var pos = pending.removeFirst();
                 if (pos.z() < start
                         || pos.z() > end
-                        || !seen.add(pos)
-                        || course.blocks().get(pos) != Material.WATER) continue;
+                        || course.blocks().containsKey(pos)
+                        || !seen.add(pos)) continue;
                 for (int[] step : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}})
                     pending.add(
                             new ParkourCourse.Pos(pos.x() + step[0], pos.y(), pos.z() + step[1]));
             }
             check(
                     seen.contains(new ParkourCourse.Pos(center, from.y() + 1, end)),
-                    "Swimmers retain a connected route through every baffle in both lane layouts");
+                    "The dry passage stays connected through every baffle in both lane layouts");
             int gates = 0, lastOpening = 0;
             for (int z = start; z <= end; z++) {
                 int blocked = 0, opening = 0;
@@ -682,6 +804,83 @@ public final class ParkourRaceCheck {
                 gates++;
             }
             check(gates == 4, "The tunnel requires four swimming detours");
+            FakeWorld world = new FakeWorld();
+            UUID id = new UUID(12, 1);
+            ParkourArena arena = new ParkourArena(world.world, List.of(id), course);
+            check(
+                    !arena.mutable(id, 3, world.block(center + 2, from.y() + 1, start))
+                            && !arena.mutable(id, 3, world.block(center, from.y() + 1, start + 3)),
+                    "Water placement cannot replace the shell or a swimming barrier");
+            List<Block> water =
+                    List.of(
+                            world.block(center, from.y() + 1, from.z() + 5),
+                            world.block(center, from.y() + 1, start + 1),
+                            world.block(center, from.y() + 1, start + 4));
+            for (Block block : water) {
+                check(
+                        block.getType() == Material.AIR
+                                && arena.remember(id, 3, block, block.getBlockData()),
+                        "The bucket and water flow can modify the dry entry and passage");
+                block.setType(Material.WATER, false);
+            }
+            Block source = water.getFirst();
+            check(
+                    arena.remember(id, 3, source, source.getBlockData()),
+                    "The source can be retrieved without replacing its original air baseline");
+            source.setType(Material.AIR, false);
+            arena.reset(id);
+            for (Block block : water)
+                check(
+                        block.getType() == Material.AIR && !arena.changed(id, block),
+                        "Reset removes placed sources and flow and restores a completely dry"
+                                + " tunnel");
+        }
+    }
+
+    private static void iceRoute() {
+        for (boolean mirror : List.of(false, true)) {
+            var course = layout(List.of(ParkourCourse.Kind.BOAT_ICE), mirror);
+            var from = course.island(0);
+            var to = course.island(1);
+            int center = (int) from.centerX(), start = from.z() + 7, end = to.z() - 1;
+            var distances = new HashMap<ParkourCourse.Pos, Integer>();
+            var pending = new java.util.ArrayDeque<ParkourCourse.Pos>();
+            var first = new ParkourCourse.Pos(center, from.y(), start);
+            distances.put(first, 0);
+            pending.add(first);
+            while (!pending.isEmpty()) {
+                var pos = pending.removeFirst();
+                for (int[] step : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                    var next = new ParkourCourse.Pos(pos.x() + step[0], pos.y(), pos.z() + step[1]);
+                    if (next.z() < start
+                            || next.z() > end
+                            || course.blocks().get(next) != Material.BLUE_ICE
+                            || distances.containsKey(next)) continue;
+                    distances.put(next, distances.get(pos) + 1);
+                    pending.add(next);
+                }
+            }
+            Integer length = distances.get(new ParkourCourse.Pos(center, from.y(), end));
+            check(
+                    length != null && length >= end - start + 32,
+                    "The ice road is connected and requires substantial turns rather than a"
+                            + " straight shortcut");
+            for (int row : new int[] {start, end}) {
+                int width = 0;
+                for (int x = 0; x < ParkourCourse.WIDTH; x++)
+                    if (course.blocks().get(new ParkourCourse.Pos(x, from.y(), row))
+                            == Material.BLUE_ICE) width++;
+                check(
+                        width == 3,
+                        "The three-block ice road joins both checkpoint islands without a gap");
+            }
+            for (var entry : course.blocks().entrySet()) {
+                var pos = entry.getKey();
+                if (entry.getValue() == Material.BLUE_ICE && pos.z() >= start && pos.z() <= end)
+                    check(
+                            distances.containsKey(pos),
+                            "All ice corners belong to one connected drivable road");
+            }
         }
     }
 
@@ -800,6 +999,13 @@ public final class ParkourRaceCheck {
                         ParkourCourse.Kind.PEARL);
         ParkourArena arena = new ParkourArena(world.world, List.of(id), course);
         Location[] at = {arena.checkpoint(id, 0)};
+        check(
+                course.supplies(0)
+                        .equals(
+                                List.of(
+                                        new ParkourCourse.Supply(Material.ELYTRA, 1),
+                                        new ParkourCourse.Supply(Material.FIREWORK_ROCKET, 1))),
+                "The flight task has exactly one consumable boost, restored by resetting the kit");
         boolean[] grounded = {false}, gliding = {true};
         Player p =
                 (Player)
@@ -854,11 +1060,11 @@ public final class ParkourRaceCheck {
         skipped.clear();
         gliding[0] = true;
         var future = arena.checkpoint(id, 2);
-        var sideways = new org.bukkit.event.player.PlayerMoveEvent(p, at[0], future);
-        session.onPlayerMove(sideways);
+        var skip = new org.bukkit.event.player.PlayerMoveEvent(p, at[0], future);
+        session.onPlayerMove(skip);
         check(
-                sideways.isCancelled() && failed.contains(id),
-                "Cannot fly sideways onto a future checkpoint in the same Z row");
+                skip.isCancelled() && failed.contains(id),
+                "Cannot fly over the traverse to a future checkpoint without landing first");
         failed.clear();
         skipped.clear();
         at[0] = arena.checkpoint(id, 1);

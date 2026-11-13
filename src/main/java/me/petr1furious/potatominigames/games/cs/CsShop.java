@@ -59,5 +59,22 @@ final class CsShop {
         return slots;
     }
 
+    static Map<Integer, CsWeapon> deathmatchSlots() {
+        Map<Integer, CsWeapon> slots = new LinkedHashMap<>();
+        for (var category : CsWeapon.Category.values()) {
+            var weapons =
+                    Arrays.stream(CsWeapon.values())
+                            .filter(w -> w.category == category)
+                            .sorted(
+                                    Comparator.comparingInt((CsWeapon w) -> w.price)
+                                            .thenComparing(w -> w.id))
+                            .toList();
+            if (weapons.size() > 8) throw new IllegalStateException("DM weapon row overflow");
+            for (int i = 0; i < weapons.size(); i++)
+                slots.put(category.ordinal() * 9 + i + 1, weapons.get(i));
+        }
+        return slots;
+    }
+
     private CsShop() {}
 }

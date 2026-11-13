@@ -19,6 +19,7 @@ public final class FinalsGadgetsCheck {
     private static int checks;
 
     public static void main(String[] args) throws Exception {
+        beamHeatLifecycle();
         FinalsGadgetState state = new FinalsGadgetState();
         UUID first = new UUID(0, 1), second = new UUID(0, 2);
         var dash = FinalsGadgetState.Kind.EVASIVE_DASH;
@@ -82,8 +83,67 @@ public final class FinalsGadgetsCheck {
         System.out.println("FinalsGadgetsCheck: " + checks + " checks passed");
     }
 
+    private static void beamHeatLifecycle() throws Exception {
+        FinalsGadgetState state = new FinalsGadgetState();
+        UUID actor = new UUID(0, 101), other = new UUID(0, 102);
+        Method tick;
+        try {
+            tick =
+                    FinalsGadgetState.class.getDeclaredMethod(
+                            "beamTick", UUID.class, boolean.class, long.class);
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError(
+                    "Healing Beam needs sustained heat instead of a fixed three-second charge",
+                    missing);
+        }
+        Method heat = FinalsGadgetState.class.getDeclaredMethod("beamHeat", UUID.class);
+        Method overheated = FinalsGadgetState.class.getDeclaredMethod("beamOverheated", UUID.class);
+        tick.setAccessible(true);
+        heat.setAccessible(true);
+        overheated.setAccessible(true);
+        for (long now = 0; now < 160; now++)
+            check(
+                    (boolean) tick.invoke(state, actor, true, now),
+                    "Sustained healing remains usable through eight seconds");
+        check(
+                (int) heat.invoke(state, actor) == 160 && (boolean) overheated.invoke(state, actor),
+                "Eight seconds of actual healing fills the heat bar and overheats");
+        check(
+                !(boolean) tick.invoke(state, actor, true, 159)
+                        && (int) heat.invoke(state, actor) == 160,
+                "Duplicate input in the same tick cannot heat or cool twice");
+        for (long now = 160; now < 240; now++)
+            check(
+                    !(boolean) tick.invoke(state, actor, true, now),
+                    "Holding through overheat cannot bypass cooling");
+        check(
+                (int) heat.invoke(state, actor) == 0 && !(boolean) overheated.invoke(state, actor),
+                "Overheat clears after four seconds of cooling");
+        check((boolean) tick.invoke(state, actor, true, 240), "The cooled beam can heal again");
+        check((int) heat.invoke(state, other) == 0, "Beam heat is isolated per player");
+        tick.invoke(state, actor, false, 241L);
+        check((int) heat.invoke(state, actor) == 0, "Releasing the trigger cools partial heat");
+        tick.invoke(state, actor, true, 242L);
+        state.forget(actor);
+        check((int) heat.invoke(state, actor) == 0, "Death and respawn clear the beam's heat");
+        tick.invoke(state, other, true, 243L);
+        state.clear();
+        check((int) heat.invoke(state, other) == 0, "Session cleanup clears all heat");
+    }
+
     private static void defibrillatorTargetSelection() throws Exception {
         Fixture f = new Fixture();
+        f.aimedDefib = true;
+        check(
+                (boolean)
+                        invoke(
+                                f.gadgets,
+                                "defibrillate",
+                                new Class<?>[] {Player.class},
+                                f.red.player),
+                "An accepted statue hit bypasses the legacy death-point center-distance and LOS"
+                        + " gate");
+        f.aimedDefib = false;
         FakePlayer farther = f.player(4, 0);
         f.redMate.location.setX(1);
         farther.location.setX(3);
@@ -473,6 +533,7 @@ public final class FinalsGadgetsCheck {
         final Set<UUID> carriers = new HashSet<>();
         final Set<UUID> awaiting = new HashSet<>();
         UUID reviveTarget;
+        boolean aimedDefib;
         Player revived;
         final World world =
                 proxy(
@@ -519,6 +580,7 @@ public final class FinalsGadgetsCheck {
                                         if (accepted) revived = target;
                                         yield accepted;
                                     }
+                                    case "defibrillateAimed" -> aimedDefib;
                                     case "playerClass" -> FinalsClass.LIGHT;
                                     default -> defaultValue(method.getReturnType());
                                 });

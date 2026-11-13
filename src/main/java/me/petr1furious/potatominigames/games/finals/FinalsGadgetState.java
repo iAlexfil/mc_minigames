@@ -185,6 +185,40 @@ final class FinalsGadgetState {
     }
 
     private final Map<UUID, EnumMap<Kind, Resource>> resources = new HashMap<>();
+    static final int BEAM_MAX_HEAT = 160;
+
+    private static final class BeamHeat {
+        int heat;
+        boolean overheated;
+        long updated = Long.MIN_VALUE;
+    }
+
+    private final Map<UUID, BeamHeat> beams = new HashMap<>();
+
+    /** One unit per healing tick; two units cool per idle tick, including overheat lockout. */
+    boolean beamTick(UUID player, boolean healing, long now) {
+        BeamHeat beam = beams.computeIfAbsent(player, ignored -> new BeamHeat());
+        if (beam.updated == now) return false;
+        beam.updated = now;
+        if (healing && !beam.overheated) {
+            beam.heat = Math.min(BEAM_MAX_HEAT, beam.heat + 1);
+            beam.overheated = beam.heat == BEAM_MAX_HEAT;
+            return true;
+        }
+        beam.heat = Math.max(0, beam.heat - 2);
+        if (beam.heat == 0) beam.overheated = false;
+        return false;
+    }
+
+    int beamHeat(UUID player) {
+        BeamHeat beam = beams.get(player);
+        return beam == null ? 0 : beam.heat;
+    }
+
+    boolean beamOverheated(UUID player) {
+        BeamHeat beam = beams.get(player);
+        return beam != null && beam.overheated;
+    }
 
     private Resource resource(UUID player, Kind kind, long now) {
         Resource resource =
@@ -227,10 +261,12 @@ final class FinalsGadgetState {
 
     void forget(UUID player) {
         resources.remove(player);
+        beams.remove(player);
     }
 
     void clear() {
         resources.clear();
+        beams.clear();
     }
 
     static boolean crossesDome(

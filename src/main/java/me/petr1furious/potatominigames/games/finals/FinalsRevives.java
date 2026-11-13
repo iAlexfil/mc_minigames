@@ -230,6 +230,11 @@ final class FinalsRevives implements Listener {
         return statue != null && begin(reviver, statue, true);
     }
 
+    boolean defibrillateAimed(Player reviver) {
+        Statue statue = aimed(reviver, 4, true);
+        return statue != null && begin(reviver, statue, true);
+    }
+
     private boolean begin(Player actor, Statue statue, boolean defibrillator) {
         if (!context.canAct(actor)
                 || carrying(actor.getUniqueId())

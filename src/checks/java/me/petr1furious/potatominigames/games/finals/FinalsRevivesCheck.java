@@ -28,7 +28,7 @@ public final class FinalsRevivesCheck {
         check(
                 f.completed == 0 && call(f.helper, "location", f.targetId) != null,
                 "Passing the individual respawn unlock never removes a statue or automatically"
-                    + " revives it");
+                        + " revives it");
         check(
                 (boolean) call(f.helper, "interact", f.actor),
                 "Sneak-right-click starts a manual revive on the aimed ally");
@@ -64,8 +64,13 @@ public final class FinalsRevivesCheck {
         f = new Fixture();
         f.sneaking = false;
         check(
-                (boolean) call(f.helper, "defibrillate", f.actor, f.targetId),
-                "Defibrillator accepts a valid aimed downed teammate");
+                (boolean) call(f.helper, "defibrillateAimed", f.actor),
+                "Defibrillator selects the valid physical statue directly");
+        f.now = 10;
+        check(
+                !(boolean) call(f.helper, "defibrillateAimed", f.actor),
+                "Repeated right-click input cannot restart or charge twice for an accepted"
+                        + " channel");
         f.now = 19;
         call(f.helper, "tick");
         check(

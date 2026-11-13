@@ -194,6 +194,7 @@ public final class FinalsSpecializationsSmoke {
             for (int x = 900; x <= 920; x++)
                 for (int y = 101; y <= 106; y++)
                     for (int z = 900; z <= 920; z++) set(x, y, z, Material.AIR);
+            healingBeamChecks(red, ally);
             red.target = world.getBlockAt(906, 100, 906);
             check(
                     activate(red, "GUARDIAN_TURRET"),
@@ -301,7 +302,7 @@ public final class FinalsSpecializationsSmoke {
             check(
                     blue.health < 25 && ally.health == 25,
                     "Gas damages enemies through the attributed combat path without friendly"
-                        + " damage");
+                            + " damage");
             detonate(red, "PYRO_GRENADE", blue.location);
             check(
                     ((List<?>) field(effects, "clouds")).size() == 1,
@@ -341,14 +342,14 @@ public final class FinalsSpecializationsSmoke {
             check(
                     hole.getType() == Material.STONE,
                     "The original wall returns after goo placed inside a dematerialized opening"
-                        + " expires");
+                            + " expires");
             check(activate(red, "DEMATERIALIZER"), "A third dematerialization succeeds");
             hole.setType(Material.WATER, false);
             tick(922);
             check(
                     hole.getType() == Material.STONE,
                     "Fluid flowing into a dematerialized opening does not discard its original"
-                        + " wall");
+                            + " wall");
             check(
                     activate(red, "DEMATERIALIZER"),
                     "A later dematerialization still works after fluid restoration");
@@ -366,7 +367,7 @@ public final class FinalsSpecializationsSmoke {
             check(
                     !(boolean) call(effects, "clearMovement", red.player, new Vector(.4, 0, .4)),
                     "Movement checks the complete shoulder/head volume against an off-center voxel"
-                        + " obstacle");
+                            + " obstacle");
             set(903, 102, 903, Material.AIR);
             check(
                     (boolean) call(effects, "clearMovement", red.player, new Vector(.4, 0, .4)),
@@ -433,12 +434,153 @@ public final class FinalsSpecializationsSmoke {
         }
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void healingBeamChecks(P medic, P ally) throws Exception {
+        Object medium = Enum.valueOf((Class) type("FinalsClass"), "MEDIUM");
+        call(gadgets, "equip", medic.player, medium);
+        check(
+                (boolean) call(gadgets, "usingHealingBeam", medic.player),
+                "The real equipped specialization item is recognized as Healing Beam");
+        healingEntityInputChecks(medic, ally);
+        call(gadgets, "equip", medic.player, medium);
+        Object resource = field(gadgets, "resources");
+        for (int tick = 0; tick < 160; tick++) {
+            now = tick;
+            medic.health = 1;
+            if (tick % 4 == 0) beamInput(medic);
+            call(gadgets, "tick");
+            if (tick == 80)
+                check(
+                        medic.health > 1,
+                        "Repeated held-right-click input continues healing beyond the former"
+                                + " three-second limit");
+        }
+        check(
+                (boolean) call(resource, "beamOverheated", medic.id)
+                        && (int) call(resource, "beamHeat", medic.id) == 160,
+                "Eight seconds of real healing fills the heat meter and enters overheat");
+        Class<?> i18n =
+                Class.forName(
+                        "me.petr1furious.potatominigames.i18n.I18n",
+                        true,
+                        main.getClass().getClassLoader());
+        String bar =
+                (String)
+                        i18n.getMethod(
+                                        "plain",
+                                        net.kyori.adventure.text.Component.class,
+                                        Locale.class)
+                                .invoke(null, call(gadgets, "hud", medic.player), Locale.ENGLISH);
+        check(
+                bar.contains("OVERHEATED") && bar.contains("▰"),
+                "The actual localized actionbar includes the overheat state and visible meter");
+        medic.health = 1;
+        for (int tick = 160; tick < 240; tick++) {
+            now = tick;
+            if (tick % 4 == 0) beamInput(medic);
+            call(gadgets, "tick");
+        }
+        check(
+                medic.health == 1 && !(boolean) call(resource, "beamOverheated", medic.id),
+                "Holding right-click cannot heal through the complete four-second overheat"
+                        + " cooldown");
+        now = 240;
+        beamInput(medic);
+        call(gadgets, "tick");
+        check(medic.health > 1, "The cooled beam resumes healing on held input");
+        for (int tick = 241; tick <= 246; tick++) tick(tick);
+        double afterRelease = medic.health;
+        tick(248);
+        check(
+                medic.health == afterRelease,
+                "Releasing right-click expires the short hold window and stops healing");
+        now = 252;
+        beamInput(medic);
+        call(gadgets, "tick");
+        double beforeSwitch = medic.health;
+        medic.slot = 0;
+        tick(253);
+        medic.slot = 4;
+        tick(256);
+        check(
+                medic.health == beforeSwitch,
+                "Switching slots cancels the held beam without automatic restart");
+        medic.lineOfSight = false;
+        now = 260;
+        beamInput(medic);
+        call(gadgets, "tick");
+        check(
+                medic.health == beforeSwitch,
+                "Lost line of sight prevents an active beam from healing");
+        medic.lineOfSight = true;
+        call(gadgets, "clear");
+        medic.health = 25;
+        now = 0;
+    }
+
+    private void healingEntityInputChecks(P medic, P ally) throws Exception {
+        // Only event routing is needed: the gadget retains its fully configured native context.
+        Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object session =
+                ((sun.misc.Unsafe) unsafeField.get(null)).allocateInstance(type("FinalsSession"));
+        Field sessionGadgets = type("FinalsSession").getDeclaredField("gadgets");
+        sessionGadgets.setAccessible(true);
+        sessionGadgets.set(session, gadgets);
+        Location previous = medic.location.clone();
+        medic.location.setDirection(
+                ally.player
+                        .getEyeLocation()
+                        .toVector()
+                        .subtract(medic.player.getEyeLocation().toVector()));
+        ally.health = 1;
+        now = 0;
+        var entityInput =
+                new org.bukkit.event.player.PlayerInteractEntityEvent(
+                        medic.player, ally.player, EquipmentSlot.HAND);
+        call(session, "onPlayerInteractEntity", entityInput);
+        call(gadgets, "tick");
+        check(
+                entityInput.isCancelled() && ally.health > 1,
+                "The actual Session entity-interaction route starts healing the directly clicked"
+                    + " teammate");
+        double firstHeal = ally.health;
+        now = 4;
+        var atInput =
+                new org.bukkit.event.player.PlayerInteractAtEntityEvent(
+                        medic.player, ally.player, new Vector(0, 1, 0), EquipmentSlot.HAND);
+        call(session, "onPlayerInteractEntity", atInput);
+        call(gadgets, "tick");
+        check(
+                atInput.isCancelled() && ally.health > firstHeal,
+                "The interaction-at-entity subtype also refreshes held healing input without a"
+                    + " separate air click");
+        medic.location = previous;
+        ally.health = 25;
+        now = 0;
+    }
+
+    private void beamInput(P player) throws Exception {
+        var event =
+                new org.bukkit.event.player.PlayerInteractEvent(
+                        player.player,
+                        org.bukkit.event.block.Action.RIGHT_CLICK_AIR,
+                        player.items[player.slot],
+                        null,
+                        BlockFace.UP,
+                        EquipmentSlot.HAND);
+        check(
+                (boolean) call(gadgets, "interact", event) && event.isCancelled(),
+                "The actual beam item handles right-click input");
+    }
+
     private final class P {
         final UUID id = UUID.randomUUID();
         final int team;
         final Player player;
         final Set<UUID> hidden = new HashSet<>();
         final Map<PotionEffectType, PotionEffect> potions = new HashMap<>();
+        final ItemStack[] items = new ItemStack[9];
         Location location;
         Vector velocity = new Vector();
         Block target;
@@ -455,9 +597,15 @@ public final class FinalsSpecializationsSmoke {
                                     PlayerInventory.class.getClassLoader(),
                                     new Class<?>[] {PlayerInventory.class},
                                     (o, m, a) ->
-                                            m.getName().equals("getHeldItemSlot")
-                                                    ? slot
-                                                    : zero(m.getReturnType()));
+                                            switch (m.getName()) {
+                                                case "getHeldItemSlot" -> slot;
+                                                case "getItemInMainHand" -> items[slot];
+                                                case "setItem" -> {
+                                                    items[(int) a[0]] = (ItemStack) a[1];
+                                                    yield null;
+                                                }
+                                                default -> zero(m.getReturnType());
+                                            });
             player =
                     (Player)
                             Proxy.newProxyInstance(

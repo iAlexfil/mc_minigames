@@ -157,8 +157,25 @@ movement, reflected/generic damage scopes and cleanup, all three regeneration
 delays, accepted versus cancelled hits, and the ten-minute default migration.
 The player transport remains simulated. The test server shut down after the run.
 
-The following music-continuity change uses a private empty TextDisplay to move an
-already-playing disc outside hearing range without stopping it. Music fixture
-sources now cover tracking before first playback, radius exit/reentry without
-restarts, and emitter cleanup. These updated fixtures were not run after the
-user requested no further checks; the build/hash above predates this music change.
+The interaction, class-size and sustained-healing update on 2026-11-13 passed
+**854 native gameplay assertions** against JAR SHA-256
+`e1650e714d1a0fd731ded308fc585c3888eb08f6f5239959e7161aebc4f54318`:
+134 highlights, 132 specializations, 37 revives, and 551 loadout/lifecycle checks.
+Coverage includes Light/Heavy scale application and original-size restoration,
+removed pickaxes, continuous Healing Beam input through air and both entity-click
+events, heat/cooling and interruption, aimed-statue defibrillation, and distant
+private markers that return to normal nearby geometry. The full 57-task Gradle
+build passed; after adding the entity-click bridge, assembly and the relevant
+gadget, session and i18n checks passed again (311 gadget and 380 session assertions).
+Native entities, inventories and attributes use simulated player transport;
+these checks do not replace visual testing with connected Minecraft clients.
+
+The music-continuity fixture also passed **147 configuration/lifecycle assertions**
+against that same JAR after checks were authorized again. It covers tracking before
+first playback, radius exit/reentry without restarts, and emitter cleanup. The
+fixture explicitly loads fake listeners' chunks, as real connected players do;
+otherwise native displays in unloaded chunks are invalid and do not represent
+actual tracked playback. The private empty TextDisplay moves an already-playing
+disc outside hearing range without stopping it. Player transport remains
+simulated, and no client audio capture was performed. The test server shut down
+afterward.

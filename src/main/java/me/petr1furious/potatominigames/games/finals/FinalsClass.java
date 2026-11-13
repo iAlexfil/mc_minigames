@@ -10,18 +10,20 @@ import java.util.Locale;
 
 /** Minecraft health and movement adaptation of the three contestant builds. */
 enum FinalsClass {
-    LIGHT("light", 15, .24f),
-    MEDIUM("medium", 25, .20f),
-    HEAVY("heavy", 35, .17f);
+    LIGHT("light", 15, .24f, .8),
+    MEDIUM("medium", 25, .20f, 1),
+    HEAVY("heavy", 35, .17f, 1.25);
 
     private final String id;
     private final double health;
     private final float walkSpeed;
+    private final double scale;
 
-    FinalsClass(String id, double health, float walkSpeed) {
+    FinalsClass(String id, double health, float walkSpeed, double scale) {
         this.id = id;
         this.health = health;
         this.walkSpeed = walkSpeed;
+        this.scale = scale;
     }
 
     String id() {
@@ -34,6 +36,10 @@ enum FinalsClass {
 
     float walkSpeed() {
         return walkSpeed;
+    }
+
+    double scale() {
+        return scale;
     }
 
     Component display() {

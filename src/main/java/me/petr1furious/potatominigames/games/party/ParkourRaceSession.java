@@ -444,8 +444,18 @@ final class ParkourRaceSession extends PartySurvivalSession {
     @Override
     protected void handleBlockPlace(BlockPlaceEvent event) {
         Player p = event.getPlayer();
-        if (!editable(p, event.getBlock())
-                || !BUILDING.contains(event.getBlock().getType())
+        if (!editable(p, event.getBlock())) {
+            event.setCancelled(true);
+            return;
+        }
+        // SolidBucketItem places powder snow through BlockPlaceEvent, not the water-bucket
+        // path. Keep the snow restricted to its own task and journal it like other placements.
+        boolean powderSnow =
+                event.getBlock().getType() == Material.POWDER_SNOW
+                        && event.getItemInHand().getType() == Material.POWDER_SNOW_BUCKET
+                        && course.stage(race.checkpoint(p.getUniqueId()))
+                                == ParkourCourse.Kind.POWDER_SNOW_DROP;
+        if (!BUILDING.contains(event.getBlock().getType()) && !powderSnow
                 || !arena.remember(
                         p.getUniqueId(),
                         race.checkpoint(p.getUniqueId()),

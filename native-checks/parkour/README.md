@@ -6,6 +6,9 @@ inventories and repeated attempt refills. Native inventory events exercise the
 open/click permissions for falling owners, rivals, grounded players, stale views,
 hotbar transfers, shift-click and clock protection. It also verifies dry tunnel
 water rollback and the production rocket's Flight Duration 2 metadata.
+The powder-snow bucket regression uses the real `BlockPlaceEvent` path, checking
+placement on its own task, rejection on other tasks/lanes and protected terrain,
+and restoration of air on reset.
 
 Run only on a disposable Paper server with Java 25. Bind to localhost, disable
 RCON/query/status/management, use offline mode with an enforced whitelist, set
@@ -53,4 +56,25 @@ Disposable Paper copy SHA-256 (both versions, with the ASP API workaround):
 
 ```text
 5e715b50881848ef03f756e7c544c4e0246b7756914756d99ad421e793270082
+```
+
+## Powder-snow fix validation
+
+On 2026-11-14, full builds passed for 26.2 and 26.3 against upstream `047bd59`,
+including i18n, Parkour Sprint and 6,122 CS assertions. Native Paper 26.2 #135
+and 26.3 #249 each passed **27 assertions**. The additional cases exercise the
+actual powder-snow `BlockPlaceEvent` handler, task/lane/terrain restrictions,
+and reset cleanup. Native terrain and events are real; player transport is
+substituted as described above.
+
+Production JAR SHA-256 (both classifiers):
+
+```text
+27587921163fe5c2f68410b9ff6b5fbea0b6d9287dd750a3bc2e46b1302a5100
+```
+
+Disposable Paper copy SHA-256 (both versions, ASP API workaround only):
+
+```text
+a396b79923cf2280c4cfd6d20b3a251d510fe1cd0668075519cc7e797bc19adf
 ```

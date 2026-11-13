@@ -1,6 +1,9 @@
 import org.bukkit.*;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.entity.Player;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.*;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.FireworkMeta;
@@ -48,7 +51,7 @@ public final class ParkourSmoke extends JavaPlugin {
                                                 "FLIGHT",
                                                 "LADDER_TRAVERSE",
                                                 "POT_ASCENT",
-                                                "WIND_WALL"))
+                                                "POWDER_SNOW_DROP"))
                                     selected.add(
                                             Arrays.stream(kind.getEnumConstants())
                                                     .filter(k -> k.toString().equals(name))
@@ -318,6 +321,110 @@ public final class ParkourSmoke extends JavaPlugin {
                                 InventoryAction.HOTBAR_SWAP,
                                 0),
                 "Advancing the checkpoint invalidates the previous chest view");
+        powderSnowPlacement(session, player, race);
+    }
+
+    private void powderSnowPlacement(Object session, Player player, Object race) throws Exception {
+        Object swim = call(course, "island", new Class<?>[] {int.class}, 1);
+        int x = (int) (double) call(swim, "centerX", new Class<?>[0]);
+        int y = (int) call(swim, "y", new Class<?>[0]) + 1;
+        int z =
+                (int) call(swim, "z", new Class<?>[0])
+                        + (int) call(swim, "depth", new Class<?>[0])
+                        + 1;
+        Block wrongTask = world.getBlockAt(x, y, z);
+        var before = wrongTask.getState();
+        wrongTask.setType(Material.POWDER_SNOW, false);
+        var denied =
+                new BlockPlaceEvent(
+                        wrongTask,
+                        before,
+                        wrongTask.getRelative(BlockFace.DOWN),
+                        new ItemStack(Material.POWDER_SNOW_BUCKET),
+                        player,
+                        true,
+                        EquipmentSlot.HAND);
+        call(session, "handleBlockPlace", new Class<?>[] {BlockPlaceEvent.class}, denied);
+        require(denied.isCancelled(), "A powder snow bucket cannot place snow on the swim task");
+        wrongTask.setBlockData(before.getBlockData(), false);
+
+        for (int checkpoint = 2; checkpoint <= 6; checkpoint++)
+            call(
+                    race,
+                    "reach",
+                    new Class<?>[] {UUID.class, int.class, long.class},
+                    alice,
+                    checkpoint,
+                    checkpoint * 100L);
+        Location goal =
+                (Location)
+                        call(arena, "checkpoint", new Class<?>[] {UUID.class, int.class}, alice, 7);
+        Block snow = goal.getBlock();
+        before = snow.getState();
+        require(
+                snow.getType() == Material.AIR,
+                "The snow clutch has clear air above its landing deck");
+        snow.setType(Material.POWDER_SNOW, false);
+        var placed =
+                new BlockPlaceEvent(
+                        snow,
+                        before,
+                        snow.getRelative(BlockFace.DOWN),
+                        new ItemStack(Material.POWDER_SNOW_BUCKET),
+                        player,
+                        true,
+                        EquipmentSlot.HAND);
+        call(session, "handleBlockPlace", new Class<?>[] {BlockPlaceEvent.class}, placed);
+        require(
+                !placed.isCancelled()
+                        && (boolean)
+                                call(
+                                        arena,
+                                        "changed",
+                                        new Class<?>[] {UUID.class, Block.class},
+                                        alice,
+                                        snow),
+                "The real BlockPlaceEvent path accepts and journals the snow bucket on its own"
+                    + " task");
+        call(arena, "reset", new Class<?>[] {UUID.class}, alice);
+        require(snow.getType() == Material.AIR, "Clock reset removes the placed powder snow");
+
+        Block floor = snow.getRelative(BlockFace.DOWN);
+        before = floor.getState();
+        floor.setType(Material.POWDER_SNOW, false);
+        var terrain =
+                new BlockPlaceEvent(
+                        floor,
+                        before,
+                        floor.getRelative(BlockFace.DOWN),
+                        new ItemStack(Material.POWDER_SNOW_BUCKET),
+                        player,
+                        true,
+                        EquipmentSlot.HAND);
+        call(session, "handleBlockPlace", new Class<?>[] {BlockPlaceEvent.class}, terrain);
+        require(
+                terrain.isCancelled(),
+                "The snow bucket cannot replace protected checkpoint terrain");
+        floor.setBlockData(before.getBlockData(), false);
+
+        Location other =
+                (Location)
+                        call(arena, "checkpoint", new Class<?>[] {UUID.class, int.class}, bob, 7);
+        Block foreign = other.getBlock();
+        before = foreign.getState();
+        foreign.setType(Material.POWDER_SNOW, false);
+        var rival =
+                new BlockPlaceEvent(
+                        foreign,
+                        before,
+                        foreign.getRelative(BlockFace.DOWN),
+                        new ItemStack(Material.POWDER_SNOW_BUCKET),
+                        player,
+                        true,
+                        EquipmentSlot.HAND);
+        call(session, "handleBlockPlace", new Class<?>[] {BlockPlaceEvent.class}, rival);
+        require(rival.isCancelled(), "The snow bucket cannot modify another racer's lane");
+        foreign.setBlockData(before.getBlockData(), false);
     }
 
     private InventoryView view(Player player, Inventory top, PlayerInventory bottom) {

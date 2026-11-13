@@ -92,6 +92,11 @@ public final class CsGrenadeSmoke extends JavaPlugin {
                                 // The old untyped FLASH call throws from CraftParticle here, even
                                 // with no clients.
                                 detonate.invoke(grenades, payload);
+                                getLogger()
+                                        .info(
+                                                "CS_SPAWN_SMOKE_PASS: "
+                                                        + CsSpawnSmoke.run(loader, world)
+                                                        + " native assertions");
                                 CsScopeSmoke.run(loader, world);
                                 getLogger().info("CS_SCOPE_SMOKE_PASS");
                                 CsVisualSmoke.run(loader, world);

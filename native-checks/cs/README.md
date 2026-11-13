@@ -12,7 +12,7 @@ disable RCON/query/status/management, use offline mode with an enforced whitelis
 set `pause-when-empty-seconds=-1`, and disable the plugin's lobby and ASP map
 storage in that disposable configuration. Compile this source against the
 server's Paper API and dependency JARs, including `CsGrenadeSmoke.java`,
-`CsScopeSmoke.java` and `CsVisualSmoke.java`; package all classes with `plugin.yml`, and
+`CsScopeSmoke.java`, `CsVisualSmoke.java` and `CsSpawnSmoke.java`; package all classes with `plugin.yml`, and
 put it beside the built PotatoMinigames JAR in `plugins/`.
 
 Start the server normally. The fixture writes `plugins/CsGrenadeSmoke/result.txt`
@@ -160,3 +160,34 @@ Deathmatch rules, loadouts, ranking, timer, protections, menu/queue wiring and
 imported-map spawn geometry are covered by server-free checks. Native fixtures
 still use simulated player transport; they do not exercise a complete connected
 client match. The client playtest checklist above remains outstanding.
+
+## Imported-map spawn regression
+
+`CsSpawnSmoke` builds the full imported Dust II in the disposable world and
+checks every classic pool slot across shuffled rounds, every distributed
+Deathmatch candidate, maximum-distance selection across twenty respawns, and
+fallback selection after obstructing a candidate in each mode. It uses Paper's
+native block passability and floor support, including slabs and stairs. Success
+logs `CS_SPAWN_SMOKE_PASS` with the assertion count. Use a fresh disposable world
+for this run so terrain left by another fixture cannot overlap the map. It
+validates spawn selection and geometry; no connected-client match is simulated.
+
+On 2026-11-14, Paper 26.2 #135 and 26.3 #249 each passed **2,838 native spawn
+assertions**, followed by `CS_SCOPE_SMOKE_PASS`, `CS_VISUAL_SMOKE_PASS` and
+`CS_GRENADE_SMOKE_PASS`. Both disposable servers shut down cleanly. Full builds
+for both classifiers passed all 57 tasks, including i18n and 6,122 CS assertions.
+The production JAR SHA-256 was identical for both classifiers:
+
+```text
+27587921163fe5c2f68410b9ff6b5fbea0b6d9287dd750a3bc2e46b1302a5100
+```
+
+The disposable copies with the ASP API workaround had SHA-256:
+
+```text
+a396b79923cf2280c4cfd6d20b3a251d510fe1cd0668075519cc7e797bc19adf
+```
+
+Logs and runtime worlds are kept outside Git. Production artifacts contain no
+fixture or ASP workaround classes. Connected-client spawn timing still requires
+an actual match playtest.

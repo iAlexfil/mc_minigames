@@ -43,6 +43,7 @@ public final class CsCheck {
         rounds();
         mr12();
         lifecycle();
+        spawnTraversal();
         importedMap();
         smokeGeometry();
         System.out.println("CsCheck: " + checks + " checks passed");
@@ -1124,6 +1125,22 @@ public final class CsCheck {
                 "practice does not end from missing opponents");
     }
 
+    private static void spawnTraversal() {
+        var from = new CsArena.Pos(0, 82, 0);
+        var belowDeck = new CsArena.Pos(1, 79, 0);
+        check(
+                !CsArena.walkStepClear(Set.of(new CsArena.Pos(1, 81, 0)), from, belowDeck),
+                "a clear foundation cavity cannot be reached through the deck above it");
+        check(
+                CsArena.walkStepClear(Set.of(), from, belowDeck),
+                "an unobstructed drop remains traversable");
+        var upstairs = new CsArena.Pos(1, 83, 0);
+        check(CsArena.walkStepClear(Set.of(), from, upstairs), "an open step remains traversable");
+        check(
+                !CsArena.walkStepClear(Set.of(new CsArena.Pos(0, 84, 0)), from, upstairs),
+                "ascending requires clearance above the starting player");
+    }
+
     private static void importedMap() throws Exception {
         var bp = CsArena.Blueprint.load();
         check(
@@ -1138,6 +1155,7 @@ public final class CsCheck {
                 int x = (int) Math.floor(point.x()),
                         y = (int) point.y(),
                         z = (int) Math.floor(point.z());
+                check(y == 82, "classic starts on the actual street, not the hollow foundation");
                 check(
                         !blocks.containsKey(new CsArena.Pos(x, y, z))
                                 && !blocks.containsKey(new CsArena.Pos(x, y + 1, z)),
@@ -1159,16 +1177,25 @@ public final class CsCheck {
         check(
                 !CsArena.buyPosition(0, .5, 78, 50.5) && !CsArena.buyPosition(1, 93.5, 75, 39.5),
                 "old out-of-spawn road/mid positions no longer extend the buy areas");
+        Set<CsArena.Spawn> teamSpawns = new HashSet<>(CsArena.spawnPoints(0));
+        teamSpawns.addAll(CsArena.spawnPoints(1));
         for (var point : CsArena.deathmatchSpawns()) {
             int x = (int) Math.floor(point.x()),
                     y = (int) point.y(),
                     z = (int) Math.floor(point.z());
+            check(y >= 79, "deathmatch excludes the lower foundation levels");
+            if (!teamSpawns.contains(point))
+                check(
+                        blocks.keySet().stream()
+                                .noneMatch(block ->
+                                        block.x() == x && block.z() == z && block.y() >= y),
+                        "distributed respawns are above the imported deck, never below it");
             check(
                     !blocks.containsKey(new CsArena.Pos(x, y, z))
                             && !blocks.containsKey(new CsArena.Pos(x, y + 1, z))
                             && blocks.containsKey(new CsArena.Pos(x, y - 1, z)),
                     "every distributed deathmatch candidate has two clear body blocks and an"
-                        + " imported floor");
+                            + " imported floor");
         }
         check(
                 blocks.get(new CsArena.Pos(103, 81, 88)).startsWith("minecraft:red_concrete"),

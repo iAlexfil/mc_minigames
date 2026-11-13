@@ -64,30 +64,30 @@ final class CsArena {
     private static final List<List<Spawn>> SPAWNS =
             List.of(
                     List.of(
-                            new Spawn(1.5, 78, 21.5, -90),
-                            new Spawn(-.5, 78, 22.5, -90),
-                            new Spawn(-1.5, 78, 24.5, -90),
-                            new Spawn(-.5, 78, 25.5, -90),
-                            new Spawn(1.5, 78, 26.5, -90),
-                            new Spawn(1.5, 78, 27.5, -90),
-                            new Spawn(-.5, 78, 28.5, -90),
-                            new Spawn(-1.5, 78, 30.5, -90),
-                            new Spawn(-.5, 78, 31.5, -90),
-                            new Spawn(1.5, 78, 32.5, -90),
-                            new Spawn(1.5, 78, 33.5, -90),
-                            new Spawn(-.5, 78, 34.5, -90),
-                            new Spawn(-1.5, 78, 36.5, -90),
-                            new Spawn(-.5, 78, 37.5, -90),
-                            new Spawn(1.5, 78, 38.5, -90)),
+                            new Spawn(1.5, 82, 21.5, -90),
+                            new Spawn(-.5, 82, 22.5, -90),
+                            new Spawn(-1.5, 82, 24.5, -90),
+                            new Spawn(-.5, 82, 25.5, -90),
+                            new Spawn(1.5, 82, 26.5, -90),
+                            new Spawn(1.5, 82, 27.5, -90),
+                            new Spawn(-.5, 82, 28.5, -90),
+                            new Spawn(-1.5, 82, 30.5, -90),
+                            new Spawn(-.5, 82, 31.5, -90),
+                            new Spawn(1.5, 82, 32.5, -90),
+                            new Spawn(1.5, 82, 33.5, -90),
+                            new Spawn(-.5, 82, 34.5, -90),
+                            new Spawn(-1.5, 82, 36.5, -90),
+                            new Spawn(-.5, 82, 37.5, -90),
+                            new Spawn(1.5, 82, 38.5, -90)),
                     List.of(
-                            new Spawn(93.5, 75, 66.5, 180),
-                            new Spawn(95.5, 75, 66.5, 180),
-                            new Spawn(97.5, 75, 63.5, 180),
-                            new Spawn(95.5, 75, 61.5, 180),
-                            new Spawn(93.5, 75, 60.5, 180)));
+                            new Spawn(93.5, 82, 66.5, 180),
+                            new Spawn(95.5, 82, 66.5, 180),
+                            new Spawn(97.5, 82, 63.5, 180),
+                            new Spawn(95.5, 82, 63.5, 180),
+                            new Spawn(93.5, 82, 63.5, 180)));
     private static final org.bukkit.util.BoundingBox[] BUY_ZONES = {
-        new org.bukkit.util.BoundingBox(-3, 77, 19, 4, 81, 40),
-        new org.bukkit.util.BoundingBox(91, 74, 57, 100, 79, 71)
+        new org.bukkit.util.BoundingBox(-3, 81, 19, 4, 85, 40),
+        new org.bukkit.util.BoundingBox(91, 81, 57, 100, 85, 71)
     };
     private final List<List<Spawn>> spawnOrder = new ArrayList<>();
 
@@ -147,13 +147,11 @@ final class CsArena {
 
     Location spawn(int side, int index) {
         var points = spawnOrder.get(side);
-        var p = points.get(Math.floorMod(index, points.size()));
-        Location at = new Location(world, p.x(), p.y(), p.z(), p.yaw(), 0);
-        if (!at.getBlock().isPassable()
-                || !at.clone().add(0, 1, 0).getBlock().isPassable()
-                || at.clone().subtract(0, .05, 0).getBlock().isPassable())
-            throw new IllegalStateException("Imported spawn obstructed");
-        return at;
+        for (int n = 0; n < points.size(); n++) {
+            Location at = spawnLocation(points.get(Math.floorMod(index + n, points.size())));
+            if (at != null) return at;
+        }
+        throw new IllegalStateException("No safe imported team spawn");
     }
 
     private static final class DeathmatchSpawns {
@@ -164,7 +162,7 @@ final class CsArena {
         return DeathmatchSpawns.POINTS;
     }
 
-    private static boolean fullFloor(String state) {
+    private static boolean supportedFloor(String state) {
         String name = state.split("\\[", 2)[0].substring("minecraft:".length());
         return Set.of(
                                 "stone",
@@ -185,14 +183,16 @@ final class CsArena {
                         .contains(name)
                 || name.endsWith("_concrete")
                 || name.endsWith("_terracotta")
-                || name.endsWith("_planks");
+                || name.endsWith("_planks")
+                || name.endsWith("_slab")
+                || name.endsWith("_stairs");
     }
 
     private static List<Spawn> buildDeathmatchSpawns(Blueprint source) {
         Map<Pos, String> blocks = new HashMap<>();
         for (var cell : source.cells()) blocks.put(cell.pos(), source.palette().get(cell.state()));
         boolean[] full = new boolean[source.palette().size()];
-        for (int i = 0; i < full.length; i++) full[i] = fullFloor(source.palette().get(i));
+        for (int i = 0; i < full.length; i++) full[i] = supportedFloor(source.palette().get(i));
         Set<Pos> floors = new HashSet<>();
         for (var cell : source.cells()) {
             Pos floor = cell.pos();
@@ -235,14 +235,13 @@ final class CsArena {
                     Pos next = new Pos(p.x() + step[0], p.y() + dy, p.z() + step[1]);
                     if (floors.contains(next)
                             && !connected.contains(next)
-                            && (dy <= 0 || !blocks.containsKey(new Pos(p.x(), p.y() + 2, p.z())))
-                            && (dy >= 0
-                                    || !blocks.containsKey(new Pos(next.x(), p.y(), next.z()))
-                                            && !blocks.containsKey(
-                                                    new Pos(next.x(), p.y() + 1, next.z()))))
-                        pending.add(next);
+                            && walkStepClear(blocks.keySet(), p, next)) pending.add(next);
                 }
         }
+        // Imported streets are hollow: a floor plus headroom also matches the foundation
+        // beneath them. Only spawn on exposed upper surfaces, never in those cavities.
+        Map<Pos, Integer> tops = new HashMap<>();
+        for (Pos p : blocks.keySet()) tops.merge(new Pos(p.x(), 0, p.z()), p.y(), Math::max);
         List<Spawn> result = new ArrayList<>();
         for (Pos p :
                 connected.stream()
@@ -251,7 +250,10 @@ final class CsArena {
                                         .thenComparingInt(Pos::z)
                                         .thenComparingInt(Pos::y))
                         .toList())
-            if (Math.floorMod(p.x(), 6) == 0 && Math.floorMod(p.z(), 6) == 0)
+            if (p.y() >= 79
+                    && tops.get(new Pos(p.x(), 0, p.z())) == p.y() - 1
+                    && Math.floorMod(p.x(), 6) == 0
+                    && Math.floorMod(p.z(), 6) == 0)
                 result.add(new Spawn(p.x() + .5, p.y(), p.z() + .5, 0));
         for (var side : SPAWNS)
             for (var p : side)
@@ -260,12 +262,33 @@ final class CsArena {
         return List.copyOf(result);
     }
 
+    static boolean walkStepClear(Set<Pos> blocks, Pos from, Pos to) {
+        int rise = to.y() - from.y();
+        if (Math.abs(from.x() - to.x()) + Math.abs(from.z() - to.z()) != 1 || rise < -3 || rise > 1)
+            return false;
+        if (rise > 0 && blocks.contains(new Pos(from.x(), from.y() + 2, from.z()))) return false;
+        // A three-block descent must not jump through a thin deck between the endpoints.
+        for (int y = to.y(); y <= Math.max(from.y(), to.y()) + 1; y++)
+            if (blocks.contains(new Pos(to.x(), y, to.z()))) return false;
+        return true;
+    }
+
+    private Location spawnLocation(Spawn point) {
+        Location at = new Location(world, point.x(), point.y(), point.z(), point.yaw(), 0);
+        if (!at.getBlock().isPassable()
+                || !at.clone().add(0, 1, 0).getBlock().isPassable()
+                || at.clone().subtract(0, .05, 0).getBlock().isPassable()) return null;
+        return at;
+    }
+
     Location deathmatchSpawn(Collection<Location> opponents, Random random) {
         List<Spawn> points = new ArrayList<>(deathmatchSpawns());
         Collections.shuffle(points, random);
-        Spawn best = points.getFirst();
+        Location best = null;
         double bestDistance = -1;
         for (var point : points) {
+            Location at = spawnLocation(point);
+            if (at == null) continue;
             double distance = Double.POSITIVE_INFINITY;
             for (var opponent : opponents) {
                 double dx = point.x() - opponent.getX(), dz = point.z() - opponent.getZ();
@@ -273,16 +296,12 @@ final class CsArena {
             }
             if (distance > bestDistance) {
                 bestDistance = distance;
-                best = point;
+                best = at;
             }
         }
-        Location at = new Location(world, best.x(), best.y(), best.z());
-        at.setDirection(center().toVector().subtract(at.toVector()).setY(0));
-        if (!at.getBlock().isPassable()
-                || !at.clone().add(0, 1, 0).getBlock().isPassable()
-                || at.clone().subtract(0, .05, 0).getBlock().isPassable())
-            throw new IllegalStateException("Deathmatch spawn obstructed");
-        return at;
+        if (best == null) throw new IllegalStateException("No safe deathmatch spawn");
+        best.setDirection(center().toVector().subtract(best.toVector()).setY(0));
+        return best;
     }
 
     Location center() {

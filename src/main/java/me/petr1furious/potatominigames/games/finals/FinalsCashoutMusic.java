@@ -22,6 +22,9 @@ final class FinalsCashoutMusic {
     };
     private static final float VOLUME = .30f;
     private static final double RANGE_SQUARED = 32 * 32;
+    // Keep the source overhead so delayed server positions do not repeatedly cross the
+    // listener's camera and reverse the direction of this positional background sound.
+    private static final double AUDIBLE_HEIGHT = 2;
     // Vanilla discs attenuate to silence at 16 blocks. Keep the entity nearby and tracked,
     // but move its sound outside that distance so the client continues the same audio stream.
     private static final double MUTED_HEIGHT = 24;
@@ -56,7 +59,9 @@ final class FinalsCashoutMusic {
             display.setInvulnerable(true);
             display.setGravity(false);
             display.setViewRange(4f);
-            display.setTeleportDuration(0);
+            // Client interpolation also moves the logical entity sound position. Smooth
+            // movement between server packets; radius crossings fade over the same two ticks.
+            display.setTeleportDuration(2);
             // Empty text is invisible. Do not mark the entity silent: the client rejects
             // entity-bound sounds whose source has that flag.
         });
@@ -96,12 +101,12 @@ final class FinalsCashoutMusic {
             Location point = player.getEyeLocation();
             point.setYaw(0);
             point.setPitch(0);
+            point.add(0, nearby ? AUDIBLE_HEIGHT : MUTED_HEIGHT, 0);
             if (playback == null) {
                 if (!nearby) continue;
                 playback = new Playback(player, createEmitter.apply(player, point));
                 listeners.put(id, playback);
             }
-            if (!nearby) point.add(0, MUTED_HEIGHT, 0);
             // The private entity survives radius crossings. Moving it mutes/unmutes the
             // existing stream instead of issuing stop/play packets that restart the disc.
             if (!playback.emitter.getLocation().equals(point)) playback.emitter.teleport(point);

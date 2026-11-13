@@ -406,6 +406,7 @@ public final class FinalsHighlightsSmoke {
                         case "isOnline", "isValid" -> true;
                         case "isDead" -> dead;
                         case "getGameMode" -> mode;
+                        case "canSee" -> shown.contains(args[0]);
                         case "showEntity" -> {
                             if (!(args[1] instanceof Display display))
                                 throw new AssertionError("Only private display entities may be shown to a viewer");

@@ -1543,6 +1543,12 @@ final class FinalsSession implements GameSession {
             event.setCancelled(true);
             return;
         }
+        // Pressure plates have no hand and must not interrupt a revive or held weapon.
+        if (event.getAction() == Action.PHYSICAL) {
+            event.setCancelled(true);
+            if (event.getClickedBlock() != null) interactMapControl(event, event.getClickedBlock());
+            return;
+        }
         if (event.getHand() != EquipmentSlot.HAND) {
             event.setCancelled(true);
             return;
@@ -1580,6 +1586,7 @@ final class FinalsSession implements GameSession {
             return;
         }
         if (block != null && interactDoor(event, block)) return;
+        if (block != null && interactMapControl(event, block)) return;
         UUID id = player.getUniqueId();
         int station =
                 cashouts != null
@@ -1832,6 +1839,25 @@ final class FinalsSession implements GameSession {
                 || material.name().endsWith("_STAINED_GLASS_PANE");
         return glass && canObjective(player) && arena.isCover(block)
             && player.getInventory().getItemInMainHand().getType() == Material.AIR;
+    }
+
+    private boolean interactMapControl(PlayerInteractEvent event, Block block) {
+        boolean physical = event.getAction() == Action.PHYSICAL;
+        String material = block.getType().name();
+        boolean control = physical ? material.endsWith("_PRESSURE_PLATE")
+                : event.getAction() == Action.RIGHT_CLICK_BLOCK
+                        && (material.endsWith("_BUTTON") || material.endsWith("_FENCE_GATE"));
+        if (!control) return false;
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        if (!canObjective(player) || !arena.contains(block.getLocation())
+                || !physical && !near(player, block.getLocation().add(.5, .5, .5), 4.5)) return true;
+        // Let vanilla handle gate direction, button release ticks and redstone updates,
+        // while keeping the held weapon/gadget from activating on the same click.
+        event.setUseInteractedBlock(Event.Result.ALLOW);
+        event.setUseItemInHand(Event.Result.DENY);
+        if (!physical && weapons != null) weapons.stopFiring(player.getUniqueId());
+        return true;
     }
 
     private boolean interactDoor(PlayerInteractEvent event, Block block) {

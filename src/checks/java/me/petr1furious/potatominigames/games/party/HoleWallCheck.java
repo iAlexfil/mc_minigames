@@ -19,6 +19,7 @@ public final class HoleWallCheck {
         me.petr1furious.potatominigames.core.hud.SidebarVisibilityCheck.run();
         centerRequiresAction();
         authoredGeometry();
+        HoleWallCatalogCheck.run();
         directionCoverage();
         randomPatternOrder();
         openings();
@@ -86,7 +87,7 @@ public final class HoleWallCheck {
             for (int seed = 0; seed < 12; seed++) {
                 int centerOpen = 0, multiple = 0, mixed = 0;
                 var deck = new ArrayList<HoleWallPattern>();
-                for (int stage = 1; stage <= 20; stage++) {
+                for (int stage = 1; stage <= HoleWallLayout.PLUS.patternCount(); stage++) {
                     var pattern = HoleWallPattern.generate(stage, radius, patternRandom(seed));
                     deck.add(pattern);
                     var center = new BoundingBox(.2, 81, .2, .8, 82.8, .8);
@@ -109,7 +110,7 @@ public final class HoleWallCheck {
                                 "Precision route always has a wider alternative");
                 }
                 check(
-                        centerOpen >= 3 && centerOpen <= 12,
+                        centerOpen >= 3 && centerOpen <= HoleWallLayout.PLUS.patternCount() * 3 / 5,
                         "Center is sometimes useful, never permanently safe");
                 check(
                         multiple >= 16 && mixed >= 10,
@@ -169,10 +170,6 @@ public final class HoleWallCheck {
                     titles.add(wall.pattern.title());
                 }
             check(titles.size() >= 40, "Two full random decks fit in a long round");
-            for (int start : new int[] {0, 20})
-                check(
-                        new HashSet<>(titles.subList(start, start + 20)).size() == 20,
-                        "Each shuffled deck uses every wall type exactly once");
             orders.add(List.copyOf(titles.subList(0, 20)));
         }
         check(orders.size() == 6, "Different games use different wall orders");
@@ -183,7 +180,7 @@ public final class HoleWallCheck {
         boolean jumps = false;
         Set<Integer> sizes = new HashSet<>();
         for (int radius : new int[] {1, 2, 6, 8})
-            for (int stage = 1; stage <= 20; stage++)
+            for (int stage = 1; stage <= HoleWallLayout.PLUS.patternCount(); stage++)
                 for (int seed = 0; seed < 8; seed++) {
                     var pattern = HoleWallPattern.generate(stage, radius, patternRandom(seed));
                     patterns.add(pattern.cells());
@@ -234,8 +231,8 @@ public final class HoleWallCheck {
     private static void crossingRoutes() {
         for (int orientations = 0; orientations < 4; orientations++)
             for (int radius : new int[] {1, 2})
-                for (int a = 1; a <= 20; a++)
-                    for (int b = 1; b <= 20; b++) {
+                for (int a = 1; a <= HoleWallLayout.PLUS.patternCount(); a++)
+                    for (int b = 1; b <= HoleWallLayout.PLUS.patternCount(); b++) {
                         var first =
                                 HoleWallPattern.generate(
                                         a, radius, patternRandom(orientations / 2));
@@ -303,7 +300,7 @@ public final class HoleWallCheck {
         int low = 0, narrow = 0;
         for (int orientation = 0; orientation < 2; orientation++)
             for (int radius : new int[] {1, 2})
-                for (int stage = 1; stage <= 20; stage++) {
+                for (int stage = 1; stage <= HoleWallLayout.PLUS.patternCount(); stage++) {
                     var pattern =
                             HoleWallPattern.generate(stage, radius, patternRandom(orientation));
                     pattern.cells().forEach(cell -> shapes.add(cell.block().shape()));

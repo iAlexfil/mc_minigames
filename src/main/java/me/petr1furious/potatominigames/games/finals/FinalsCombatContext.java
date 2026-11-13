@@ -51,7 +51,8 @@ interface FinalsCombatContext {
     }
 
     /** Reflected bullets cannot reflect again, but still cause no gunshot knockback. */
-    default void damageReflectedBullet(Player target, Player source, double amount, Location origin) {
+    default void damageReflectedBullet(
+            Player target, Player source, double amount, Location origin) {
         damage(target, source, amount, origin);
     }
 
@@ -87,6 +88,11 @@ interface FinalsCombatContext {
     Location deathLocation(UUID player);
 
     boolean revive(Player teammate, Player reviver);
+
+    /** Let the physical statue's aim/range test select a defibrillator target. */
+    default boolean defibrillateAimed(Player reviver) {
+        return false;
+    }
 
     boolean carrier(Player player);
 

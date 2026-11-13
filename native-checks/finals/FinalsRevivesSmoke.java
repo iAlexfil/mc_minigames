@@ -228,7 +228,7 @@ public final class FinalsRevivesSmoke {
             check(
                     (boolean) call(helper, "carrying", carrier.id),
                     "Duplicate same-tick air/entity interaction cannot immediately drop a newly"
-                        + " picked-up statue");
+                            + " picked-up statue");
             check(
                     !physical.isValid() && !click.isValid(),
                     "Picking up a statue removes its world entities without making an inventory"
@@ -291,8 +291,13 @@ public final class FinalsRevivesSmoke {
             medic.aim = point(target.id).add(0, .4, 0);
             medic.slot = 2;
             check(
-                    (boolean) call(helper, "defibrillate", medic.player, target.id),
-                    "Defibrillator can charge against an ally-carried statue");
+                    (boolean) call(helper, "defibrillateAimed", medic.player),
+                    "Defibrillator directly selects and charges the actual ally-carried statue");
+            tick(210);
+            check(
+                    !(boolean) call(helper, "defibrillateAimed", medic.player),
+                    "Repeated right-click cannot restart or reconsume an accepted native"
+                        + " defibrillator charge");
             tick(220);
             check(
                     completed == 0 && (boolean) call(helper, "busy", medic.id),

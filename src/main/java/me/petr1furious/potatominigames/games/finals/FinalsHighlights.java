@@ -6,6 +6,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 import org.bukkit.Color;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.BlockDisplay;
@@ -13,6 +14,7 @@ import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
@@ -35,7 +37,9 @@ final class FinalsHighlights {
     record Marker(
             String key, Location location, Component label, NamedTextColor color, Material block) {}
 
-    private record Overlay(TextDisplay label, BlockDisplay outline) {
+    private record Placement(Location label, Location block, Component text, boolean projected) {}
+
+    private record Overlay(TextDisplay label, BlockDisplay outline, boolean projected) {
         boolean valid() {
             return label.isValid() && (outline == null || outline.isValid());
         }
@@ -187,6 +191,7 @@ final class FinalsHighlights {
 
     private void refresh(View view, List<Marker> markers) {
         Set<String> wanted = new HashSet<>();
+        List<Location> projectedLabels = new ArrayList<>();
         for (Marker marker : markers) {
             wanted.add(marker.key());
             Overlay overlay = view.overlays.get(marker.key());
@@ -195,19 +200,25 @@ final class FinalsHighlights {
                 view.overlays.remove(marker.key());
                 overlay = null;
             }
-            Component text = I18n.render(marker.label().color(marker.color()), view.player);
+            Placement placement = separate(placement(view.player, marker), projectedLabels);
+            Component text = I18n.render(placement.text().color(marker.color()), view.player);
             if (overlay == null) {
-                overlay = create(view.player, marker, text);
+                overlay = create(view.player, marker, placement, text);
                 view.overlays.put(marker.key(), overlay);
             } else {
-                Location position = labelPosition(marker);
+                Location position = placement.label();
                 if (!overlay.label().getLocation().equals(position))
                     overlay.label().teleport(position);
                 if (!overlay.label().text().equals(text)) overlay.label().text(text);
                 if (overlay.outline() != null) {
-                    Location block = blockPosition(marker);
+                    Location block = placement.block();
                     if (!overlay.outline().getLocation().equals(block))
                         overlay.outline().teleport(block);
+                    if (overlay.projected() != placement.projected()) {
+                        overlay.outline().setTransformationMatrix(outlineTransform(placement.projected()));
+                        overlay = new Overlay(overlay.label(), overlay.outline(), placement.projected());
+                        view.overlays.put(marker.key(), overlay);
+                    }
                 }
             }
         }
@@ -220,12 +231,12 @@ final class FinalsHighlights {
                 });
     }
 
-    private Overlay create(Player viewer, Marker marker, Component text) {
+    private Overlay create(Player viewer, Marker marker, Placement placement, Component text) {
         TextDisplay label =
                 marker.location()
                         .getWorld()
                         .spawn(
-                                labelPosition(marker),
+                                placement.label(),
                                 TextDisplay.class,
                                 entity -> {
                                     configure(entity);
@@ -241,7 +252,7 @@ final class FinalsHighlights {
                         marker.location()
                                 .getWorld()
                                 .spawn(
-                                        blockPosition(marker),
+                                        placement.block(),
                                         BlockDisplay.class,
                                         entity -> {
                                             configure(entity);
@@ -249,15 +260,12 @@ final class FinalsHighlights {
                                             entity.setGlowing(true);
                                             entity.setGlowColorOverride(
                                                     Color.fromRGB(marker.color().value()));
-                                            entity.setTransformationMatrix(
-                                                    new Matrix4f()
-                                                            .translation(-.01f, -.01f, -.01f)
-                                                            .scale(1.02f));
+                                            entity.setTransformationMatrix(outlineTransform(placement.projected()));
                                         });
             }
             viewer.showEntity(plugin, label);
             if (outline != null) viewer.showEntity(plugin, outline);
-            return new Overlay(label, outline);
+            return new Overlay(label, outline, placement.projected());
         } catch (RuntimeException error) {
             label.remove();
             if (outline != null) outline.remove();
@@ -278,6 +286,65 @@ final class FinalsHighlights {
 
     private static Location labelPosition(Marker marker) {
         return marker.location().clone().add(0, marker.block() == null ? 2.4 : 2, 0);
+    }
+
+    private static Placement placement(Player viewer, Marker marker) {
+        Location eye = viewer.getEyeLocation();
+        Location label = labelPosition(marker);
+        Location block = marker.block() == null ? null : blockPosition(marker);
+        int clientDistance = viewer.getClientViewDistance();
+        int sendDistance = viewer.getSendViewDistance();
+        int chunks = Math.min(clientDistance > 0 ? clientDistance : 2, sendDistance > 0 ? sendDistance : 2);
+        double radius = Math.min(24, Math.max(8, (chunks - 1) * 16d));
+        Vector direction = label.toVector().subtract(eye.toVector());
+        double distance = direction.length();
+        if (distance <= radius && viewer.isChunkSent(Chunk.getChunkKey(label))
+                && (block == null || viewer.isChunkSent(Chunk.getChunkKey(block))))
+            return new Placement(label, block, marker.label(), false);
+
+        // A nearby private proxy remains tracked even when the objective's chunk is not sent.
+        // Never load distant chunks just to display a direction marker.
+        radius = Math.min(radius, distance);
+        if (distance > 0) direction.multiply(1 / distance);
+        Location projected = eye.clone().add(direction.clone().multiply(radius));
+        while (radius > .5 && !viewer.isChunkSent(Chunk.getChunkKey(projected))) {
+            radius *= .5;
+            projected = eye.clone().add(direction.clone().multiply(radius));
+        }
+        if (!viewer.isChunkSent(Chunk.getChunkKey(projected))) projected = eye.clone();
+        projected.setYaw(0);
+        projected.setPitch(0);
+        long actualDistance = Math.round(viewer.getLocation().distance(marker.location()));
+        return new Placement(projected, block == null ? null : projected.clone().add(0, -.5, 0),
+                I18n.tr("finals.highlight.distant", marker.label(), actualDistance), true);
+    }
+
+    private static Placement separate(Placement placement, List<Location> occupied) {
+        if (!placement.projected()) return placement;
+        Location label = placement.label();
+        double rise = 0;
+        // Several far objectives can lie on the same bearing. Stack their small proxies/labels.
+        for (int attempt = 0; attempt < occupied.size() * 2; attempt++) {
+            boolean overlap = false;
+            for (Location other : occupied) {
+                if (label.distanceSquared(other) < .75 * .75) {
+                    overlap = true;
+                    break;
+                }
+            }
+            if (!overlap) break;
+            label.add(0, .8, 0);
+            rise += .8;
+        }
+        occupied.add(label);
+        Location block = placement.block();
+        if (block != null && rise != 0) block.add(0, rise, 0);
+        return placement;
+    }
+
+    private static Matrix4f outlineTransform(boolean projected) {
+        return projected ? new Matrix4f().translation(-.125f, 0, -.125f).scale(.25f)
+                : new Matrix4f().translation(-.01f, -.01f, -.01f).scale(1.02f);
     }
 
     private static Location blockPosition(Marker marker) {

@@ -29,6 +29,7 @@ import java.util.*;
 final class FinalsGadgets {
     private static final NamespacedKey KEY = new NamespacedKey("potatominigames", "finals_gadget");
     private static final double DOME_RADIUS = 4;
+    private static final long BEAM_INPUT_TICKS = 6;
     private final FinalsCombatContext context;
     private final FinalsGadgetState resources = new FinalsGadgetState();
     private final Map<UUID, FinalsLoadouts.Choice> equipped = new HashMap<>();
@@ -121,10 +122,19 @@ final class FinalsGadgets {
             meta.lore(
                     List.of(
                             I18n.tr(prefix(kind) + ".lore").color(NamedTextColor.GRAY),
-                            text("charges", available, kind.capacity, kind.recharge / 20.0)
+                            (kind == HEALING_BEAM
+                                            ? text("beam_resource")
+                                            : text(
+                                                    "charges",
+                                                    available,
+                                                    kind.capacity,
+                                                    kind.recharge / 20.0))
                                     .color(NamedTextColor.YELLOW)));
             meta.getPersistentDataContainer().set(KEY, PersistentDataType.STRING, kind.name());
-            meta.setEnchantmentGlintOverride(available > 0);
+            meta.setEnchantmentGlintOverride(
+                    kind == HEALING_BEAM
+                            ? !resources.beamOverheated(player.getUniqueId())
+                            : available > 0);
         });
         return item;
     }
@@ -174,6 +184,26 @@ final class FinalsGadgets {
                 && from(player.getInventory().getItemInMainHand()) == DEFIBRILLATOR;
     }
 
+    boolean usingHealingBeam(Player player) {
+        var choice = equipped.get(player.getUniqueId());
+        return choice != null
+                && choice.specialization() == HEALING_BEAM
+                && player.getInventory().getHeldItemSlot() == 4
+                && from(player.getInventory().getItemInMainHand()) == HEALING_BEAM;
+    }
+
+    boolean interactHealingTarget(Player player) {
+        if (!usingHealingBeam(player)) return false;
+        return interact(
+                new PlayerInteractEvent(
+                        player,
+                        Action.RIGHT_CLICK_AIR,
+                        player.getInventory().getItemInMainHand(),
+                        null,
+                        BlockFace.UP,
+                        EquipmentSlot.HAND));
+    }
+
     boolean interactStatue(Player player) {
         if (!usingDefibrillator(player)) return false;
         return interact(
@@ -203,6 +233,11 @@ final class FinalsGadgets {
                 || !context.canAct(player)) return true;
         if (context.gadgetsBlocked(player)) {
             player.sendActionBar(text("revive_sickness"));
+            return true;
+        }
+        if (kind == HEALING_BEAM) {
+            beginBeam(player);
+            player.sendActionBar(beamHud(player));
             return true;
         }
         if (kind == CLOAKING_DEVICE && hidden.containsKey(player.getUniqueId())) {
@@ -253,6 +288,7 @@ final class FinalsGadgets {
         if (choice == null) return Component.empty();
         int slot = player.getInventory().getHeldItemSlot();
         var kind = selected(choice, slot >= 1 && slot <= 4 ? slot : 4);
+        if (kind == HEALING_BEAM) return beamHud(player);
         long seconds = (resources.remaining(player.getUniqueId(), kind, context.tick()) + 19) / 20;
         if (seconds == 0)
             return text("hud_ready", I18n.tr(prefix(kind) + ".name"), kind.capacity, kind.capacity)
@@ -263,6 +299,22 @@ final class FinalsGadgets {
                         resources.charges(player.getUniqueId(), kind, context.tick()),
                         kind.capacity,
                         seconds)
+                .color(NamedTextColor.AQUA);
+    }
+
+    private Component beamHud(Player player) {
+        UUID id = player.getUniqueId();
+        int heat = resources.beamHeat(id);
+        int filled =
+                (heat * 20 + FinalsGadgetState.BEAM_MAX_HEAT - 1) / FinalsGadgetState.BEAM_MAX_HEAT;
+        Component bar =
+                Component.text(
+                                "▰".repeat(filled),
+                                heat >= 120 ? NamedTextColor.RED : NamedTextColor.YELLOW)
+                        .append(Component.text("▱".repeat(20 - filled), NamedTextColor.DARK_GRAY));
+        if (resources.beamOverheated(id))
+            return text("beam_overheated", bar, (heat + 39) / 40).color(NamedTextColor.RED);
+        return text("beam_heat", bar, (heat * 100) / FinalsGadgetState.BEAM_MAX_HEAT)
                 .color(NamedTextColor.AQUA);
     }
 
@@ -355,15 +407,13 @@ final class FinalsGadgets {
     }
 
     private boolean beginBeam(Player player) {
+        if (resources.beamOverheated(player.getUniqueId())) return false;
         Player target = aimedAlly(player, 10);
         if (target == null) target = player;
-        if (target.getHealth() >= maxHealth(target)) {
-            player.sendActionBar(text("healing_full"));
-            return false;
-        }
         reveal(player);
         beams.put(
-                player.getUniqueId(), new Beam(player, target.getUniqueId(), context.tick() + 60));
+                player.getUniqueId(),
+                new Beam(player, target.getUniqueId(), context.tick() + BEAM_INPUT_TICKS));
         return true;
     }
 
@@ -396,6 +446,11 @@ final class FinalsGadgets {
     }
 
     private boolean defibrillate(Player player) {
+        if (context.defibrillateAimed(player)) {
+            reveal(player);
+            player.playSound(player.getLocation(), "minecraft:block.beacon.activate", .8f, 1.7f);
+            return true;
+        }
         record Candidate(Player player, Location point, double distance) {}
         List<Candidate> candidates = new ArrayList<>();
         for (Player teammate : context.players()) {
@@ -574,7 +629,12 @@ final class FinalsGadgets {
             if (now >= entry.getValue().expires() || !context.active(entry.getValue().player()))
                 restoreGlow(entry.getKey());
         for (Ordnance shot : List.copyOf(ordnance)) tickOrdnance(shot);
+        Set<UUID> beamUsers = new HashSet<>(beams.keySet());
         for (Beam beam : List.copyOf(beams.values())) tickBeam(beam);
+        for (var entry : equipped.entrySet())
+            if (entry.getValue().specialization() == HEALING_BEAM
+                    && !beamUsers.contains(entry.getKey()))
+                resources.beamTick(entry.getKey(), false, now);
         for (Charge charge : List.copyOf(charges.values())) tickCharge(charge);
         for (var entry : List.copyOf(cover.entrySet()))
             if (now >= entry.getValue().expires()) breakTemporary(entry.getKey());
@@ -770,16 +830,27 @@ final class FinalsGadgets {
 
     private void tickBeam(Beam beam) {
         Player player = beam.player(), target = owner(beam.target());
+        UUID id = player.getUniqueId();
         if (context.tick() >= beam.expires()
                 || !context.canAct(player)
+                || context.gadgetsBlocked(player)
+                || !usingHealingBeam(player)
                 || target == null
                 || !context.active(target)
                 || !context.friendly(player, target)
-                || player.getInventory().getHeldItemSlot() != 4
+                || !player.getWorld().equals(target.getWorld())
                 || player.getLocation().distanceSquared(target.getLocation()) > 100
                 || !player.hasLineOfSight(target)) {
-            beams.remove(player.getUniqueId());
+            beams.remove(id);
+            resources.beamTick(id, false, context.tick());
             return;
+        }
+        boolean healing = target.getHealth() < maxHealth(target);
+        if (!resources.beamTick(id, healing, context.tick())) return;
+        if (resources.beamOverheated(id)) {
+            beams.remove(id);
+            player.playSound(player.getLocation(), Sound.BLOCK_FIRE_EXTINGUISH, .6f, 1.4f);
+            player.sendActionBar(beamHud(player));
         }
         if (context.tick() % 4 != 0) return;
         target.setHealth(

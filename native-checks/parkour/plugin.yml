@@ -1,0 +1,5 @@
+name: ParkourSmoke
+version: 1.0
+main: ParkourSmoke
+api-version: '1.21'
+depend: [PotatoMinigames]

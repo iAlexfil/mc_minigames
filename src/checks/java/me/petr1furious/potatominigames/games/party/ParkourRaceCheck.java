@@ -724,17 +724,16 @@ public final class ParkourRaceCheck {
                         ParkourCourse.Kind.POT_ASCENT,
                         ParkourCourse.Kind.BRIDGE,
                         ParkourCourse.Kind.PEARL);
-        var swim = extras.island(0);
+        var swim = extras.island(0).obstacleStart();
         int center = (int) swim.centerX();
         check(
-                extras.blocks().get(new ParkourCourse.Pos(center, swim.y() + 1, swim.z() + 8))
-                                == Material.WATER
+                !extras.blocks().containsKey(new ParkourCourse.Pos(center, swim.y() + 1, swim.z() + 8))
                         && extras.blocks()
                                         .get(
                                                 new ParkourCourse.Pos(
                                                         center, swim.y() + 2, swim.z() + 8))
                                 == Material.DEEPSLATE_TILES,
-                "Swim geometry follows its sampled index");
+                "The dry swim passage and its protected ceiling follow the sampled index");
         var bounce = extras.island(1);
         check(
                 extras.blocks()

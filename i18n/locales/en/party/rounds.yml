@@ -293,7 +293,7 @@ parkour_race.stage.wind_wall.hint: "Climb 28 blocks using wind charges and wall 
 parkour_race.stage.water_drop.name: "Water drop"
 parkour_race.stage.water_drop.hint: "Drop 44 blocks and place water before landing. An unprotected lethal fall resets this attempt."
 parkour_race.stage.chest_drop.name: "Midair chest clutch"
-parkour_race.stage.chest_drop.hint: "Open the chest halfway down and take its water while falling. For a quick transfer, hover over the bucket, press your first hotbar key (1), then close the chest. Water-clutch onto the island 56 blocks below; water can only be placed at the bottom."
+parkour_race.stage.chest_drop.hint: "Jump off the platform and open the chest near take-off height to take its water. For a quick transfer, hover over the bucket, press your first hotbar key (1), then close the chest. Water-clutch onto the island 56 blocks below; water can only be placed at the bottom."
 parkour_race.stage.scaffold.name: "Scaffolding tower"
 parkour_race.stage.scaffold.hint: "Climb 24 blocks using scaffolding, then cross the short gap."
 parkour_race.stage.ladder_climb.name: "Ladder wall"

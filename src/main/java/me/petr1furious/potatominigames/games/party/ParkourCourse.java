@@ -395,7 +395,9 @@ final class ParkourCourse {
             return null;
         Island from = island(checkpoint), to = island(checkpoint + 1);
         int side = from.centerX() < WIDTH / 2.0 ? 1 : -1;
-        return new Pos((int) from.centerX() + side * 2, (from.y() + to.y()) / 2, to.z() + 2);
+        // Six blocks beyond the take-off edge: outside grounded reach even while
+        // overhanging the lip, but reachable after jumping forward toward the landing.
+        return new Pos((int) from.centerX() + side * 2, from.y() + 1, to.z() + 2);
     }
 
     Kind stage(int checkpoint) {

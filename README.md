@@ -407,7 +407,7 @@ The clock remains in slot 9; the other items can be rearranged.
 | Bridge | 18 | 0 | 22 wool, shears |
 | Wind ascent | 2 | +28 | 36 wool, 8 wind charges; build up or boost and place against the wall |
 | Water drop | 4 | -44 | One water bucket |
-| Midair chest clutch | 4 | -56 | No starting supplies; take one water bucket from a side chest halfway down, then clutch at the bottom |
+| Midair chest clutch | 4 | -56 | No starting supplies; jump out to a side chest at take-off height, take its water, then clutch at the bottom |
 | Scaffolding tower | 2 | +24 | 30 scaffolding |
 | Ladder wall | 1 | +20 | 24 ladders |
 | Slime rebound | 15 | -20 | 4 slime blocks; place slime on a bare landing pad 36 blocks below the starting island |
@@ -431,8 +431,9 @@ The clock remains in slot 9; the other items can be rearranged.
 
 The table lists the full pool; only seven or eight tasks appear in a given race.
 
-The midair chest clutch uses a native chest in each lane, 28 blocks below the
-start. A glass column covers its lid and extends above the starting jump height:
+The midair chest clutch uses a native chest in each lane at starting feet height,
+six blocks beyond the take-off edge. It is outside grounded reach but accessible
+after jumping forward. A glass column covers its lid above the starting jump height:
 it permits opening the chest but prevents landing on its lid or roof. Only the
 falling owner on that task may open/take items; hover the bucket and press the
 first hotbar key to transfer it without a cursor detour. Each attempt refills one

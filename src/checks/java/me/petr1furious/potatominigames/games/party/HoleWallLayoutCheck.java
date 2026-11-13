@@ -133,17 +133,17 @@ final class HoleWallLayoutCheck {
                                         wall.direction.dx == 0
                                                 ? new BoundingBox(
                                                         u - .3,
-                                                        81,
+                                                        81 + gate.bottom(),
                                                         .2,
                                                         u + .3,
-                                                        81 + gate.bodyHeight(),
+                                                        81 + gate.bottom() + gate.bodyHeight(),
                                                         .8)
                                                 : new BoundingBox(
                                                         .2,
-                                                        81,
+                                                        81 + gate.bottom(),
                                                         u - .3,
                                                         .8,
-                                                        81 + gate.bodyHeight(),
+                                                        81 + gate.bottom() + gate.bodyHeight(),
                                                         u + .3);
                                 check(
                                         !HoleWallPhysics.collides(
@@ -402,11 +402,6 @@ final class HoleWallLayoutCheck {
                             "No early precision slits");
                 titles.add(wall.pattern.title());
             }
-        check(titles.size() == layout.patternCount() * 2, "New map stream keeps spawning");
-        for (int start : new int[] {0, layout.patternCount()})
-            check(
-                    new HashSet<>(titles.subList(start, start + layout.patternCount())).size()
-                            == layout.patternCount(),
-                    "Each map shuffles a full unique catalog");
+        check(titles.size() >= 36, "New map stream keeps spawning across difficulty tiers");
     }
 }

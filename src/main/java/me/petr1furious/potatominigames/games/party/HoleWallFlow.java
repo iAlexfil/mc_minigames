@@ -43,6 +43,7 @@ final class HoleWallFlow {
     private final Set<HoleWallPhysics.Direction> lateDirections =
             EnumSet.noneOf(HoleWallPhysics.Direction.class);
     private final Deque<Integer> patternStages = new ArrayDeque<>();
+    private HoleWallDifficulty deckDifficulty;
 
     HoleWallFlow(long duration, Random random) {
         this(duration, random, HoleWallLayout.PLUS);
@@ -95,8 +96,13 @@ final class HoleWallFlow {
                 directions.addAll(shuffled);
             }
             var direction = directions.getFirst();
+            var difficulty = HoleWallDifficulty.at(tick, duration);
+            if (difficulty != deckDifficulty) {
+                patternStages.clear();
+                deckDifficulty = difficulty;
+            }
             if (patternStages.isEmpty())
-                patternStages.addAll(layout.shuffledStages(random, number == 0));
+                patternStages.addAll(layout.shuffledStages(random, difficulty));
             // Delayed arrivals must still fit the narrowed arms when they eventually cross.
             long latestExit = tick + 40 + (long) Math.ceil(33 / speed) + 1;
             int gateRadius = latestExit >= duration / 3 ? 1 : 2;

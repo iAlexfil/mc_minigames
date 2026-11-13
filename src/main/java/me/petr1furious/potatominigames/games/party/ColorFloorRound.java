@@ -21,11 +21,32 @@ final class ColorFloorRound {
         Material.CYAN_CONCRETE,
         Material.PINK_CONCRETE,
         Material.GRAY_CONCRETE,
-        Material.BROWN_CONCRETE
+        Material.BROWN_CONCRETE,
+        Material.GREEN_CONCRETE,
+        Material.LIGHT_BLUE_CONCRETE,
+        Material.LIGHT_GRAY_CONCRETE,
+        Material.MAGENTA_CONCRETE,
+        Material.RED_GLAZED_TERRACOTTA,
+        Material.BLUE_GLAZED_TERRACOTTA,
+        Material.YELLOW_GLAZED_TERRACOTTA,
+        Material.LIME_GLAZED_TERRACOTTA,
+        Material.ORANGE_GLAZED_TERRACOTTA,
+        Material.PURPLE_GLAZED_TERRACOTTA,
+        Material.WHITE_GLAZED_TERRACOTTA,
+        Material.BLACK_GLAZED_TERRACOTTA,
+        Material.CYAN_GLAZED_TERRACOTTA,
+        Material.PINK_GLAZED_TERRACOTTA,
+        Material.GRAY_GLAZED_TERRACOTTA,
+        Material.BROWN_GLAZED_TERRACOTTA,
+        Material.GREEN_GLAZED_TERRACOTTA,
+        Material.LIGHT_BLUE_GLAZED_TERRACOTTA,
+        Material.LIGHT_GRAY_GLAZED_TERRACOTTA,
+        Material.MAGENTA_GLAZED_TERRACOTTA
     };
     static final String[] TITLES = {
         "red", "blue", "yellow", "lime", "orange", "purple",
-        "white", "black", "cyan", "pink", "gray", "brown"
+        "white", "black", "cyan", "pink", "gray", "brown",
+        "green", "light_blue", "light_gray", "magenta"
     };
     private final Material[][] cells = new Material[21][21];
     private final int target;
@@ -35,7 +56,7 @@ final class ColorFloorRound {
     }
 
     static ColorFloorRound generate(int stage, Random random) {
-        int colorCount = stage >= 9 ? 12 : stage >= 6 ? 10 : stage >= 3 ? 8 : 6;
+        int colorCount = colorCount(stage);
         var r = new ColorFloorRound(random.nextInt(colorCount));
         var palette = new ArrayList<>(List.of(COLORS).subList(0, colorCount));
         Collections.shuffle(palette, random);
@@ -57,17 +78,10 @@ final class ColorFloorRound {
         for (int i = 0; i < 4; i++)
             r.paint(i % 2 == 0 ? 1 : 17, i < 2 ? 1 : 17, 3, 3, palette.get(i));
         r.paint(7, 7, 6, 6, palette.getFirst());
-        var islands =
-                new ArrayList<>(
-                        List.of(
-                                new int[] {3, 3},
-                                new int[] {16, 3},
-                                new int[] {3, 16},
-                                new int[] {16, 16},
-                                new int[] {9, 3},
-                                new int[] {3, 9},
-                                new int[] {16, 9},
-                                new int[] {9, 16}));
+        // Disjoint 2x2 slots accommodate all 28 rare materials without erasing earlier islands.
+        var islands = new ArrayList<int[]>();
+        for (int x = 1; x < 21; x += 3)
+            for (int z = 1; z < 21; z += 3) islands.add(new int[] {x, z});
         Collections.shuffle(islands, random);
         for (int i = 4; i < palette.size(); i++) {
             var island = islands.get(i - 4);
@@ -80,6 +94,9 @@ final class ColorFloorRound {
         }
         // Repair only unreachable gaps instead of placing a target in every 3x3 square.
         // Eight blocks leaves reaction time even at the two-second lower limit.
+        var counts = new EnumMap<Material, Integer>(Material.class);
+        for (var column : r.cells)
+            for (var material : column) counts.merge(material, 1, Integer::sum);
         for (int attempts = 0; attempts < 441; attempts++) {
             int farX = -1, farZ = -1;
             double farthest = 64;
@@ -103,7 +120,8 @@ final class ColorFloorRound {
             double distance = Double.POSITIVE_INFINITY;
             for (int x = 0; x < 21; x++)
                 for (int z = 0; z < 21; z++)
-                    if (!palette.subList(4, palette.size()).contains(r.cells[x][z])) {
+                    if (!palette.subList(4, palette.size()).contains(r.cells[x][z])
+                            && counts.get(r.cells[x][z]) > 1) {
                         double d = (x - farX) * (x - farX) + (z - farZ) * (z - farZ);
                         if (d < distance) {
                             distance = d;
@@ -113,8 +131,13 @@ final class ColorFloorRound {
                     }
             for (int x = px; x <= Math.min(20, px + 1); x++)
                 for (int z = pz; z <= Math.min(20, pz + 1); z++)
-                    if (!palette.subList(4, palette.size()).contains(r.cells[x][z]))
+                    if (!palette.subList(4, palette.size()).contains(r.cells[x][z])
+                            && counts.get(r.cells[x][z]) > 1) {
+                        // Keep every palette entry represented, including the last common tile.
+                        counts.merge(r.cells[x][z], -1, Integer::sum);
+                        counts.merge(r.target(), 1, Integer::sum);
                         r.cells[x][z] = r.target();
+                    }
         }
         return r;
     }
@@ -128,12 +151,18 @@ final class ColorFloorRound {
         return (int) Math.max(40, 120 - 16L * (Math.max(1, stage) - 1));
     }
 
+    static int colorCount(int stage) {
+        int round = Math.clamp(stage, 1, 9);
+        return round <= 5 ? 8 + 2 * (round - 1) : 16 + 4 * (round - 5);
+    }
+
     Material target() {
         return COLORS[target];
     }
 
     Component title() {
-        return I18n.tr("party.rounds.color_floor.color." + TITLES[target]);
+        Component color = I18n.tr("party.rounds.color_floor.color." + TITLES[target % 16]);
+        return target < 16 ? color : I18n.tr("party.rounds.color_floor.color.glazed", color);
     }
 
     Material material(int x, int z) {

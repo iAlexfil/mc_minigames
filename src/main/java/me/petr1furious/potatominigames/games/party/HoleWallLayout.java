@@ -21,7 +21,21 @@ enum HoleWallLayout {
     }
 
     int patternCount() {
-        return this == PLUS ? 20 : 12;
+        return 48;
+    }
+
+    HoleWallDifficulty difficulty(int stage) {
+        return this == PLUS
+                ? HoleWallPattern.difficulty(stage)
+                : HoleWallMapPatterns.difficulty(stage);
+    }
+
+    List<Integer> shuffledStages(Random random, HoleWallDifficulty difficulty) {
+        var stages = new ArrayList<Integer>();
+        for (int stage = 1; stage <= patternCount(); stage++)
+            if (difficulty(stage) == difficulty) stages.add(stage);
+        Collections.shuffle(stages, random);
+        return stages;
     }
 
     boolean onFloor(int x, int z, int radius, int armRadius) {
@@ -59,18 +73,10 @@ enum HoleWallLayout {
     }
 
     List<Integer> shuffledStages(Random random, boolean introductory) {
-        if (this == PLUS) return HoleWallPattern.shuffledStages(random, introductory);
         var result = new ArrayList<Integer>();
         for (int stage = 1; stage <= patternCount(); stage++) result.add(stage);
         Collections.shuffle(result, random);
-        if (introductory) {
-            var easy = result.stream().filter(s -> s <= 5).toList();
-            var middle = result.stream().filter(s -> s > 5 && s <= 10).toList();
-            result.removeAll(easy);
-            result.removeAll(middle);
-            result.addAll(0, middle);
-            result.addAll(0, easy);
-        }
+        if (introductory) result.sort(Comparator.comparing(this::difficulty));
         return result;
     }
 

@@ -7,6 +7,16 @@ import java.util.*;
 public final class ColorFloorCheck {
     public static void main(String[] args) {
         check(
+                ColorFloorRound.COLORS.length == 32
+                        && new HashSet<>(List.of(ColorFloorRound.COLORS)).size() == 32,
+                "Thirty-two distinct floor materials");
+        for (int i = 0; i < 32; i++)
+            check(
+                    ColorFloorRound.COLORS[i]
+                            .name()
+                            .endsWith(i < 16 ? "_CONCRETE" : "_GLAZED_TERRACOTTA"),
+                    "First sixteen concrete colors, then sixteen glazed terracotta colors");
+        check(
                 ColorFloorRound.choiceTicks(1) == 120
                         && ColorFloorRound.choiceTicks(3) == 88
                         && ColorFloorRound.choiceTicks(6) == 40
@@ -25,7 +35,25 @@ public final class ColorFloorCheck {
                                         ? finalRound.target()
                                         : org.bukkit.Material.AIR),
                         "Only the target-colored tiles remain after the floor collapses");
-        for (int stage : new int[] {1, 3, 6, 9, 12})
+        Set<org.bukkit.Material> targets = new HashSet<>();
+        Map<Locale, Set<String>> titles =
+                Map.of(
+                        Locale.ENGLISH,
+                        new HashSet<>(),
+                        Locale.forLanguageTag("ru"),
+                        new HashSet<>());
+        for (int seed = 0; seed < 200; seed++) {
+            var r = ColorFloorRound.generate(12, new Random(seed * 7919L));
+            targets.add(r.target());
+            titles.forEach((locale, names) ->
+                    names.add(me.petr1furious.potatominigames.i18n.I18n.plain(r.title(), locale)));
+        }
+        check(targets.size() == 32, "Every concrete and glazed variant can be the target");
+        for (var names : titles.values())
+            check(
+                    names.size() == 32 && names.stream().noneMatch(n -> n.contains("party.rounds")),
+                    "All thirty-two target names are distinct and localized");
+        for (int stage : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 12})
             for (int seed = 0; seed < 20; seed++) {
                 var r = ColorFloorRound.generate(stage, new Random(seed));
                 var counts = new HashMap<org.bukkit.Material, Integer>();
@@ -66,7 +94,11 @@ public final class ColorFloorCheck {
                         areas.add(area);
                     }
                 check(
-                        counts.size() == Map.of(1, 6, 3, 8, 6, 10, 9, 12, 12, 12).get(stage),
+                        counts.size()
+                                == Map.of(
+                                                1, 8, 2, 10, 3, 12, 4, 14, 5, 16, 6, 20, 7, 24, 8,
+                                                28, 9, 32, 12, 32)
+                                        .get(stage),
                         "More actual colors appear as the game progresses");
                 check(
                         Collections.max(counts.values()) >= 3 * Collections.min(counts.values()),

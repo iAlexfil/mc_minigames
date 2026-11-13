@@ -52,5 +52,5 @@ magicBattle:
   chestRechargeSeconds: 45
 
 oneShot:
-  durationSeconds: 180
+  durationSeconds: 120
   bonusSeconds: 6

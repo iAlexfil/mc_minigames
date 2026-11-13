@@ -4,8 +4,10 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.Chest;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -18,6 +20,7 @@ import java.util.UUID;
 /** Identical lanes, a sealed transparent shell and bounded per-attempt block journals. */
 final class ParkourArena {
     static final int MAX_CHANGES = 4096;
+    static final int CHEST_WATER_SLOT = 13;
 
     private record Cell(ParkourCourse.Pos pos, Material material, String state) {}
 
@@ -50,7 +53,7 @@ final class ParkourArena {
             // Spawn islands are ready before countdown players are teleported into the void world.
             var start = course.island(0);
             for (int x = start.x(); x < start.x() + start.width(); x++)
-                for (int z = 0; z < 7; z++)
+                for (int z = start.z(); z < start.z() + start.depth(); z++)
                     for (int y = course.island(0).y() - 1; y <= course.island(0).y(); y++)
                         world.getBlockAt(i * ParkourCourse.PITCH + x, y, z)
                                 .setType(
@@ -135,6 +138,34 @@ final class ParkourArena {
         return at;
     }
 
+    Location chestLocation(UUID id, int checkpoint) {
+        Integer lane = indices.get(id);
+        var pos = course.dropChest(checkpoint);
+        return lane == null || pos == null
+                ? null
+                : new Location(world, lane * ParkourCourse.PITCH + pos.x(), pos.y(), pos.z());
+    }
+
+    boolean isChest(UUID id, int checkpoint, Location at) {
+        Location expected = chestLocation(id, checkpoint);
+        return expected != null
+                && at != null
+                && world.equals(at.getWorld())
+                && at.getBlockX() == expected.getBlockX()
+                && at.getBlockY() == expected.getBlockY()
+                && at.getBlockZ() == expected.getBlockZ();
+    }
+
+    void refillChest(UUID id, int checkpoint) {
+        Location at = chestLocation(id, checkpoint);
+        if (at == null) return;
+        if (!(at.getBlock().getState() instanceof Chest chest))
+            throw new IllegalStateException("Missing parkour drop chest");
+        var inventory = chest.getBlockInventory();
+        inventory.clear();
+        inventory.setItem(CHEST_WATER_SLOT, new ItemStack(Material.WATER_BUCKET));
+    }
+
     boolean landed(UUID id, int checkpoint, Location at) {
         Integer index = indices.get(id);
         return index != null
@@ -180,24 +211,6 @@ final class ParkourArena {
     boolean remember(UUID id, int checkpoint, Block block, BlockData before) {
         if (!mutable(id, checkpoint, block)) return false;
         return rememberBaseline(id, block, before);
-    }
-
-    boolean rememberFrost(UUID id, int checkpoint, Block block) {
-        Integer index = indices.get(id);
-        if (index == null
-                || checkpoint < 0
-                || checkpoint >= course.stages()
-                || course.stage(checkpoint) != ParkourCourse.Kind.FROST_WALKER
-                || block.getType() != Material.WATER
-                || !attempt(id, checkpoint, block.getLocation())
-                || course.blocks()
-                                .get(
-                                        new ParkourCourse.Pos(
-                                                block.getX() - index * ParkourCourse.PITCH,
-                                                block.getY(),
-                                                block.getZ()))
-                        != Material.WATER) return false;
-        return rememberBaseline(id, block, block.getBlockData());
     }
 
     private boolean rememberBaseline(UUID id, Block block, BlockData before) {

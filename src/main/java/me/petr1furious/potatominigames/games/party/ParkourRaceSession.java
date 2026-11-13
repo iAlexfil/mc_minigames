@@ -23,7 +23,6 @@ import org.bukkit.entity.Boat;
 import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Firework;
-import org.bukkit.entity.Minecart;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Vehicle;
@@ -33,7 +32,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.block.EntityBlockFormEvent;
 import org.bukkit.event.block.FluidLevelChangeEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityKnockbackByEntityEvent;
@@ -43,6 +41,8 @@ import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -53,6 +53,7 @@ import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionType;
 import org.bukkit.util.Vector;
@@ -210,6 +211,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
         });
         p.getInventory().setItem(8, I18n.item(clock, p));
         p.getInventory().setHeldItemSlot(0);
+        arena.refillChest(p.getUniqueId(), race.checkpoint(p.getUniqueId()));
         p.setCooldown(Material.ENDER_PEARL, 0);
         p.setCooldown(Material.WIND_CHARGE, 0);
         p.setCooldown(Material.FIREWORK_ROCKET, 0);
@@ -229,6 +231,9 @@ final class ParkourRaceSession extends PartySurvivalSession {
 
     static ItemStack supplyItem(ParkourCourse.Supply supply) {
         ItemStack item = new ItemStack(supply.material(), supply.count());
+        if (supply.material() == Material.FIREWORK_ROCKET)
+            item.editMeta(
+                    FireworkMeta.class, meta -> meta.setPower(ParkourCourse.FLIGHT_ROCKET_POWER));
         if (supply.potion() != null)
             item.editMeta(
                     PotionMeta.class,
@@ -398,8 +403,27 @@ final class ParkourRaceSession extends PartySurvivalSession {
                         && gameTick() >= resetReady.getOrDefault(p.getUniqueId(), 0L)) reset(p);
                 else if (event.getAction().isLeftClick()) stageInfo(p);
             }
+            return;
         }
+        if (event.getClickedBlock() != null
+                && event.getClickedBlock().getType() == Material.CHEST
+                && !chestAccess(p, event.getClickedBlock().getLocation())) event.setCancelled(true);
         // All other interactions remain native, including mining, bucket use and item cooldowns.
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean chestAccess(Player p, Location at) {
+        return racing(p)
+                && !p.isOnGround()
+                && arena.isChest(p.getUniqueId(), race.checkpoint(p.getUniqueId()), at);
+    }
+
+    @Override
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        if (event.getPlayer() instanceof Player p
+                && p.getWorld().equals(world)
+                && event.getInventory().getType() == InventoryType.CHEST
+                && !chestAccess(p, event.getInventory().getLocation())) event.setCancelled(true);
     }
 
     @Override
@@ -583,17 +607,6 @@ final class ParkourRaceSession extends PartySurvivalSession {
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
-    public void frost(EntityBlockFormEvent event) {
-        if (!event.getBlock().getWorld().equals(world)
-                || event.getNewState().getType() != Material.FROSTED_ICE) return;
-        if (!(event.getEntity() instanceof Player p)
-                || !racing(p)
-                || !arena.rememberFrost(
-                        p.getUniqueId(), race.checkpoint(p.getUniqueId()), event.getBlock()))
-            event.setCancelled(true);
-    }
-
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
     public void vehicleCreate(VehicleCreateEvent event) {
         Vehicle vehicle = event.getVehicle();
         if (!vehicle.getWorld().equals(world)) return;
@@ -606,10 +619,7 @@ final class ParkourRaceSession extends PartySurvivalSession {
             return;
         }
         var kind = course.stage(race.checkpoint(id));
-        if (!kind.vehicle()
-                || (kind == ParkourCourse.Kind.MINECART_RIDE
-                        ? !(vehicle instanceof Minecart)
-                        : !(vehicle instanceof Boat))) {
+        if (!kind.vehicle() || !(vehicle instanceof Boat)) {
             event.setCancelled(true);
             return;
         }
@@ -700,9 +710,16 @@ final class ParkourRaceSession extends PartySurvivalSession {
     protected void handleInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player p)
                 || !racing(p)
-                || event.getClickedInventory() == null
-                || !event.getClickedInventory().equals(p.getInventory())
-                || event.getSlot() == 8
+                || event.getClickedInventory() == null) {
+            event.setCancelled(true);
+            return;
+        }
+        boolean playerInventory = event.getClickedInventory().equals(p.getInventory());
+        boolean dropChest =
+                event.getClickedInventory().equals(event.getView().getTopInventory())
+                        && chestAccess(p, event.getView().getTopInventory().getLocation());
+        if (!playerInventory && !dropChest
+                || playerInventory && event.getSlot() == 8
                 || event.getHotbarButton() == 8
                 || event.getCurrentItem() != null
                         && event.getCurrentItem().getType() == Material.CLOCK

@@ -303,7 +303,7 @@ public final class OneShotCheck {
                     YamlConfiguration.loadConfiguration(
                             new InputStreamReader(in, StandardCharsets.UTF_8));
             check(
-                    y.getInt("oneShot.durationSeconds") == 180
+                    y.getInt("oneShot.durationSeconds") == 120
                             && y.getInt("oneShot.bonusSeconds") == 6,
                     "Default match and pickup timings are configured");
             check(

@@ -26,7 +26,7 @@ public final class PartyConfig {
             bag.define("sumo.intermissionSeconds", PropertyCodec.INT, 5)
                     .validate(n -> n >= 2 && n <= 30);
     public final Property<Integer> oneShotSeconds =
-            bag.define("oneShot.durationSeconds", PropertyCodec.INT, 180)
+            bag.define("oneShot.durationSeconds", PropertyCodec.INT, 120)
                     .validate(n -> n >= 60 && n <= 1800);
     public final Property<Integer> oneShotBonusSeconds =
             bag.define("oneShot.bonusSeconds", PropertyCodec.INT, 6)

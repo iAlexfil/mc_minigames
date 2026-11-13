@@ -8,22 +8,9 @@ import java.util.Map;
 
 /** Native terrain for movement tasks; every structure stays between its two checkpoint rows. */
 final class ParkourTasks {
-    static void build(
-            Kind kind, Island from, Island to, Map<Pos, Material> plan, Map<Pos, String> states) {
+    static void build(Kind kind, Island from, Island to, Map<Pos, Material> plan) {
         int center = (int) from.centerX();
         switch (kind) {
-            case PARKOUR_JUMPS, LEAPING_PILLARS -> {
-                int[] heights =
-                        kind == Kind.LEAPING_PILLARS ? new int[] {2, 4, 2} : new int[] {1, 0, 1};
-                for (int i = 0; i < 3; i++) {
-                    int offset = kind == Kind.LEAPING_PILLARS ? 0 : (i % 2 == 0 ? -1 : 1);
-                    for (int x = center + offset - 1; x <= center + offset + 1; x++)
-                        for (int z = from.z() + 9 + i * 6; z < from.z() + 13 + i * 6; z++)
-                            plan.put(
-                                    new Pos(x, from.y() + heights[i], z),
-                                    Material.LIGHT_BLUE_CONCRETE);
-                }
-            }
             case LOW_CEILING -> {
                 for (int z = from.z() + 7; z < to.z(); z++)
                     for (int x = 0; x < WIDTH; x++) {
@@ -48,7 +35,7 @@ final class ParkourTasks {
                     for (int y = to.y() - 2; y <= from.y() + 2; y++)
                         plan.put(new Pos(side, y, z), Material.HONEY_BLOCK);
             }
-            case BOAT_WATER, FROST_WALKER -> {
+            case BOAT_WATER -> {
                 for (int z = from.z() + 7; z < to.z(); z++)
                     for (int x = 0; x < WIDTH; x++) {
                         plan.put(new Pos(x, from.y() - 1, z), OBSTACLE_BLOCK);
@@ -59,49 +46,16 @@ final class ParkourTasks {
                         x++)
                     for (int z = from.z() + 4; z < from.z() + 7; z++)
                         plan.put(new Pos(x, from.y(), z), Material.WATER);
-                if (kind == Kind.BOAT_WATER)
-                    for (int i = 0; i < 3; i++) {
-                        int gate = center + (i % 2 == 0 ? (center < WIDTH / 2 ? 8 : -8) : 0);
-                        int z = from.z() + 14 + i * 8;
-                        for (int x = 0; x < WIDTH; x++)
-                            if (Math.abs(x - gate) > 2)
-                                for (int y = from.y() + 1; y <= from.y() + 4; y++)
-                                    plan.put(new Pos(x, y, z), Material.LIGHT_BLUE_CONCRETE);
-                    }
-            }
-            case BOAT_ICE, SOUL_SPEED -> {
-                int half = kind == Kind.BOAT_ICE ? 2 : 1;
-                for (int z = from.z() + 7; z < to.z(); z++) {
-                    double t = (double) (z - from.z() - 7) / Math.max(1, to.z() - from.z() - 8);
-                    int xCenter =
-                            center
-                                    + (center < WIDTH / 2 ? 1 : -1)
-                                            * (int) Math.round(8 * Math.sin(Math.PI * t));
-                    Material floor =
-                            kind == Kind.BOAT_ICE
-                                    ? Material.BLUE_ICE
-                                    : (z % 8 < 4 ? Material.SOUL_SAND : Material.SOUL_SOIL);
-                    for (int x = xCenter - half; x <= xCenter + half; x++)
-                        plan.put(new Pos(x, from.y(), z), floor);
-                }
-                for (int x = Math.max(from.x(), center - half);
-                        x <= Math.min(from.x() + from.width() - 1, center + half);
-                        x++)
-                    for (int z = from.z() + 4; z < from.z() + 7; z++)
-                        plan.put(
-                                new Pos(x, from.y(), z),
-                                kind == Kind.BOAT_ICE ? Material.BLUE_ICE : Material.SOUL_SOIL);
-            }
-            case MINECART_RIDE -> {
-                for (int z = from.z() + 4; z < to.z() + 3; z++) {
-                    plan.put(new Pos(center, from.y(), z), Material.REDSTONE_BLOCK);
-                    Pos rail = new Pos(center, from.y() + 1, z);
-                    plan.put(rail, Material.POWERED_RAIL);
-                    states.put(
-                            rail,
-                            "minecraft:powered_rail[shape=north_south,powered=true,waterlogged=false]");
+                for (int i = 0; i < 3; i++) {
+                    int gate = center + (i % 2 == 0 ? (center < WIDTH / 2 ? 8 : -8) : 0);
+                    int z = from.z() + 14 + i * 8;
+                    for (int x = 0; x < WIDTH; x++)
+                        if (Math.abs(x - gate) > 2)
+                            for (int y = from.y() + 1; y <= from.y() + 4; y++)
+                                plan.put(new Pos(x, y, z), Material.LIGHT_BLUE_CONCRETE);
                 }
             }
+            case BOAT_ICE -> iceRoad(plan, from, to);
             case WIND_HOPS -> {
                 for (int x = center - 1; x <= center + 1; x++)
                     for (int z = from.z() + 13; z < from.z() + 16; z++)
@@ -109,6 +63,33 @@ final class ParkourTasks {
             }
             default -> {}
         }
+    }
+
+    private static void iceRoad(Map<Pos, Material> plan, Island from, Island to) {
+        int center = (int) from.centerX(), direction = center < WIDTH / 2 ? 1 : -1;
+        int start = from.z() + 7;
+        // Four cross-lane runs, joined by eight right-angle turns. Keep neighbouring
+        // parallel stretches far enough apart that jumping across is not a shortcut.
+        int[][] points = {
+            {0, 0}, {0, 7}, {14, 7}, {14, 18}, {4, 18},
+            {4, 29}, {18, 29}, {18, 40}, {0, 40}, {0, to.z() - start - 1}
+        };
+        for (int segment = 1; segment < points.length; segment++) {
+            int[] a = points[segment - 1], b = points[segment];
+            for (int offset = Math.min(a[0], b[0]); offset <= Math.max(a[0], b[0]); offset++)
+                for (int row = Math.min(a[1], b[1]); row <= Math.max(a[1], b[1]); row++)
+                    for (int x = center + direction * offset - 1;
+                            x <= center + direction * offset + 1;
+                            x++)
+                        for (int z = Math.max(start, start + row - 1);
+                                z <= Math.min(to.z() - 1, start + row + 1);
+                                z++) plan.put(new Pos(x, from.y(), z), Material.BLUE_ICE);
+        }
+        for (int x = Math.max(from.x(), center - 1);
+                x <= Math.min(from.x() + from.width() - 1, center + 1);
+                x++)
+            for (int z = from.z() + 4; z < start; z++)
+                plan.put(new Pos(x, from.y(), z), Material.BLUE_ICE);
     }
 
     private ParkourTasks() {}

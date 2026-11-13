@@ -17,6 +17,11 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.*;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.Bisected;
+import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.type.Door;
+import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.entity.*;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.*;
@@ -47,7 +52,7 @@ final class FinalsSession implements GameSession {
     private final FinalsRegeneration regeneration = new FinalsRegeneration(this::fighting, () -> this.tick);
     private Location damageOrigin;
 
-    private record OriginalVitals(double maxHealth, float walkSpeed, float flySpeed) {}
+    private record OriginalVitals(double maxHealth, double scale, float walkSpeed, float flySpeed) {}
 
     private final Map<UUID, OriginalVitals> originalVitals = new HashMap<>();
     private final Map<UUID, FinalsClass> classes = new HashMap<>();
@@ -392,6 +397,10 @@ final class FinalsSession implements GameSession {
                 return true;
             }
 
+            public boolean defibrillateAimed(Player reviver) {
+                return revivalMode && revives != null && revives.defibrillateAimed(reviver);
+            }
+
             public boolean carrier(Player player) {
                 return state != null && player.getUniqueId().equals(state.carrier());
             }
@@ -512,6 +521,7 @@ final class FinalsSession implements GameSession {
                 id ->
                         new OriginalVitals(
                                 player.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),
+                                player.getAttribute(Attribute.SCALE).getBaseValue(),
                                 player.getWalkSpeed(),
                                 player.getFlySpeed()));
     }
@@ -522,6 +532,7 @@ final class FinalsSession implements GameSession {
         if (previous == null) return;
         var health = player.getAttribute(Attribute.MAX_HEALTH);
         health.setBaseValue(previous.maxHealth());
+        player.getAttribute(Attribute.SCALE).setBaseValue(previous.scale());
         if (!player.isDead() && player.getHealth() > health.getValue())
             player.setHealth(health.getValue());
         player.setWalkSpeed(previous.walkSpeed());
@@ -824,6 +835,7 @@ final class FinalsSession implements GameSession {
                 ? selected : equippedLoadouts.getOrDefault(id, selected);
         classes.put(id, choice.playerClass());
         player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(choice.playerClass().health());
+        player.getAttribute(Attribute.SCALE).setBaseValue(choice.playerClass().scale());
         player.setWalkSpeed(choice.playerClass().walkSpeed());
         if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
         services.playerState().resetForRound(player, GameMode.SURVIVAL);
@@ -844,9 +856,7 @@ final class FinalsSession implements GameSession {
         weapons.equip(player, choice.weapon());
         gadgets.equip(player, choice);
         equippedLoadouts.put(id, choice);
-        ItemStack pickaxe = gear(Material.IRON_PICKAXE);
-        pickaxe.editMeta(meta -> meta.displayName(text("item.pickaxe")));
-        inventory.setItem(7, I18n.item(pickaxe, player));
+        inventory.setItem(7, null);
         if (loadouts != null) inventory.setItem(8, loadouts.button(player));
         for (Material material :
                 List.of(
@@ -1495,6 +1505,7 @@ final class FinalsSession implements GameSession {
                                 "▰".repeat(progress) + "▱".repeat(10 - progress),
                                 Math.max(0, (deadline - tick + 19) / 20));
             } else if (protectedSpawn(player)) status = text("protected");
+            else if (gadgets != null && gadgets.usingHealingBeam(player)) status = gadgets.hud(player);
             else if (id.equals(state.carrier())) status = text("carrying");
             else if (weapons != null && player.getInventory().getHeldItemSlot() == 0)
                 status = weapons.hud(player);
@@ -1556,11 +1567,19 @@ final class FinalsSession implements GameSession {
         }
         var block = event.getClickedBlock();
         if (block != null) event.setUseInteractedBlock(Event.Result.DENY);
+        if (block != null && event.getAction() == Action.LEFT_CLICK_BLOCK
+                && canBreakGlass(player, block)) {
+            event.setUseInteractedBlock(Event.Result.ALLOW);
+            // Paper's block-dig path also requires this result, even with an empty hand.
+            event.setUseItemInHand(Event.Result.ALLOW);
+            return;
+        }
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK
                 && event.getAction() != Action.RIGHT_CLICK_AIR) {
             if (weapons != null) weapons.interact(event);
             return;
         }
+        if (block != null && interactDoor(event, block)) return;
         UUID id = player.getUniqueId();
         int station =
                 cashouts != null
@@ -1587,6 +1606,11 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onPlayerInteractEntity(PlayerInteractEntityEvent event) {
+        if (event.getRightClicked() instanceof Player && event.getHand() == EquipmentSlot.HAND
+                && gadgets != null && gadgets.interactHealingTarget(event.getPlayer())) {
+            event.setCancelled(true);
+            return;
+        }
         if (revives != null && revives.matches(event.getRightClicked())) {
             event.setCancelled(true);
             if (event.getHand() == EquipmentSlot.HAND) {
@@ -1692,6 +1716,10 @@ final class FinalsSession implements GameSession {
     @Override
     public void onEntityDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
+        if (event.getCause() == EntityDamageEvent.DamageCause.FALL) {
+            event.setCancelled(true);
+            return;
+        }
         if (!fighting(player) || protectedSpawn(player)) {
             event.setCancelled(true);
             return;
@@ -1791,17 +1819,51 @@ final class FinalsSession implements GameSession {
 
     @Override
     public void onBlockBreak(BlockBreakEvent event) {
-        Player player = event.getPlayer();
-        boolean pickaxe = player.getInventory().getHeldItemSlot() == 7;
-        boolean temporary = gadgets != null && gadgets.isTemporaryCover(event.getBlock());
-        if (!canObjective(player) || !pickaxe || (!arena.isCover(event.getBlock()) && !temporary))
-            event.setCancelled(true);
-        else if (temporary) {
-            event.setCancelled(true);
-            gadgets.breakTemporary(event.getBlock());
-        }
+        if (!canBreakGlass(event.getPlayer(), event.getBlock())) event.setCancelled(true);
         event.setDropItems(false);
         event.setExpToDrop(0);
+    }
+
+    private boolean canBreakGlass(Player player, Block block) {
+        Material material = block.getType();
+        boolean glass = material == Material.GLASS || material == Material.GLASS_PANE
+                || material == Material.TINTED_GLASS
+                || material.name().endsWith("_STAINED_GLASS")
+                || material.name().endsWith("_STAINED_GLASS_PANE");
+        return glass && canObjective(player) && arena.isCover(block)
+            && player.getInventory().getItemInMainHand().getType() == Material.AIR;
+    }
+
+    private boolean interactDoor(PlayerInteractEvent event, Block block) {
+        var data = block.getBlockData();
+        if (!(data instanceof Door) && !(data instanceof TrapDoor)) return false;
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        if (!canObjective(player) || !arena.contains(block.getLocation())
+                || !near(player, block.getLocation().add(.5, .5, .5), 4.5)) return true;
+        Block otherHalf = null;
+        Door otherData = null;
+        if (data instanceof Door door) {
+            otherHalf = block.getRelative(door.getHalf() == Bisected.Half.BOTTOM ? BlockFace.UP : BlockFace.DOWN);
+            if (!arena.contains(otherHalf.getLocation()) || otherHalf.getType() != block.getType()
+                    || !(otherHalf.getBlockData() instanceof Door matching)) return true;
+            otherData = matching;
+        }
+        Openable openable = (Openable) data;
+        boolean open = !openable.isOpen();
+        openable.setOpen(open);
+        block.setBlockData(data, false);
+        if (otherData != null) {
+            otherData.setOpen(open);
+            otherHalf.setBlockData(otherData, false);
+        }
+        if (weapons != null) weapons.stopFiring(player.getUniqueId());
+        String material = block.getType().name();
+        String family = material.contains("IRON") ? "iron" : material.contains("COPPER") ? "copper" : "wooden";
+        String kind = data instanceof Door ? "door" : "trapdoor";
+        block.getWorld().playSound(block.getLocation(),
+                "minecraft:block." + family + "_" + kind + (open ? ".open" : ".close"), .8f, 1f);
+        return true;
     }
 
     @Override

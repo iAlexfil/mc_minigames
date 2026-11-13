@@ -20,11 +20,16 @@ import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.Bisected;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.type.Door;
+import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.TNTPrimed;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.Event;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -69,6 +74,9 @@ public final class FinalsSessionCheck {
         friendlyAndAttributedDamage();
         protectionAndObjectiveGates();
         damageInterruptions();
+        fallDamageIsDisabled();
+        bareHandGlassBreaking();
+        doorAndTrapdoorInteractions();
         deathAndRejoin();
         creditedEnemyKills();
         teamWipeDeadlines();
@@ -296,9 +304,9 @@ public final class FinalsSessionCheck {
                 !enemy.isCancelled() && !f.state.stealDeadlines().containsKey(BLUE),
                 "positive valid enemy damage interrupts steal");
         f.state.beginSteal(BLUE, 100);
-        EntityDamageEvent cancelledFall = environmental(f.blue.player, 3);
-        cancelledFall.setCancelled(true);
-        f.session.onEntityDamage(cancelledFall);
+        EntityDamageEvent cancelledEnvironment = environmental(f.blue.player, 3);
+        cancelledEnvironment.setCancelled(true);
+        f.session.onEntityDamage(cancelledEnvironment);
         check(
                 f.state.stealDeadlines().containsKey(BLUE),
                 "cancelled environmental damage preserves steal");
@@ -312,11 +320,165 @@ public final class FinalsSessionCheck {
                 "positive environmental damage interrupts steal");
         f.state.beginSteal(BLUE, 100);
         f.protection().put(BLUE, 101L);
-        EntityDamageEvent protectedFall = environmental(f.blue.player, 3);
-        f.session.onEntityDamage(protectedFall);
+        EntityDamageEvent protectedEnvironment = environmental(f.blue.player, 3);
+        f.session.onEntityDamage(protectedEnvironment);
         check(
-                protectedFall.isCancelled() && f.state.stealDeadlines().containsKey(BLUE),
+                protectedEnvironment.isCancelled() && f.state.stealDeadlines().containsKey(BLUE),
                 "spawn protection blocks environmental damage and preserves channel");
+    }
+
+    private static void fallDamageIsDisabled() throws Exception {
+        Fixture f = new Fixture();
+        f.depositRed();
+        f.state.beginSteal(BLUE, 100);
+        EntityDamageEvent fall = new EntityDamageEvent(f.blue.player,
+                EntityDamageEvent.DamageCause.FALL, null, 18);
+        f.session.onEntityDamage(fall);
+        check(fall.isCancelled(), "fall damage is disabled for an active contestant without spawn protection");
+        check(f.state.stealDeadlines().containsKey(BLUE), "falling does not interrupt an ongoing cashout steal");
+        EntityDamageEvent fire = environmental(f.blue.player, 3);
+        f.session.onEntityDamage(fire);
+        check(!fire.isCancelled() && !f.state.stealDeadlines().containsKey(BLUE),
+                "other environmental damage still applies and interrupts a steal");
+    }
+
+    private static void bareHandGlassBreaking() throws Exception {
+        Fixture f = new Fixture();
+        Block cover = f.world.block(6, 65, 3);
+        f.red.location = cover.getLocation().add(-1, 0, 0);
+        f.red.hand.type = Material.AIR;
+        f.red.slot = 6;
+        for (Material material : Material.values()) {
+            if (material != Material.GLASS && material != Material.GLASS_PANE
+                    && material != Material.TINTED_GLASS && !material.name().endsWith("_STAINED_GLASS")
+                    && !material.name().endsWith("_STAINED_GLASS_PANE")) continue;
+            cover.setType(material);
+            PlayerInteractEvent start = interaction(f.red.player, cover, EquipmentSlot.HAND, Action.LEFT_CLICK_BLOCK);
+            f.session.onPlayerInteract(start);
+            check(start.useInteractedBlock() == Event.Result.ALLOW && start.useItemInHand() == Event.Result.ALLOW,
+                    "bare-hand left click permits natural glass breaking: " + material);
+            BlockBreakEvent broken = new BlockBreakEvent(cover, f.red.player);
+            broken.setExpToDrop(4);
+            f.session.onBlockBreak(broken);
+            check(!broken.isCancelled() && !broken.isDropItems() && broken.getExpToDrop() == 0,
+                    "bare-hand glass breaks without drops or XP: " + material);
+        }
+        cover.setType(Material.GLASS);
+        PlayerInteractEvent offhand = interaction(f.red.player, cover, EquipmentSlot.OFF_HAND, Action.LEFT_CLICK_BLOCK);
+        f.session.onPlayerInteract(offhand);
+        check(offhand.isCancelled(), "offhand cannot initiate glass demolition");
+        for (Material held : List.of(Material.IRON_PICKAXE, Material.WOODEN_HOE, Material.STICK)) {
+            f.red.hand.type = held;
+            f.red.slot = 7;
+            BlockBreakEvent broken = new BlockBreakEvent(cover, f.red.player);
+            f.session.onBlockBreak(broken);
+            check(broken.isCancelled(), "holding an item cannot break glass, including the old pickaxe slot");
+        }
+        f.red.hand.type = Material.AIR;
+        for (Material solid : List.of(Material.OAK_PLANKS, Material.STONE, Material.ICE, Material.SEA_LANTERN)) {
+            cover.setType(solid);
+            BlockBreakEvent broken = new BlockBreakEvent(cover, f.red.player);
+            f.session.onBlockBreak(broken);
+            check(broken.isCancelled(), "bare hands cannot break non-glass terrain: " + solid);
+        }
+        cover.setType(Material.GLASS);
+        for (Block protectedBlock : List.of(f.world.block(0, 64, 0), f.arena.vault().getBlock(),
+                f.world.block(24, 65, 0))) {
+            protectedBlock.setType(Material.GLASS);
+            BlockBreakEvent broken = new BlockBreakEvent(protectedBlock, f.red.player);
+            f.session.onBlockBreak(broken);
+            check(broken.isCancelled(), "glass must still belong to destructible arena cover");
+        }
+        for (String gate : List.of("protection", "countdown", "downed", "disconnected", "finished")) {
+            Fixture blocked = new Fixture();
+            Block glass = blocked.world.block(6, 65, 3);
+            glass.setType(Material.GLASS);
+            blocked.red.hand.type = Material.AIR;
+            interactionGate(blocked, gate);
+            BlockBreakEvent broken = new BlockBreakEvent(glass, blocked.red.player);
+            blocked.session.onBlockBreak(broken);
+            check(broken.isCancelled(), "glass demolition respects " + gate);
+            PlayerInteractEvent start = interaction(blocked.red.player, glass, EquipmentSlot.HAND, Action.LEFT_CLICK_BLOCK);
+            blocked.session.onPlayerInteract(start);
+            check(start.useInteractedBlock() != Event.Result.ALLOW, "glass interaction respects " + gate);
+        }
+    }
+
+    private static void doorAndTrapdoorInteractions() throws Exception {
+        for (Material material : List.of(Material.OAK_DOOR, Material.IRON_DOOR, Material.COPPER_DOOR,
+                Material.WAXED_OXIDIZED_COPPER_DOOR)) {
+            Fixture f = new Fixture();
+            f.red.location = new Location(f.world.world, 5, 65, 3);
+            f.red.hand.type = Material.WOODEN_HOE;
+            Block bottom = f.world.block(6, 65, 3), top = f.world.block(6, 66, 3);
+            f.world.openable(bottom, material, false, Bisected.Half.BOTTOM);
+            f.world.openable(top, material, false, Bisected.Half.TOP);
+            PlayerInteractEvent opening = interact(f.red.player, top, EquipmentSlot.HAND);
+            f.session.onPlayerInteract(opening);
+            check(opening.isCancelled() && f.world.open(bottom) && f.world.open(top),
+                    "right-clicking the upper half opens both halves with a weapon held: " + material);
+            f.world.unchangedShape(bottom);
+            f.world.unchangedShape(top);
+            check(((Door) bottom.getBlockData()).getHalf() == Bisected.Half.BOTTOM
+                            && ((Door) top.getBlockData()).getHalf() == Bisected.Half.TOP,
+                    "opening preserves both door-half identities");
+            f.session.onPlayerInteract(interact(f.red.player, bottom, EquipmentSlot.HAND));
+            check(!f.world.open(bottom) && !f.world.open(top), "second click closes both door halves: " + material);
+            f.session.onPlayerInteract(interact(f.red.player, bottom, EquipmentSlot.OFF_HAND));
+            check(!f.world.open(bottom) && !f.world.open(top), "offhand duplicate cannot double-toggle a door");
+        }
+        for (Material material : List.of(Material.OAK_TRAPDOOR, Material.IRON_TRAPDOOR, Material.COPPER_TRAPDOOR)) {
+            Fixture f = new Fixture();
+            f.red.location = new Location(f.world.world, 5, 65, 3);
+            Block trapdoor = f.world.block(6, 65, 3);
+            f.world.openable(trapdoor, material, true, Bisected.Half.TOP);
+            PlayerInteractEvent close = interact(f.red.player, trapdoor, EquipmentSlot.HAND);
+            f.session.onPlayerInteract(close);
+            check(close.isCancelled() && !f.world.open(trapdoor), "right-click toggles a trapdoor: " + material);
+            f.world.unchangedShape(trapdoor);
+            check(((TrapDoor) trapdoor.getBlockData()).getHalf() == Bisected.Half.TOP,
+                    "opening preserves a top-mounted trapdoor");
+        }
+        for (String gate : List.of("protection", "countdown", "downed", "disconnected", "finished", "distance", "outside")) {
+            Fixture f = new Fixture();
+            Block door = f.world.block(gate.equals("outside") ? 24 : 6, 65, 3);
+            f.world.openable(door, Material.IRON_TRAPDOOR, false, Bisected.Half.BOTTOM);
+            f.red.location = door.getLocation().add(-1, 0, 0);
+            if (gate.equals("distance")) f.red.location.add(-10, 0, 0);
+            else if (!gate.equals("outside")) interactionGate(f, gate);
+            f.session.onPlayerInteract(interact(f.red.player, door, EquipmentSlot.HAND));
+            check(!f.world.open(door), "door toggling respects " + gate);
+        }
+        Fixture f = new Fixture();
+        Block reachable = f.world.block(6, 65, 3);
+        f.world.openable(reachable, Material.OAK_TRAPDOOR, false, Bisected.Half.BOTTOM);
+        f.red.location = reachable.getLocation().add(.5 - 4.5, .5, .5);
+        f.session.onPlayerInteract(interact(f.red.player, reachable, EquipmentSlot.HAND));
+        check(f.world.open(reachable), "door interaction accepts the exact 4.5-block reach boundary");
+        f.red.location.add(-.001, 0, 0);
+        f.session.onPlayerInteract(interact(f.red.player, reachable, EquipmentSlot.HAND));
+        check(f.world.open(reachable), "door interaction rejects distances beyond 4.5 blocks");
+        Block brokenDoor = f.world.block(8, 65, 3);
+        f.world.openable(brokenDoor, Material.IRON_DOOR, false, Bisected.Half.BOTTOM);
+        f.red.location = brokenDoor.getLocation().add(-1, 0, 0);
+        f.session.onPlayerInteract(interact(f.red.player, brokenDoor, EquipmentSlot.HAND));
+        check(!f.world.open(brokenDoor), "a missing matching door half cannot be mutated");
+        Block chest = f.world.block(6, 65, 3);
+        chest.setType(Material.CHEST);
+        PlayerInteractEvent other = interact(f.red.player, chest, EquipmentSlot.HAND);
+        f.session.onPlayerInteract(other);
+        check(other.useInteractedBlock() == Event.Result.DENY, "other native block interactions remain denied");
+    }
+
+    private static void interactionGate(Fixture f, String gate) throws Exception {
+        switch (gate) {
+            case "protection" -> f.protection().put(RED, 101L);
+            case "countdown" -> set(f.session, "state", null);
+            case "downed" -> map(f.session, "respawnAt").put(RED, 200L);
+            case "disconnected" -> f.connected().remove(RED);
+            case "finished" -> f.state.tick(f.rules.matchTicks());
+            default -> throw new AssertionError(gate);
+        }
     }
 
     private static void deathAndRejoin() throws Exception {
@@ -1076,13 +1238,17 @@ public final class FinalsSessionCheck {
     }
 
     private static EntityDamageEvent environmental(Player target, double damage) {
-        return new EntityDamageEvent(target, EntityDamageEvent.DamageCause.FALL, null, damage);
+        return new EntityDamageEvent(target, EntityDamageEvent.DamageCause.FIRE, null, damage);
     }
 
     private static PlayerInteractEvent interact(Player player, Block block, EquipmentSlot hand) {
+        return interaction(player, block, hand, block == null ? Action.RIGHT_CLICK_AIR : Action.RIGHT_CLICK_BLOCK);
+    }
+
+    private static PlayerInteractEvent interaction(Player player, Block block, EquipmentSlot hand, Action action) {
         return new PlayerInteractEvent(
                 player,
-                block == null ? Action.RIGHT_CLICK_AIR : Action.RIGHT_CLICK_BLOCK,
+                action,
                 null,
                 block,
                 BlockFace.UP,
@@ -1348,10 +1514,30 @@ public final class FinalsSessionCheck {
 
     private static final class FakeWorld {
         final Map<Position, Material> blocks = new HashMap<>();
+        final Map<Position, BlockData> data = new HashMap<>();
         final List<SoundPulse> sounds = new ArrayList<>();
         final World world;
         int spawned;
         Bomb lastBomb;
+
+        void openable(Block block, Material material, boolean open, Bisected.Half half) {
+            block.setType(material);
+            data.put(new Position(block.getX(), block.getY(), block.getZ()),
+                    new OpenState(material, open, half).data());
+        }
+
+        boolean open(Block block) {
+            return ((org.bukkit.block.data.Openable) block.getBlockData()).isOpen();
+        }
+
+        void unchangedShape(Block block) {
+            BlockData state = block.getBlockData();
+            check(((org.bukkit.block.data.Directional) state).getFacing() == BlockFace.WEST,
+                    "opening keeps the original facing");
+            check(((org.bukkit.block.data.Powerable) state).isPowered(), "opening keeps the powered property");
+            if (state instanceof Door door) check(door.getHinge() == Door.Hinge.RIGHT, "opening keeps door hinge");
+            if (state instanceof TrapDoor trapdoor) check(trapdoor.isWaterlogged(), "opening keeps waterlogging");
+        }
 
         FakeWorld() {
             world =
@@ -1401,7 +1587,20 @@ public final class FinalsSessionCheck {
                                 case "getType" -> blocks.getOrDefault(at, Material.AIR);
                                 case "setType" -> {
                                     blocks.put(at, (Material) args[0]);
+                                    data.remove(at);
                                     yield null;
+                                }
+                                case "getBlockData" -> data.getOrDefault(at,
+                                        proxy(BlockData.class, (ignored, operation, values) -> {
+                                            if (operation.getName().equals("getMaterial")) return blocks.getOrDefault(at, Material.AIR);
+                                            throw new AssertionError("Unexpected plain block data: " + operation.getName());
+                                        }));
+                                case "setBlockData" -> { data.put(at, (BlockData) args[0]); yield null; }
+                                case "getRelative" -> {
+                                    BlockFace face = (BlockFace) args[0];
+                                    int distance = args.length == 2 ? (int) args[1] : 1;
+                                    yield block(x + face.getModX() * distance, y + face.getModY() * distance,
+                                            z + face.getModZ() * distance);
                                 }
                                 case "getLocation" -> new Location(world, x, y, z);
                                 case "equals" -> p == args[0];
@@ -1410,6 +1609,47 @@ public final class FinalsSessionCheck {
                                         throw new AssertionError(
                                                 "Unexpected block call: " + method.getName());
                             });
+        }
+    }
+
+    private static final class OpenState {
+        final Material material;
+        boolean open;
+        Bisected.Half half;
+        BlockFace facing = BlockFace.WEST;
+        Door.Hinge hinge = Door.Hinge.RIGHT;
+        boolean powered = true, waterlogged = true;
+
+        OpenState(Material material, boolean open, Bisected.Half half) {
+            this.material = material;
+            this.open = open;
+            this.half = half;
+        }
+
+        BlockData data() {
+            Class<? extends BlockData> type = material.name().endsWith("TRAPDOOR") ? TrapDoor.class : Door.class;
+            return proxy(type, (p, method, args) -> switch (method.getName()) {
+                case "getMaterial" -> material;
+                case "isOpen" -> open;
+                case "setOpen" -> { open = (boolean) args[0]; yield null; }
+                case "getHalf" -> half;
+                case "setHalf" -> { half = (Bisected.Half) args[0]; yield null; }
+                case "getFacing" -> facing;
+                case "setFacing" -> { facing = (BlockFace) args[0]; yield null; }
+                case "getHinge" -> hinge;
+                case "setHinge" -> { hinge = (Door.Hinge) args[0]; yield null; }
+                case "isPowered" -> powered;
+                case "setPowered" -> { powered = (boolean) args[0]; yield null; }
+                case "isWaterlogged" -> waterlogged;
+                case "setWaterlogged" -> { waterlogged = (boolean) args[0]; yield null; }
+                case "clone" -> {
+                    OpenState copy = new OpenState(material, open, half);
+                    copy.facing = facing; copy.hinge = hinge;
+                    copy.powered = powered; copy.waterlogged = waterlogged;
+                    yield copy.data();
+                }
+                default -> throw new AssertionError("Unexpected openable data call: " + method.getName());
+            });
         }
     }
 

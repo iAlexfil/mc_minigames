@@ -124,7 +124,7 @@ Choose one specialization and three distinct, class-compatible gadgets in the
 menu. Choices are saved per player in `finals/loadouts.yml`; old saved loadouts
 receive the class's default equipment. Countdown changes apply
 immediately; combat changes apply on the next spawn. Opening the menu does not
-protect you from enemy damage. Original health and movement settings return when
+protect you from enemy damage. Original health, size and movement settings return when
 you leave.
 
 | Class | Health / movement | Weapons | Specializations |
@@ -133,6 +133,9 @@ you leave.
 | Medium (M) | 25 HP / 100% | AKM (`akm`), FCAR (`fcar`), Model 1887 (`model1887`), Riot Shield (`riotshield`), Dual Blades (`dualblades`) | Healing Beam, Guardian Turret, Dematerializer |
 | Heavy (L) | 35 HP / 85% | M60 (`m60`), Lewis Gun (`lewisgun`), SA1216 (`sa1216`), Sledgehammer (`sledgehammer`), Spear (`spear`) | Charge 'n' Slam, Mesh Shield, Winch Claw |
 
+Light is 80% of normal player size, Medium is 100%, and Heavy is 125%.
+Heavy needs to crouch through standard two-block doorways. Fall damage is disabled.
+
 All classes can choose Frag, Smoke, Gas, Pyro and Goo Grenades or Flashbangs.
 Light also has Sonar Grenade, Vanishing Bomb and Breach Charge; Medium has Sonar
 Grenade, Jump Pad, Defibrillator, Explosive Mine, Gas Mine and APS Turret; Heavy has RPG-7,
@@ -140,7 +143,7 @@ Dome Shield, Barricade, Explosive Mine and Pyro Mine. The menu shows charges,
 recharge times and controls for every item.
 
 The primary weapon is in slot 1, three gadgets in slots 2–4, specialization in
-slot 5, demolition pickaxe in slot 8, and loadout menu in slot 9. Right-click to
+slot 5, and loadout menu in slot 9. Right-click to
 fire/use a gadget, left-click for melee, and **F to reload**. Guns have magazines,
 timed reloads and unlimited reserve ammunition. Gadget charges recharge and reset
 on respawn. Weapon values are balanced for Minecraft; team leather armor reduces
@@ -164,7 +167,11 @@ uses the [community-reported 40 HP/s](https://www.reddit.com/r/TheFinalsAcademy/
 at this mode's 1:10 health scale.
 
 Sonar reveals hidden enemies. Carrying a cashbox or attacking ends invisibility.
-The Healing Beam can heal allies (or the user more slowly); outside 2v2/3v3,
+Hold right-click with the Healing Beam to heal allies (or yourself more slowly).
+The heat bar appears above the hotbar: eight seconds of healing overheats the
+beam, and four seconds without healing fully cools it. Releasing right-click,
+switching items, or losing sight of the target stops the beam. In 2v2/3v3, aim the
+Defibrillator at a teammate's statue and right-click to charge the revive; outside 2v2/3v3,
 Defibrillator instantly revives a nearby teammate at their death position during
 the respawn delay. Dome Shield
 blocks enemy attacks from outside while enemies can still enter it; cashbox
@@ -174,10 +181,14 @@ and rockets. Smoke obscures enemies and extinguishes fire; fire clears gas.
 Dematerializer holes restore once clear of players. Mesh Shield requires holding
 the specialization and blocks attacks from the front. Winch Claw pulls enemies,
 cashboxes and cashouts, with terrain stopping their movement.
-Arena cover and temporary barricades are destructible, while objectives, spawn
-areas and the protected floor remain intact.
+Glass blocks and panes can be broken with an empty hand. Right-click doors and
+trapdoors to open or close them, including iron variants. There is no demolition
+pickaxe; weapons and explosives still destroy arena cover and temporary barricades,
+while objectives, spawn areas and the protected floor remain intact.
 
-Vault and cashout labels show their remaining timers. Eliminations appear in
+Vault and cashout labels show their remaining timers. Distant objective and teammate
+markers are drawn closer to the viewer when needed, with the actual distance shown,
+so they remain visible beyond entity render distance. Eliminations appear in
 chat, cashout starts show a title, and vaults, cashouts, kills, explosions and
 respawns have sound cues.
 

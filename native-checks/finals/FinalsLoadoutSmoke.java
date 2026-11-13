@@ -187,9 +187,13 @@ public final class FinalsLoadoutSmoke {
                 FakePlayer player=entry.getKey();double expected=entry.getValue();
                 close(player.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),expected,"Native spawn class max health");
                 close(player.attribute.getHealth(),expected,"Native spawn class current health");
+                close(player.attribute.getAttribute(Attribute.SCALE).getBaseValue(),
+                        expected==15?.8:expected==25?1:1.25,"Native spawn applies the class body size");
                 require(player.storage.getItem(0)!=null&&player.storage.getItem(0).getItemMeta().hasDisplayName(),"Native spawn installs a named weapon");
                 for(int slot=1;slot<=4;slot++)require(player.storage.getItem(slot)!=null,"Native spawn equips each class gadget");
                 require(player.storage.getItem(8).getType()==Material.NETHER_STAR,"Native spawn equips loadout menu control");
+                require(player.storage.getItem(7)==null||player.storage.getItem(7).getType().isAir(),
+                        "Native spawn leaves the former pickaxe slot empty");
                 close(player.walkSpeed,0,"Countdown freezes movement");
                 require((boolean)call(type("FinalsLoadouts"),"viewing",player.player),"The native selection fixture displays the Finals loadout menu");
             }
@@ -202,6 +206,7 @@ public final class FinalsLoadoutSmoke {
             call(loadouts,"onClick",countdownClick);
             require(countdownClick.isCancelled(),"Loadout GUI consumes inventory clicks");
             close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),35,"Countdown GUI class change applies immediately");
+            close(light.attribute.getAttribute(Attribute.SCALE).getBaseValue(),1.25,"Countdown GUI applies Heavy body size immediately");
             close((float)call(frozen.get(light.id),"walkSpeed"),.17,"Countdown class change saves Heavy speed while frozen");
             withPlayerLookup(session,"onParticipantQuit",heavy.player);
             restored(heavy);
@@ -257,11 +262,13 @@ public final class FinalsLoadoutSmoke {
             ItemStack previousWeapon=light.storage.getItem(0).clone();
             call(loadouts,"onClick",activeClick);
             close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),35,"Active GUI change waits for next spawn");
+            close(light.attribute.getAttribute(Attribute.SCALE).getBaseValue(),1.25,"Queued Medium choice preserves the current Heavy size");
             close(light.walkSpeed,.17,"Active GUI change preserves current movement speed");
             require(light.storage.getItem(0).equals(previousWeapon),"Active GUI change preserves equipped weapon until respawn");
             require(call(call(loadouts,"choice",light.id),"playerClass").toString().equals("MEDIUM"),"Active GUI change records next-spawn preference");
             call(session,"spawn",light.player);
             close(light.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),25,"Next spawn applies selected Medium health");
+            close(light.attribute.getAttribute(Attribute.SCALE).getBaseValue(),1,"Next spawn applies selected Medium body size");
             close(light.attribute.getHealth(),25,"Next spawn fully heals selected class");
             close(light.walkSpeed,.20,"Next spawn applies selected Medium speed");
             equipmentChecks(loadouts,light,heavy);
@@ -363,9 +370,21 @@ public final class FinalsLoadoutSmoke {
 
     private void cashoutMusicChecks(FakePlayer carrier,FakePlayer listener)throws Exception {
         Object state=get(session,"state"),physics=get(session,"cashouts");
+        // Fake player transports do not load chunks as real connected players do.
+        // Keep both stations and every listener movement in accessible native chunks.
+        nativeAccess(()->{
+            for(Object body:(Object[])get(physics,"bodies")) {
+                Location origin=((Entity)get(body,"interaction")).getLocation();
+                int chunkX=origin.getBlockX()>>4,chunkZ=origin.getBlockZ()>>4;
+                for(int dx=-4;dx<=4;dx++)for(int dz=-4;dz<=4;dz++)
+                    origin.getWorld().getChunkAt(chunkX+dx,chunkZ+dz).load();
+            }
+            return null;
+        });
         Class<?> musicType=type("FinalsCashoutMusic");
         Map<UUID,TextDisplay> emitters=new HashMap<>();
         Map<UUID,Entity> transports=new HashMap<>();
+        Map<UUID,List<String>> emitterTeleports=new HashMap<>();
         List<TextDisplay> created=new ArrayList<>();
         Set<UUID> tracked=new HashSet<>(players.keySet());
         tracked.remove(listener.id);
@@ -386,7 +405,11 @@ public final class FinalsLoadoutSmoke {
                         (receiver,method,args)->{
                             if(method.getName().equals("getTrackedBy"))
                                 return tracked.contains(viewer.getUniqueId())?Set.of(viewer):Set.of();
-                            return nativeAccess(()->invoke(method,emitter,args));
+                            Object result=nativeAccess(()->invoke(method,emitter,args));
+                            if(method.getName().equals("teleport"))
+                                emitterTeleports.computeIfAbsent(viewer.getUniqueId(),ignored->new ArrayList<>())
+                                        .add("requested="+args[0]+", accepted="+result+", actual="+emitter.getLocation());
+                            return result;
                         });
                 transports.put(viewer.getUniqueId(),transport);
                 return transport;
@@ -409,9 +432,14 @@ public final class FinalsLoadoutSmoke {
         require(call(state,"phase").toString().equals("CASHOUT")
                         &&(long)call(state,"phaseDeadline")==opened+1_800,
                 "The real station deposit starts a ninety-second cashout");
+        TextDisplay waitingEmitter=emitters.get(listener.id);
         require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep"))
-                        &&listener.musicStarted.isEmpty()&&emitters.get(listener.id).isValid(),
-                "A real deposit defers first playback until the listener has received its private emitter");
+                        &&listener.musicStarted.isEmpty()&&waitingEmitter!=null&&waitingEmitter.isValid(),
+                "A real deposit defers first playback until the listener has received its private emitter;"
+                        +" carrierStarted="+carrier.musicStarted+", listenerStarted="+listener.musicStarted
+                        +", listenerEmitter="+waitingEmitter+", listenerEmitterValid="+(waitingEmitter!=null&&waitingEmitter.isValid())
+                        +", source="+source.getLocation()+", sourceValid="+source.isValid()
+                        +", listener="+listener.location+", sourceDistance="+listener.location.distance(source.getLocation()));
         tracked.add(listener.id);
         withPlayerLookup(session,"updateCashoutMusic");
         require(carrier.musicStarted.equals(List.of("minecraft:music_disc.pigstep"))
@@ -435,9 +463,20 @@ public final class FinalsLoadoutSmoke {
         TextDisplay boundaryEmitter=emitters.get(boundary.id);
         boundary.location=source.getLocation().add(32.01,0,0);
         withPlayerLookup(session,"updateCashoutMusic");
-        require(boundary.musicStopped.isEmpty()&&boundary.musicStarted.size()==1&&boundaryEmitter.isValid()
-                        &&boundaryEmitter.getLocation().distanceSquared(boundary.player.getEyeLocation().add(0,24,0))<.000001,
-                "Leaving thirty-two blocks moves the same live emitter beyond hearing without stopping or replaying the disc");
+        Location mutedExpected=boundary.player.getEyeLocation().add(0,24,0);
+        Location mutedActual=boundaryEmitter.getLocation();
+        String boundaryDiagnostic=" started="+boundary.musicStarted+", stopped="+boundary.musicStopped
+                +", valid="+boundaryEmitter.isValid()+", sameEmitter="+(emitters.get(boundary.id)==boundaryEmitter)
+                +", sourceDistance="+boundary.location.distance(source.getLocation())
+                +", expected="+mutedExpected+", actual="+mutedActual
+                +", deltaSquared="+mutedActual.distanceSquared(mutedExpected)
+                +", teleports="+emitterTeleports.getOrDefault(boundary.id,List.of());
+        require(boundary.musicStopped.isEmpty(),"Leaving range does not stop playback;"+boundaryDiagnostic);
+        require(boundary.musicStarted.size()==1,"Leaving range does not replay playback;"+boundaryDiagnostic);
+        require(boundaryEmitter.isValid()&&emitters.get(boundary.id)==boundaryEmitter,
+                "Leaving range retains the original live emitter;"+boundaryDiagnostic);
+        require(mutedActual.distanceSquared(mutedExpected)<.000001,
+                "Leaving thirty-two blocks moves the emitter to its muted position;"+boundaryDiagnostic);
         boundary.location=source.getLocation().add(24,0,0);
         withPlayerLookup(session,"updateCashoutMusic");
         require(boundary.musicStarted.size()==1&&boundary.musicStopped.isEmpty()&&emitters.get(boundary.id)==boundaryEmitter
@@ -801,6 +840,9 @@ public final class FinalsLoadoutSmoke {
     private void assertEquipped(FakePlayer player,Object choice,String label)throws Exception {
         require(((Map<?,?>)get(session,"classes")).get(player.id)==call(choice,"playerClass"),
                 label+" keeps the actually equipped class");
+        close(player.attribute.getAttribute(Attribute.SCALE).getBaseValue(),
+                ((Number)call(call(choice,"playerClass"),"scale")).doubleValue(),label+" keeps the equipped class body size");
+        require(player.storage.getItem(7)==null||player.storage.getItem(7).getType().isAir(),label+" has no pickaxe");
         require(call(get(session,"weapons"),"selected",player.id)==call(choice,"weapon"),
                 label+" keeps the actually equipped weapon");
         List<?> gadgets=(List<?>)call(choice,"gadgets");
@@ -1042,6 +1084,7 @@ public final class FinalsLoadoutSmoke {
     }
     private void restored(FakePlayer player){
         close(player.attribute.getAttribute(Attribute.MAX_HEALTH).getBaseValue(),player.originalHealth,"Original max health restored");
+        close(player.attribute.getAttribute(Attribute.SCALE).getBaseValue(),player.originalScale,"Original custom body size restored");
         close(player.walkSpeed,player.originalWalk,"Original walk speed restored");
         close(player.flySpeed,player.originalFly,"Original fly speed restored");
     }
@@ -1052,7 +1095,7 @@ public final class FinalsLoadoutSmoke {
     private final class FakePlayer {
         final UUID id=UUID.randomUUID(); final String name;
         final ArmorStand attribute;
-        final double originalHealth;final float originalWalk,originalFly;
+        final double originalHealth,originalScale;final float originalWalk,originalFly;
         final Inventory storage=Bukkit.createInventory(null,54);
         final Inventory fallback=Bukkit.createInventory(null,9);
         final Map<PotionEffectType,PotionEffect> effects=new HashMap<>();
@@ -1068,9 +1111,11 @@ public final class FinalsLoadoutSmoke {
         Scoreboard scoreboard=Bukkit.getScoreboardManager().getMainScoreboard();
         FakePlayer(String name,World world,double originalHealth,float originalWalk,float originalFly){
             this.name=name;this.originalHealth=originalHealth;this.originalWalk=originalWalk;this.originalFly=originalFly;
+            originalScale=.75+originalHealth/100;
             location=world.getSpawnLocation();walkSpeed=originalWalk;flySpeed=originalFly;
             attribute=world.spawn(location,ArmorStand.class);attribute.setGravity(false);attribute.setInvulnerable(true);
             attribute.getAttribute(Attribute.MAX_HEALTH).setBaseValue(originalHealth);attribute.setHealth(originalHealth);
+            attribute.getAttribute(Attribute.SCALE).setBaseValue(originalScale);
             inventory=(PlayerInventory)Proxy.newProxyInstance(PlayerInventory.class.getClassLoader(),new Class<?>[]{PlayerInventory.class},(o,m,a)->switch(m.getName()){
                 case "setItem"->{storage.setItem((int)a[0],(ItemStack)a[1]);yield null;}
                 case "getItem"->storage.getItem((int)a[0]);

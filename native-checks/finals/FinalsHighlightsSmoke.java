@@ -180,6 +180,54 @@ public final class FinalsHighlightsSmoke {
             invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
             require(hasLabel(alice, "Cashout A") && !hasLabel(alice, "Cashout B") && !cashoutB.isValid(),
                     "Changing the active deposit switches the single highlighted station");
+            TextDisplay projectedCashout = label(alice, "Cashout A");
+            BlockDisplay projectedBody = alice.blocks().getFirst();
+            Location savedCashout = arena.stations[0].clone(), savedBob = bob.location.clone();
+            arena.stations[0] = new Location(world, 900, 130, 900);
+            bob.location = new Location(world, 1000, 125, 1000);
+            Location distantCashout = arena.stations[0].clone(), distantBob = bob.location.clone();
+            int beforeProjectionSpawns = observer.spawned.size();
+            invoke(downedUpdate, highlights, arena, FinalsState.Phase.CASHOUT, 0, 5L, 11L,
+                    players, teams, positions, (Predicate<Player>) player -> player.getUniqueId().equals(bob.id));
+            require(label(alice, "Cashout A") == projectedCashout && label(alice, bob.name) == ally,
+                    "Distant objectives and allies reuse their existing private native displays");
+            require(alice.player.getEyeLocation().distance(projectedCashout.getLocation()) <= 24.001
+                            && alice.player.getEyeLocation().distance(ally.getLocation()) < 27,
+                    "Native objective and downed teammate labels remain near the viewer");
+            require(plain(projectedCashout).contains("11s")
+                            && plain(projectedCashout).contains(Math.round(alice.location.distance(distantCashout)) + " blocks")
+                            && plain(ally).contains("Downed")
+                            && plain(ally).contains(Math.round(alice.location.distance(distantBob)) + " blocks"),
+                    "Projected native labels retain objective timers, downed status and true distances");
+            close(projectedBody.getTransformation().getScale().x, .25,
+                    "Distant objective outline becomes a compact glowing direction proxy");
+            require(projectedBody.isGlowing() && projectedCashout.isSeeThrough() && ally.isSeeThrough()
+                            && projectedCashout.getLocation().distance(ally.getLocation()) >= .749,
+                    "Projected outlines remain glowing and close bearings get separated see-through labels");
+            require(!hasLabel(alice, eve.name) && !hasLabel(eve, bob.name) && outsider.active().isEmpty(),
+                    "Distant projection never exposes enemy or outsider teammate labels");
+            require(arena.stations[0].equals(distantCashout) && bob.location.equals(distantBob)
+                            && observer.spawned.size() == beforeProjectionSpawns,
+                    "Projection never changes real objective/player positions or allocates replacement displays");
+            alice.sendDistance = 1;
+            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
+            require(alice.player.getEyeLocation().distance(projectedCashout.getLocation()) <= 8.001,
+                    "Native markers move closer for a low send distance");
+            alice.sendDistance = 10;
+            alice.sentChunk = org.bukkit.Chunk.getChunkKey(alice.location);
+            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
+            require(org.bukkit.Chunk.getChunkKey(projectedCashout.getLocation()) == alice.sentChunk,
+                    "Native proxy remains inside chunks the individual viewer has received");
+            alice.sentChunk = null;
+            arena.stations[0] = savedCashout;
+            bob.location = savedBob;
+            invoke(update, highlights, arena, FinalsState.Phase.CASHOUT, 0, players, teams, positions);
+            close(projectedBody.getTransformation().getScale().x, 1.02,
+                    "Returning nearby restores the objective's full-sized outline");
+            close(projectedBody.getLocation().getX(), savedCashout.getX() - .5,
+                    "Returning nearby restores the actual fractional objective geometry");
+            require(!plain(projectedCashout).contains("blocks") && !plain(ally).contains("blocks"),
+                    "Nearby native labels return to their ordinary text without being replaced");
             Location death = bob.location.clone();
             deathLocations.put(bob.id, death);
             bob.dead = true;
@@ -336,6 +384,8 @@ public final class FinalsHighlightsSmoke {
         Location location;
         Locale locale = Locale.ENGLISH;
         boolean dead;
+        int sendDistance = 10;
+        Long sentChunk;
         GameMode mode = GameMode.SURVIVAL;
 
         FakePlayer(World world, String name, double x, double z) {
@@ -349,6 +399,9 @@ public final class FinalsHighlightsSmoke {
                         case "getWorld" -> location.getWorld();
                         case "getLocation" -> location.clone();
                         case "getEyeLocation" -> location.clone().add(0, 1.62, 0);
+                        case "getClientViewDistance" -> 10;
+                        case "getSendViewDistance" -> sendDistance;
+                        case "isChunkSent" -> sentChunk == null || sentChunk.equals(args[0]);
                         case "locale" -> locale;
                         case "isOnline", "isValid" -> true;
                         case "isDead" -> dead;
@@ -392,7 +445,7 @@ public final class FinalsHighlightsSmoke {
         FixtureArena(World world) {
             this.world = world;
             vault = new Location(world, 500, 65, 500);
-            stations = new Location[]{new Location(world, 480, 65, 500), new Location(world, 520, 65, 500)};
+            stations = new Location[]{new Location(world, 484, 65, 500), new Location(world, 516, 65, 500)};
         }
         List<Location> sources() { return List.of(vault.clone(), stations[0].clone(), stations[1].clone()); }
         public World world() { return world; }

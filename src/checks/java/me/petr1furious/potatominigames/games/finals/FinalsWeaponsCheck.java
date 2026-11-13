@@ -36,6 +36,9 @@ public final class FinalsWeaponsCheck {
                 FinalsClass.LIGHT.walkSpeed() > FinalsClass.MEDIUM.walkSpeed()
                         && FinalsClass.MEDIUM.walkSpeed() > FinalsClass.HEAVY.walkSpeed(),
                 "class speed trades off health");
+        check(FinalsClass.LIGHT.scale() == .8 && FinalsClass.MEDIUM.scale() == 1
+                        && FinalsClass.HEAVY.scale() == 1.25,
+                "Light, Medium and Heavy use distinct small, normal and large body scales");
         check(FinalsWeapon.values().length == 15, "exactly fifteen approved weapons");
         Set<String> names = new HashSet<>();
         for (FinalsClass type : FinalsClass.values()) {

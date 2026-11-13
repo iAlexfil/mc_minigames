@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 import org.bukkit.Location;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -55,7 +56,104 @@ public final class FinalsHighlightsCheck {
         fractionalCashoutOutlineAlignment();
         timedObjectiveLabels();
         downedTeammateLabels();
+        distantProjection();
         System.out.println("FinalsHighlightsCheck: " + checks + " checks passed");
+    }
+
+    private static void distantProjection() throws Exception {
+        Fixture fixture = new Fixture();
+        fixture.arena.vault = new Location(fixture.arena.world, 1001, 90, 2002);
+        Object marker = keyed(fixture.view(null)).get("vault");
+        Method placement;
+        try {
+            placement = markers.getDeclaringClass().getDeclaredMethod("placement", Player.class, marker.getClass());
+        } catch (NoSuchMethodException missing) {
+            throw new AssertionError("Distant highlights must project into the viewer's rendered chunks", missing);
+        }
+        placement.setAccessible(true);
+        Location source = fixture.arena.vault.clone();
+        Location eye = fixture.viewer.getEyeLocation();
+        Object distant = placement.invoke(null, fixture.viewer, marker);
+        Location label = (Location) value(distant, "label");
+        require((boolean) value(distant, "projected"), "Distant objective uses a projected marker");
+        require(Math.abs(eye.distance(label) - 24) < .000001, "Projection stays 24 blocks from the eye");
+        require(label.toVector().subtract(eye.toVector()).normalize().distance(
+                        source.clone().add(0, 2, 0).toVector().subtract(eye.toVector()).normalize()) < .000001,
+                "Projected label points toward the actual objective, including vertical direction");
+        Component text = (Component) value(distant, "text");
+        require(plain(text, Locale.ENGLISH).contains("Vault")
+                        && plain(text, Locale.ENGLISH).contains("2236 blocks"),
+                "Distant label retains its objective and reports true distance, not projected distance");
+        require(plain(text, Locale.forLanguageTag("ru")).contains("2236 блоков"),
+                "Distant marker distance is localized");
+        Location block = (Location) value(distant, "block");
+        require(block.getX() == label.getX() && block.getZ() == label.getZ()
+                        && Math.abs(label.getY() - block.getY() - .5) < .000001,
+                "Compact objective proxy sits below the projected label");
+        require(fixture.arena.vault.equals(source) && fixture.viewer.getEyeLocation().equals(eye),
+                "Projection never moves the real objective or viewer");
+        Method separate = markers.getDeclaringClass().getDeclaredMethod("separate", distant.getClass(), List.class);
+        separate.setAccessible(true);
+        List<Location> occupied = new java.util.ArrayList<>();
+        separate.invoke(null, distant, occupied);
+        Object sameBearing = placement.invoke(null, fixture.viewer, marker);
+        separate.invoke(null, sameBearing, occupied);
+        require(((Location) value(sameBearing, "label")).distance(label) >= .75,
+                "Markers with the same distant bearing get separate readable label positions");
+        require(((Location) value(sameBearing, "block")).distance(block) >= .75,
+                "Compact objective proxies follow their separated labels");
+
+        fixture.clientDistance = 2;
+        Object low = placement.invoke(null, fixture.viewer, marker);
+        require(Math.abs(eye.distance((Location) value(low, "label")) - 16) < .000001,
+                "Two-chunk clients get a nearer safe projection");
+        fixture.clientDistance = 10;
+        fixture.sendDistance = 1;
+        low = placement.invoke(null, fixture.viewer, marker);
+        require(Math.abs(eye.distance((Location) value(low, "label")) - 8) < .000001,
+                "A low server send distance also constrains the marker");
+        fixture.sendDistance = 10;
+
+        fixture.arena.vault = eye.clone().add(24, -2, 0);
+        marker = keyed(fixture.view(null)).get("vault");
+        Object edge = placement.invoke(null, fixture.viewer, marker);
+        require(!(boolean) value(edge, "projected"), "An objective at the exact projection boundary stays real");
+        fixture.arena.vault.add(.001, 0, 0);
+        marker = keyed(fixture.view(null)).get("vault");
+        require((boolean) value(placement.invoke(null, fixture.viewer, marker), "projected"),
+                "An objective just outside the boundary is projected");
+
+        fixture.locations.get(fixture.viewer.getUniqueId()).setX(15.75);
+        fixture.locations.get(fixture.viewer.getUniqueId()).setZ(15.75);
+        long viewerChunk = Chunk.getChunkKey(fixture.viewer.getLocation());
+        fixture.sent = key -> key == viewerChunk;
+        fixture.arena.vault = new Location(fixture.arena.world, 1000, 65, 15.75);
+        marker = keyed(fixture.view(null)).get("vault");
+        Object waiting = placement.invoke(null, fixture.viewer, marker);
+        require(Chunk.getChunkKey((Location) value(waiting, "label")) == viewerChunk,
+                "A marker never depends on a chunk the client has not received");
+        fixture.sent = ignored -> false;
+        waiting = placement.invoke(null, fixture.viewer, marker);
+        require(value(waiting, "label").equals(fixture.viewer.getEyeLocation()),
+                "Initial chunk delivery falls back to the viewer until nearby chunks arrive");
+        fixture.sent = ignored -> true;
+
+        fixture.arena.vault = fixture.viewer.getLocation().clone().add(3, 0, 4);
+        marker = keyed(fixture.view(null)).get("vault");
+        Object near = placement.invoke(null, fixture.viewer, marker);
+        require(!(boolean) value(near, "projected")
+                        && value(near, "label").equals(fixture.arena.vault.clone().add(0, 2, 0)),
+                "Nearby objective labels retain their real world position");
+        require(plain((Component) value(near, "text"), Locale.ENGLISH).equals("◆ Vault"),
+                "Nearby labels retain their existing compact text");
+        fixture.arena.stations[0] = new Location(fixture.arena.world, 1000, 150, 150);
+        marker = keyed(fixture.view(FinalsState.Phase.CASHOUT)).get("cashout-0");
+        Object beforeFall = placement.invoke(null, fixture.viewer, marker);
+        fixture.arena.stations[0].subtract(0, 70, 0);
+        marker = keyed(fixture.view(FinalsState.Phase.CASHOUT)).get("cashout-0");
+        Object afterFall = placement.invoke(null, fixture.viewer, marker);
+        require(((Location) value(afterFall, "label")).getY() < ((Location) value(beforeFall, "label")).getY(),
+                "Distant cashout projection follows its falling direction");
     }
 
     private static void timedObjectiveLabels() throws Exception {
@@ -402,6 +500,9 @@ public final class FinalsHighlightsCheck {
         final Player viewer = player("viewer", arena.world, 1, 2);
         Collection<Player> players = List.of(viewer);
         int activeStation;
+        int clientDistance = 10;
+        int sendDistance = 10;
+        Predicate<Long> sent = ignored -> true;
 
         Fixture() {
             teams.put(viewer.getUniqueId(), 0);
@@ -424,6 +525,9 @@ public final class FinalsHighlightsCheck {
                                         case "getLocation" -> locations.get(id);
                                         case "getEyeLocation" ->
                                                 locations.get(id).clone().add(0, 1.62, 0);
+                                        case "getClientViewDistance" -> clientDistance;
+                                        case "getSendViewDistance" -> sendDistance;
+                                        case "isChunkSent" -> sent.test((Long) args[0]);
                                         case "getWorld" -> locations.get(id).getWorld();
                                         case "isOnline", "isValid" -> true;
                                         case "isDead" -> !active.contains(id);

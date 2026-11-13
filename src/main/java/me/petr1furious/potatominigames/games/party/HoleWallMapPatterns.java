@@ -6,11 +6,10 @@ import org.bukkit.Material;
 
 import java.util.*;
 
-/** Separate silhouettes for the S track and ring, with exits above their surviving side lanes. */
+/** Authored repeating ribbons and eyelets, aligned with the surviving side lanes. */
 final class HoleWallMapPatterns {
     static HoleWallPattern generate(HoleWallLayout layout, int stage, Random random) {
         int kind = Math.floorMod(stage - 1, 12);
-        boolean mirror = random.nextBoolean();
         var walkLeft = new HoleWallPattern.Gate(-4, 2, 0, 3);
         var walkRight = new HoleWallPattern.Gate(3, 2, 0, 3);
         var jumpLeft = new HoleWallPattern.Gate(-4, 2, 1, 3);
@@ -64,33 +63,9 @@ final class HoleWallMapPatterns {
                     else if (kind == 11 && y == 1) block = full.upperSlab();
                     else block = full;
                 }
-                if (block != null) cells.add(new HoleWallPattern.Cell(mirror ? -u : u, y, block));
+                if (block != null) cells.add(new HoleWallPattern.Cell(u, y, block));
             }
-        cells =
-                new ArrayList<>(
-                        HoleWallPattern.frameLowPassages(
-                                cells,
-                                mirror
-                                        ? gates.stream()
-                                                .map(g ->
-                                                        new HoleWallPattern.Gate(
-                                                                1 - g.start() - g.width(),
-                                                                g.width(),
-                                                                g.bottom(),
-                                                                g.height()))
-                                                .toList()
-                                        : gates,
-                                full));
-        if (mirror)
-            gates =
-                    gates.stream()
-                            .map(g ->
-                                    new HoleWallPattern.Gate(
-                                            1 - g.start() - g.width(),
-                                            g.width(),
-                                            g.bottom(),
-                                            g.height()))
-                            .toList();
+        cells = new ArrayList<>(HoleWallPattern.frameLowPassages(cells, gates, full));
         return new HoleWallPattern(
                 cells,
                 gates,
@@ -101,36 +76,64 @@ final class HoleWallMapPatterns {
                                 + kind));
     }
 
+    // Rows read top to bottom. Every seven-column tile puts its two-column opening at
+    // columns 2/3: repeating it aligns those openings with u=-4/-3 and u=3/4. Consequently
+    // the actual routes belong to the artwork, rather than cutting across unrelated shapes.
+    // The physical route pass above supplies jump sills, crouching slabs and precision posts.
+    private static final String[][] SNAKE_RIBBONS = {
+        { // Deep U ribbons: tall prongs over a continuous low band between the openings.
+            ".#..#..", ".#..#..", ".#..#..", "##..###", "##..###"
+        },
+        { // Repeated rising steps.
+            "....##.", "....###", ".#..###", "##..###", "##..###"
+        },
+        { // Repeated falling steps.
+            "##.....", "###....", "##..#..", "##..##.", "##..###"
+        },
+        { // Broad U-shaped stair ribbons.
+            ".#..#..", "##..##.", "##..###", "##..###", "##..###"
+        },
+        { // Lower U ribbons leave an especially clear skyline above ducking passages.
+            ".......", ".#..#..", "##..##.", "##..###", "##..###"
+        },
+        { // A stepped ribbon falls on the left and climbs again on the right.
+            "##...##", "###..##", ".#..###", "##..##.", "##..###"
+        }
+    };
+
+    private static final String[][] DONUT_EYELETS = {
+        { // Rounded, four-cornered ring windows.
+            ".####..", "##..##.", "#....##", "##..##.", ".####.."
+        },
+        { // Narrow upright windows with simple paired columns.
+            ".####..", "##..##.", "##..##.", "##..##.", ".####.."
+        },
+        { // Large eyelets above a shared solid sill.
+            ".####..", "##..##.", "#....#.", "##..##.", "#######"
+        },
+        { // Two clean rows of eyelets separated by one horizontal band.
+            ".####..", "##..##.", "######.", "##..##.", ".####.."
+        },
+        { // A lower arcade for crouching routes.
+            ".......", ".####..", "##..##.", "##..##.", ".####.."
+        },
+        { // Broad ring frames make the two precision posts easy to read.
+            "#######", "##..###", "#....##", "##..###", "#######"
+        }
+    };
+
     private static boolean outline(HoleWallLayout layout, int kind, int u, int y) {
-        int a = Math.abs(u), tooth = a % 4;
-        if (layout == HoleWallLayout.SNAKE)
-            return switch (kind) {
-                case 0 -> y <= 1 || tooth == 0; // Symmetric comb along the three track bands.
-                case 1 -> y <= a % 4; // Rising chevrons, grounded at every column.
-                case 2 -> y == 0 || y == 4 || tooth == 0; // Wide three-lane bridge frames.
-                case 3 -> y <= 3 - Math.min(3, a % 6); // Mirrored stair descents.
-                case 4 -> y <= (tooth < 2 ? 2 : 0); // Alternating hurdle heights.
-                case 5 -> y <= 2 || tooth == 0; // Low beam and tall exit.
-                case 6 -> y == 0 || y == 4 || a % 3 == 0; // Ladder frames.
-                case 7 -> y <= 1 || a % 5 <= 1; // Broad low ribbons with grounded piers.
-                case 8 -> y <= 4 - Math.min(4, a % 5); // Symmetric peaked skyline.
-                case 9 -> y == 0 || y == 2 || y == 4 || a % 4 == 0; // Three horizontal slots.
-                case 10 -> y <= 2 || a % 3 == 0;
-                default -> y == 0 || y == 4 || a % 4 == 0;
-            };
-        return switch (kind) {
-            case 0 -> y == 0 || y == 4 || a % 6 == 0; // Paired large ring windows.
-            case 1 -> y <= 1 || a % 4 == 0; // Inner teeth and outer windows.
-            case 2 -> y <= Math.min(4, a % 6); // Bowl silhouette.
-            case 3 -> y <= 4 - Math.min(4, a % 6); // Crown silhouette.
-            case 4 -> y == 0 || y == 1 || a % 5 <= 1; // Two raised side windows.
-            case 5 -> y <= 2 || a % 6 == 0; // Inner low lintels.
-            case 6 -> y == 0 || y == 3 || a % 4 <= 1; // Arch pairs over both ring branches.
-            case 7 -> y <= 1 || a % 3 == 0; // Radial comb.
-            case 8 -> y == 0 || y == 4 || a % 3 == 0; // Roman numeral-like frames.
-            case 9 -> y == 0 || y == 2 || y == 4 || a % 6 <= 1; // Layered eyelets.
-            case 10 -> y <= 3 || a % 5 == 0;
-            default -> y == 0 || y == 3 || a % 5 == 0;
-        };
+        int motif =
+                switch (kind) {
+                    case 0 -> 0;
+                    case 1, 8 -> 1;
+                    case 2, 6 -> 2;
+                    case 3, 10 -> 3;
+                    case 4, 7 -> 4;
+                    case 5 -> 0;
+                    default -> 5;
+                };
+        String[] rows = (layout == HoleWallLayout.SNAKE ? SNAKE_RIBBONS : DONUT_EYELETS)[motif];
+        return rows[HoleWallPattern.HEIGHT - 1 - y].charAt(Math.floorMod(u + 6, 7)) == '#';
     }
 }

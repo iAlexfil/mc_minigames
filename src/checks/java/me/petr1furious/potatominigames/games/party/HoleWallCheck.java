@@ -18,6 +18,7 @@ public final class HoleWallCheck {
     public static void main(String[] args) throws Exception {
         me.petr1furious.potatominigames.core.hud.SidebarVisibilityCheck.run();
         centerRequiresAction();
+        authoredGeometry();
         directionCoverage();
         randomPatternOrder();
         openings();
@@ -61,6 +62,23 @@ public final class HoleWallCheck {
                 return super.nextBoolean();
             }
         };
+    }
+
+    private static void authoredGeometry() {
+        for (var layout : HoleWallLayout.values())
+            for (int radius : new int[] {1, 2})
+                for (int stage = 1; stage <= layout.patternCount(); stage++) {
+                    var expected = layout.pattern(stage, radius, new Random(0));
+                    for (int seed = 1; seed < 12; seed++) {
+                        var actual = layout.pattern(stage, radius, new Random(seed));
+                        check(
+                                actual.gates().equals(expected.gates()),
+                                "An authored wall never randomly moves its passages");
+                        check(
+                                actual.cells().equals(expected.cells()),
+                                "Each named wall has a fixed silhouette and palette");
+                    }
+                }
     }
 
     private static void centerRequiresAction() {
@@ -398,7 +416,7 @@ public final class HoleWallCheck {
                                                 && gate.start() + gate.width()
                                                         <= frame.armRadius() + 1,
                                         "Even existing wall gates fit the floor when the arms"
-                                            + " narrow");
+                                                + " narrow");
                         for (var b : active)
                             if (a != b) {
                                 int dot =

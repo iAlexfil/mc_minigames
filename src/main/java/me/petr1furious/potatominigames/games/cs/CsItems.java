@@ -1,7 +1,13 @@
 package me.petr1furious.potatominigames.games.cs;
 
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.Consumable;
+import io.papermc.paper.datacomponent.item.UseEffects;
+import io.papermc.paper.datacomponent.item.consumable.ItemUseAnimation;
+
 import me.petr1furious.potatominigames.i18n.I18n;
 
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
@@ -48,12 +54,9 @@ final class CsItems {
                     : tr("death.cause", victimName, source);
         if (info == null) return tr("kill", killerName, victimName);
         if (info.weapon() != null)
-            return tr(
-                    "kill.weapon",
-                    killerName,
-                    victimName,
-                    source,
-                    tr(info.headshot() ? "kill.headshot" : "kill.no_headshot"));
+            return info.headshot()
+                    ? tr("kill.weapon.headshot", killerName, victimName, source, tr("kill.headshot"))
+                    : tr("kill.weapon", killerName, victimName, source);
         return tr("kill.cause", killerName, victimName, source);
     }
 
@@ -83,19 +86,40 @@ final class CsItems {
     }
 
     static ItemStack gun(CsGun gun, Player viewer) {
-        return item(
-                gun.weapon.material,
-                "gun:" + gun.weapon.id,
-                tr("weapon." + gun.weapon.id),
-                gunLore(gun.weapon),
-                viewer);
+        ItemStack item =
+                item(
+                        gun.weapon.material,
+                        "gun:" + gun.weapon.id,
+                        tr("weapon." + gun.weapon.id),
+                        gunLore(gun.weapon),
+                        viewer);
+        if (gun.weapon.requiresTriggerRelease()) {
+            // Native use provides a real release event; repeating right-click packets alone
+            // cannot distinguish holding the button from clicking again.
+            item.setData(
+                    DataComponentTypes.CONSUMABLE,
+                    Consumable.consumable()
+                            .consumeSeconds(3600)
+                            .animation(ItemUseAnimation.NONE)
+                            .sound(Key.key("minecraft:intentionally_empty"))
+                            .hasConsumeParticles(false)
+                            .build());
+            item.setData(
+                    DataComponentTypes.USE_EFFECTS,
+                    UseEffects.useEffects()
+                            .canSprint(true)
+                            .speedMultiplier(1)
+                            .interactVibrations(false)
+                            .build());
+        }
+        return item;
     }
 
     static List<Component> gunLore(CsWeapon w) {
         List<Component> lore =
                 new ArrayList<>(
                         List.of(
-                                tr("controls.gun"),
+                                tr(w.requiresTriggerRelease() ? "controls.pistol" : "controls.gun"),
                                 tr("item.ammo", w.magazine, w.reserve),
                                 tr("category." + w.category.name().toLowerCase(Locale.ROOT)),
                                 tr("item.ballistics", w.damage, Math.round(w.penetration * 100)),

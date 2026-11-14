@@ -7,6 +7,7 @@ import com.destroystokyo.paper.event.player.PlayerStopSpectatingEntityEvent;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import io.papermc.paper.event.player.PlayerArmSwingEvent;
+import io.papermc.paper.event.player.PlayerStopUsingItemEvent;
 import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
 
 import me.petr1furious.potatominigames.core.command.CommandFailure;
@@ -19,7 +20,9 @@ import me.petr1furious.potatominigames.i18n.I18n;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.title.Title;
 
 import org.bukkit.*;
 import org.bukkit.entity.*;
@@ -33,6 +36,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
+import java.time.Duration;
 import java.util.*;
 
 /** Independent competitive bomb-defusal match on the imported Dust II world. */
@@ -54,7 +58,7 @@ final class CsSession implements GameSession, Listener {
         final Location anchor;
         final int site;
         final long end;
-        long pressed;
+        long pressed, nextPlantSound;
 
         Channel(boolean plant, Location anchor, int site, long end, long pressed) {
             this.plant = plant;
@@ -62,6 +66,7 @@ final class CsSession implements GameSession, Listener {
             this.site = site;
             this.end = end;
             this.pressed = pressed;
+            this.nextPlantSound = pressed + 8;
         }
     }
 
@@ -109,6 +114,7 @@ final class CsSession implements GameSession, Listener {
     private final Map<UUID, Notice> notices = new HashMap<>();
     private final Set<UUID> weaponHudShown = new HashSet<>();
     private final boolean deathmatch;
+    private final boolean wingman;
     private final CsDeathmatch dm;
     private CsMatch match;
     private World world;
@@ -133,7 +139,18 @@ final class CsSession implements GameSession, Listener {
     }
 
     CsSession(SessionServices services, CsConfig config, CsGame owner, boolean deathmatch) {
+        this(services, config, owner, deathmatch, false);
+    }
+
+    CsSession(
+            SessionServices services,
+            CsConfig config,
+            CsGame owner,
+            boolean deathmatch,
+            boolean wingman) {
+        if (deathmatch && wingman) throw new IllegalArgumentException("Incompatible CS modes");
         this.deathmatch = deathmatch;
+        this.wingman = wingman;
         this.dm = deathmatch ? new CsDeathmatch() : null;
         this.services = services;
         this.config = config;
@@ -142,6 +159,10 @@ final class CsSession implements GameSession, Listener {
 
     boolean deathmatch() {
         return deathmatch;
+    }
+
+    boolean wingman() {
+        return wingman;
     }
 
     void attacking(Player p) {
@@ -203,6 +224,11 @@ final class CsSession implements GameSession, Listener {
                 && !p.isDead()
                 && p.getGameMode() == GameMode.SURVIVAL
                 && p.getWorld().equals(world);
+    }
+
+    boolean canMove(Player p) {
+        return active(p)
+                && (match.phase == CsMatch.Phase.LIVE || match.phase == CsMatch.Phase.ROUND_END);
     }
 
     boolean canAct(Player p) {
@@ -308,6 +334,29 @@ final class CsSession implements GameSession, Listener {
         services.messages().broadcast(text);
     }
 
+    private void showRoundResult() {
+        int winner = match.lastRound.winner();
+        Component message =
+                tr(match.side(winner) == 0 ? "round_result.t" : "round_result.ct")
+                        .decorate(TextDecoration.BOLD);
+        var times =
+                Title.Times.times(
+                        Duration.ofMillis(100), Duration.ofSeconds(2), Duration.ofMillis(250));
+        for (Player viewer : viewers()) {
+            var participant = actor(viewer);
+            NamedTextColor color =
+                    participant == null
+                            ? NamedTextColor.GOLD
+                            : participant.team == winner
+                                    ? NamedTextColor.GREEN
+                                    : NamedTextColor.RED;
+            // The subtitle line is conspicuous without the oversized primary title.
+            viewer.showTitle(
+                    Title.title(
+                            Component.empty(), I18n.render(message.color(color), viewer), times));
+        }
+    }
+
     @Override
     public void onStart() throws CommandFailure {
         // Keep the generic color teams hidden too, including during roster refreshes.
@@ -367,7 +416,7 @@ final class CsSession implements GameSession, Listener {
         world.setGameRule(GameRules.NATURAL_HEALTH_REGENERATION, false);
         world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         world.setGameRule(GameRules.SPAWN_MOBS, false);
-        arena = new CsArena(world);
+        arena = new CsArena(world, wingman);
         radar = new CsRadar(this);
         combat = new CsCombat(this);
         grenades = new CsGrenades(this);
@@ -388,7 +437,7 @@ final class CsSession implements GameSession, Listener {
                 p.showBossBar(bar);
             }
         }
-        say(tr(deathmatch ? "dm.rules" : "rules"));
+        say(tr(deathmatch ? "dm.rules" : wingman ? "wingman.rules" : "rules"));
         say(tr("map_credit"));
         task =
                 Bukkit.getScheduler()
@@ -426,6 +475,7 @@ final class CsSession implements GameSession, Listener {
     }
 
     private void teleport(Player p, Location at) {
+        if (combat != null) combat.resetMovement(p);
         boolean previous = internalTeleport;
         internalTeleport = true;
         try {
@@ -512,8 +562,9 @@ final class CsSession implements GameSession, Listener {
             }
             if (!deathmatch && !a.alive && p.getGameMode() == GameMode.SPECTATOR) camera(p);
         }
-        if (match.phase == CsMatch.Phase.LIVE) {
+        if (match.phase == CsMatch.Phase.LIVE || match.phase == CsMatch.Phase.ROUND_END)
             combat.tick();
+        if (match.phase == CsMatch.Phase.LIVE) {
             grenades.tick();
             if (!deathmatch) {
                 channels();
@@ -537,7 +588,7 @@ final class CsSession implements GameSession, Listener {
             }
             if (match.phase == CsMatch.Phase.ROUND_END) {
                 channels.clear();
-                combat.clear();
+                combat.roundEnded();
                 grenades.clear();
                 say(
                         tr(
@@ -551,12 +602,15 @@ final class CsSession implements GameSession, Listener {
                                                         .toLowerCase(Locale.ROOT)),
                                 match.score[0],
                                 match.score[1]));
+                showRoundResult();
                 if (match.lastRound.reason() == CsMatch.Reason.EXPLOSION && bombAt != null) {
                     world.spawnParticle(Particle.EXPLOSION_EMITTER, bombAt, 1);
                     world.playSound(bombAt, Sound.ENTITY_GENERIC_EXPLODE, 3, .7f);
                 }
                 clearBomb();
-                for (Player p : players()) if (!p.isDead()) freeze(p);
+                // Keep the existing five-second round-end window playable for survivors.
+                // newRound() will freeze them at their next spawn after saving their gear.
+                for (Player p : players()) if (active(p)) release(p);
             }
             if (match.phase == CsMatch.Phase.HALFTIME) {
                 say(tr("halftime"));
@@ -984,7 +1038,11 @@ final class CsSession implements GameSession, Listener {
         long duration = plant ? 64 : a.kit ? 100 : 200;
         channels.put(
                 a.id, new Channel(plant, p.getLocation().clone(), site, tick + duration, tick));
-        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, .6f, 1.3f);
+        CsBombAudio.play(
+                viewers(),
+                plant ? p.getLocation() : bombAt,
+                plant ? CsBombAudio.Cue.PLANT_START : CsBombAudio.Cue.DEFUSE_START,
+                plant ? 1.3f : .85f);
     }
 
     private boolean lookingAtBomb(Player p) {
@@ -1020,6 +1078,7 @@ final class CsSession implements GameSession, Listener {
                 if (c.plant) {
                     if (match.plant(p.getUniqueId(), c.site, tick)) {
                         bombAt = p.getLocation().clone().add(0, .1, 0);
+                        CsBombAudio.play(viewers(), bombAt, CsBombAudio.Cue.PLANTED, 1.5f);
                         plantedBomb = world.dropItem(bombAt, CsItems.bomb(null));
                         plantedBomb.setGravity(false);
                         plantedBomb.setVelocity(new Vector());
@@ -1032,19 +1091,30 @@ final class CsSession implements GameSession, Listener {
                                             ? tr("planted_known", c.site == 0 ? "A" : "B")
                                             : tr("planted"));
                     }
-                } else if (match.defuse(p.getUniqueId(), tick))
+                } else if (match.defuse(p.getUniqueId(), tick)) {
+                    CsBombAudio.play(viewers(), bombAt, CsBombAudio.Cue.DEFUSED, .9f);
                     say(tr("defused", name(p.getUniqueId())));
+                }
                 channels.remove(entry.getKey());
-            } else
+            } else {
+                if (c.plant && tick >= c.nextPlantSound) {
+                    CsBombAudio.play(
+                            viewers(),
+                            c.anchor,
+                            CsBombAudio.Cue.PLANT_KEYS,
+                            (tick / 8) % 2 == 0 ? 1.2f : 1.5f);
+                    c.nextPlantSound = tick + 8;
+                }
                 p.sendActionBar(
                         tr(
                                 c.plant ? "planting" : "defusing",
                                 String.format(Locale.ROOT, "%.1f", (c.end - tick) / 20.0)));
+            }
         }
     }
 
     private void bombTick() {
-        if (!match.planted() || bombAt == null) return;
+        if (match.phase != CsMatch.Phase.LIVE || !match.planted() || bombAt == null) return;
         if (!ctBombKnown && tick % 5 == 0)
             players().stream()
                     .filter(this::active)
@@ -1070,7 +1140,11 @@ final class CsSession implements GameSession, Listener {
         }
         int interval = left > 400 ? 20 : left > 200 ? 10 : left > 100 ? 5 : 2;
         if (tick % interval == 0)
-            world.playSound(bombAt, Sound.BLOCK_NOTE_BLOCK_PLING, .8f, left < 100 ? 1.8f : 1.3f);
+            CsBombAudio.play(
+                    viewers(),
+                    bombAt,
+                    CsBombAudio.Cue.BEEP,
+                    (left < 100 ? 1.8f : 1.3f) * (match.bombSite == 1 ? .9f : 1));
     }
 
     private void clearBomb() {
@@ -1120,11 +1194,14 @@ final class CsSession implements GameSession, Listener {
         var a = actor(p);
         if (a == null
                 || !active(p)
-                || match.phase != CsMatch.Phase.LIVE && match.phase != CsMatch.Phase.FREEZE) return;
+                || match.phase != CsMatch.Phase.LIVE
+                        && match.phase != CsMatch.Phase.FREEZE
+                        && match.phase != CsMatch.Phase.ROUND_END) return;
         if (slot <= 1) {
             var gun = a.gun(slot);
             if (gun == null) return;
             combat.stopScope(p);
+            gun.switchAway();
             addDrop(p.getLocation(), CsItems.gun(gun, null), gun, null, false, false);
             if (slot == 0) a.primary = null;
             else a.secondary = null;
@@ -1619,8 +1696,25 @@ final class CsSession implements GameSession, Listener {
         Player p = event.getPlayer();
         var a = actor(p);
         if (a == null || !a.alive) return;
-        if (event.getAction().isRightClick()) rightClick(p);
-        else if (event.getAction().isLeftClick()) leftClick(p, null);
+        if (event.getAction().isRightClick()) {
+            rightClick(p);
+            var gun = gun(p);
+            if (canAct(p) && !shopOpen(p) && gun != null && gun.weapon.requiresTriggerRelease()) {
+                event.setUseInteractedBlock(Event.Result.DENY);
+                event.setUseItemInHand(Event.Result.ALLOW);
+            }
+        } else if (event.getAction().isLeftClick()) leftClick(p, null);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onTriggerRelease(PlayerStopUsingItemEvent event) {
+        if (!done && actor(event.getPlayer()) != null) combat.releaseTrigger(event.getPlayer());
+    }
+
+    @Override
+    public void onPlayerItemConsume(PlayerItemConsumeEvent event) {
+        // Pistols use an invisible long native-use state only to track button release.
+        event.setCancelled(true);
     }
 
     @Override
@@ -1687,9 +1781,11 @@ final class CsSession implements GameSession, Listener {
     public void onEntityDamage(EntityDamageEvent event) {
         event.setCancelled(true);
         if (!(event.getEntity() instanceof Player p) || !built || !active(p)) return;
-        if (event.getCause() == EntityDamageEvent.DamageCause.FALL)
-            hurt(p, null, event.getDamage() * 5, false, true, null, CsMatch.KillCause.OTHER);
-        else if (event instanceof EntityDamageByEntityEvent hit
+        if (event.getCause() == EntityDamageEvent.DamageCause.FALL) {
+            p.setFallDistance(0);
+            return;
+        }
+        if (event instanceof EntityDamageByEntityEvent hit
                 && hit.getDamager() instanceof Player source
                 && source.getInventory().getHeldItemSlot() == 2) combat.knife(source, false, p);
     }
@@ -1802,6 +1898,24 @@ final class CsSession implements GameSession, Listener {
             to.setPitch(event.getTo().getPitch());
             event.setTo(to);
             event.getPlayer().setVelocity(new Vector());
+        } else if (built
+                && wingman
+                && !event.isCancelled()
+                && event.hasChangedPosition()
+                && canMove(event.getPlayer())
+                && arena.outsideWingman(event.getTo())) {
+            Location to = event.getFrom().clone();
+            to.setYaw(event.getTo().getYaw());
+            to.setPitch(event.getTo().getPitch());
+            event.setTo(to);
+            event.getPlayer().setVelocity(new Vector());
+            combat.resetMovement(event.getPlayer());
+        } else if (built
+                && !event.isCancelled()
+                && event.hasChangedPosition()
+                && match.phase == CsMatch.Phase.LIVE
+                && active(event.getPlayer())) {
+            combat.recordMovement(event.getPlayer(), event.getFrom(), event.getTo());
         }
     }
 

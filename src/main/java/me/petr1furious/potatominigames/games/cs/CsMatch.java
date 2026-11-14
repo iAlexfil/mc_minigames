@@ -575,7 +575,8 @@ final class CsMatch {
     double incomeScale(int team) {
         int largest = Math.max(economySizes[0], economySizes[1]);
         if (practice || largest == 0 || economySizes[team] == 0) return 1;
-        return largest / 5.0 * largest / economySizes[team];
+        // Keep the full 5v5 payout per person; compensate only a numeric disadvantage.
+        return (double) largest / economySizes[team];
     }
 
     private int startingCash(int team) {

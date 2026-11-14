@@ -9,6 +9,16 @@ import java.util.*;
 final class CsSpawnSmoke {
     private static int assertions;
 
+    private record Spot(int x, int y, int z) {}
+
+    private static final Set<Spot> CT_UNDERPASS =
+            Set.of(
+                    new Spot(93, 75, 66),
+                    new Spot(95, 75, 66),
+                    new Spot(97, 75, 63),
+                    new Spot(95, 75, 61),
+                    new Spot(93, 75, 60));
+
     static int run(ClassLoader loader, World world) throws Exception {
         assertions = 0;
         Class<?> type =
@@ -30,7 +40,15 @@ final class CsSpawnSmoke {
                 for (int slot = 0; slot < (side == 0 ? 15 : 5); slot++) {
                     Location at = (Location) spawn.invoke(arena, side, slot);
                     safe(at);
-                    require(at.getY() == 82, "Classic starts on the actual street deck");
+                    require(
+                            at.getY() == (side == 0 ? 82 : 75),
+                            "Classic uses the T street and covered CT start, not Short above it");
+                    if (side == 1)
+                        require(
+                                world.getBlockAt(at.getBlockX(), 80, at.getBlockZ())
+                                        .getType()
+                                        .isSolid(),
+                                "CT starts below the native underpass roof");
                     require(positions.add(at), "Shuffled classic slots do not overlap");
                     opponents.add(at);
                 }
@@ -85,7 +103,77 @@ final class CsSpawnSmoke {
         } finally {
             selected.getBlock().setBlockData(previous, false);
         }
+        wingman(loader, world, type);
         return assertions;
+    }
+
+    private static void wingman(ClassLoader loader, World world, Class<?> type) throws Exception {
+        Constructor<?> constructor = type.getDeclaredConstructor(World.class, boolean.class);
+        constructor.setAccessible(true);
+        Object arena = constructor.newInstance(world, true);
+        Class<?> layout =
+                Class.forName("me.petr1furious.potatominigames.games.cs.CsWingman", true, loader);
+        Set<?> borders = (Set<?>) method(layout, "borders").invoke(null);
+        Map<Location, org.bukkit.block.data.BlockData> original = new LinkedHashMap<>();
+        for (Object p : borders) {
+            Class<?> pos = p.getClass();
+            Location at =
+                    new Location(
+                            world,
+                            (int) method(pos, "x").invoke(p),
+                            (int) method(pos, "y").invoke(p),
+                            (int) method(pos, "z").invoke(p));
+            original.put(at, at.getBlock().getBlockData().clone());
+        }
+        try {
+            Method build = method(type, "buildSlice", int.class);
+            while (!(boolean) build.invoke(arena, 4096)) {}
+            Method spawn = method(type, "spawn", int.class, int.class);
+            Method inside = method(type, "inside", Location.class);
+            for (int side = 0; side < 2; side++) {
+                Set<Location> distinct = new HashSet<>();
+                for (int slot = 0; slot < (side == 0 ? 15 : 5); slot++) {
+                    Location at = (Location) spawn.invoke(arena, side, slot);
+                    safe(at);
+                    require(distinct.add(at), "Wingman preserves every distinct Classic spawn");
+                    for (double dx : new double[] {-.3, .3})
+                        for (double dz : new double[] {-.3, .3})
+                            require(
+                                    (boolean) inside.invoke(arena, at.clone().add(dx, 0, dz)),
+                                    "Every possible Wingman start, including its body, is inside");
+                }
+            }
+            for (Location at :
+                    List.of(
+                            new Location(world, 0, 82, 18),
+                            new Location(world, 73, 75, 37),
+                            new Location(world, 93, 75, 57))) {
+                require(
+                        at.getBlock().getType() == Material.RED_STAINED_GLASS,
+                        "Open forbidden passages are sealed by visible native collision blocks");
+                method(type, "breakGlass", org.bukkit.block.Block.class)
+                        .invoke(arena, at.getBlock());
+                method(type, "reset").invoke(arena);
+                require(
+                        at.getBlock().getType() == Material.RED_STAINED_GLASS,
+                        "Gunfire, explosions and round resets cannot remove Wingman gates");
+                require(!(boolean) inside.invoke(arena, at), "A sealed passage is outside play");
+            }
+            Location shortAt = new Location(world, 95.5, 82, 57.5);
+            require(
+                    (boolean) inside.invoke(arena, shortAt)
+                            && shortAt.getBlock().isPassable()
+                            && shortAt.clone().add(0, 1, 0).getBlock().isPassable(),
+                    "The native upper Short passage stays open above the CT exit gate");
+            Method site = method(type, "site", Location.class);
+            require(
+                    (int) site.invoke(arena, new Location(world, 103, 82, 88)) == 0
+                            && (int) site.invoke(arena, new Location(world, 114, 79, 6)) == -1,
+                    "Wingman accepts A and rejects B for bomb planting");
+        } finally {
+            // Later CS fixture groups continue on the unrestricted Classic map.
+            original.forEach((at, data) -> at.getBlock().setBlockData(data, false));
+        }
     }
 
     private static double nearest(Location at, Collection<Location> opponents) {
@@ -98,7 +186,11 @@ final class CsSpawnSmoke {
     }
 
     private static void safe(Location at) {
-        require(at.getY() >= 79, "Respawn is above the imported foundation levels");
+        require(
+                at.getY() >= 79
+                        || CT_UNDERPASS.contains(
+                                new Spot(at.getBlockX(), at.getBlockY(), at.getBlockZ())),
+                "Only the verified CT underpass may spawn below the foundation cutoff");
         require(
                 at.getBlock().isPassable() && at.clone().add(0, 1, 0).getBlock().isPassable(),
                 "Native feet and head collision checks accept the respawn");

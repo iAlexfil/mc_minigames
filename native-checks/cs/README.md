@@ -32,6 +32,18 @@ cells survive overlap, late spectators see fire, and cleanup restores the curren
 background. Success also logs `CS_VISUAL_SMOKE_PASS`. Repeat on 26.2 and 26.3 when preparing the PR; keep console logs and
 the tested plugin JAR's SHA-256 outside Git.
 
+`CsVisualSmoke` additionally constructs the real client-only tracer spawn,
+metadata and removal packets using unspawned native BlockDisplays. It checks
+fractional coordinates at long-ray midpoints, zero extra entity rotation, native
+metadata, no world entities, three-tick expiry, the 128-streak cap and idempotent
+cleanup. Transport is captured, so this does not replace a connected-client
+visual test. These tracer checks passed on both supported Paper versions during
+2026-11-14 PR validation. The fixture also verifies every weapon item: only
+semi-automatic pistols have a silent long-use component with no animation,
+consume particles, vibration or movement penalty. Server-free `CsCheck` covers the display
+transform's endpoints and thickness for forward/backward, diagonal and vertical
+shots at short and full range.
+
 `checkCounterStrike` additionally covers 150-block rifle/sniper hits, cover and
 miss trace endpoints, the CS2 purchase prices, armor refill, the loss-bonus ladder,
 the halftime price swap, roster-scaled payouts for all 1–5 player team sizes,
@@ -41,6 +53,22 @@ Finals teammate-glow fixture exercises the shared private metadata adapter.
 
 Client playtest before merging:
 
+- Fire at nearby cover, players and distant points across Dust II with rifles,
+  pistols and snipers. A thin yellow solid streak must end at the actual hit or
+  continue through penetrated cover, remain visible without particle settings,
+  and disappear quickly. Check upward/downward shots, zoom, the midpoint outside
+  the camera frustum, shooter/opponent/spectator views, and distances over 32 and
+  100 blocks. USP-S/M4A1-S stay without streaks; shotguns draw only their first
+  pellet. Verify rapid automatic fire, the last kill of a round, halftime,
+  disconnect/world changes and match cleanup. No server world entities may be
+  added and rays must not glow through walls.
+- Open CS in the lobby and select Wingman (`/play cs wingman`). Try 2v2 and
+  3v3/5v5: roster limits, MR12 rules, money and equipment must match Classic.
+  Walk T→Long→A, T→upper Mid→Short→A and CT→A. The B exit next to T spawn,
+  tunnels, Mid doors and CT's lower Mid/B exit must be blocked; upper Short above
+  the CT gate must stay open. Try firing and throwing grenades at gates, then
+  advance rounds and swap sides. No start may appear outside play or in a gate.
+  Classic and Deathmatch must still use the unrestricted map.
 - Throw Molotovs onto floors, stairs and near walls. Animated ground fire must
   match supported surfaces in the existing damage zone, without spreading or
   changing the real map. Test overlapping fire, smoke extinguishing one/both
@@ -65,7 +93,7 @@ Client playtest before merging:
   utility must still bounce, detonate once and clean up at round end.
   Check both left-click long throws and right-click short, splash-potion-like
   throws; one click must consume exactly one grenade.
-- Check 2v2 (40% earned payouts), 2v3 (90% vs 60%, with $1,200 vs $800 pistol
+- Check 2v2 (full payouts per person), 2v3 (150% vs 100%, with $1,200 vs $800 pistol
   cash), and 5v5 (baseline). Deaths or disconnects during a round must not boost
   that round's payouts; the following round must update the roster snapshot.
 
@@ -191,3 +219,48 @@ a396b79923cf2280c4cfd6d20b3a251d510fe1cd0668075519cc7e797bc19adf
 Logs and runtime worlds are kept outside Git. Production artifacts contain no
 fixture or ASP workaround classes. Connected-client spawn timing still requires
 an actual match playtest.
+
+## Current CS update: validation on 2026-11-14
+
+Full Gradle `build` runs passed for both `-Pmc=26.2` and `-Pmc=26.3`: all 57 tasks,
+including i18n and **6,669 CS assertions** per classifier. New model cases cover
+Wingman menu/queue/team limits and paths, headshot-only kill-feed suffixes,
+full per-person equal-team payouts, weapon-specific movement speeds, native-scope
+compensation bounds, firing/movement accuracy, pistol trigger release and display
+endpoints/thickness for horizontal, diagonal, vertical and reversed shots.
+
+Disposable native Paper **26.2 #135** and **26.3 #249** runs passed:
+
+- `CS_SPAWN_SMOKE_PASS`: **3,029 native assertions** on each version. CT starts
+  are in the covered Y=75 underpass; all 15 T/5 CT candidates are valid. Wingman
+  gates, upper Short clearance, A-only planting and gate persistence are checked.
+- `CS_SCOPE_SMOKE_PASS`: actual movement attributes, weapon-specific compensated
+  speeds/FOV, walk-speed bounds, non-stacking modifiers and complete restoration.
+  Spawn randomization is disabled for the zombie stand-in: a baby zombie's
+  movement bonus must not contaminate this player-attribute fixture.
+- `CS_VISUAL_SMOKE_PASS`: armor, private nametags, fire overlays, all gun item
+  components and real client-only display packets. Pistol consumable state is
+  silent/invisible with speed multiplier 1; automatic guns have no such state.
+  Tracers preserve fractional midpoint coordinates, add no world entities, expire
+  after three ticks, respect the 128-streak cap and clear idempotently.
+- `CS_GRENADE_SMOKE_PASS`: native flash particle construction and clean shutdown.
+
+Production JAR SHA-256 (identical class/resource payload for both classifiers):
+
+```text
+71e669ec5f5cc8688c8a0bf755e96b111a2b2121a0487881d07c12fb34b04eaf
+```
+
+Production artifacts contain no fixture/check classes or ASP API workaround.
+Only disposable test copies include the ASP API class workaround described above.
+Logs, compiled fixtures and runtime worlds are outside Git. The runs use captured
+or simulated player transport, not a connected Minecraft client.
+
+Before merging, use a real client to verify pistol press/release while looking
+into air/at blocks/at players and while holding through reload; check unchanged
+CZ75 automatic fire, silent native use and normal movement. Also playtest recoil
+recovery, moving/crouched/scoped accuracy, FOV Effects, positional audio, tracer
+appearance at range, post-round looting and Wingman's stacked CT/Short routes.
+Fall damage must stay disabled in all three CS modes; ordinary weapon/grenade
+and void-boundary damage must still work. Client controls, visual/audio feel and
+latency-sensitive behavior are not proven by the native fixtures alone.

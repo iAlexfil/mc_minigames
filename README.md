@@ -18,7 +18,7 @@ Targets Paper/AdvancedSlimePaper **26.3** (26.2 still builds, see Building), Jav
 | **Warfare** | `/war` | `classic`, `team_beacon` | Formerly hide-and-seek. `classic`: invisible free-for-all with a bucketed-distance sidebar and gadgets; `team_beacon`: defend your wool beacon, respawn at it until it's destroyed. |
 | **Chase** | `/chase` | — | Formerly ultimate tag. A fixed number of rounds; hunters track runners by compass. |
 | **Party / Вечеринка** | `/party` | `pvp`, `sumo`, `pvp_ffa`, `sumo_ffa`, `arms_race`, `one_shot`, `tnt_run`, `mob_count`, `rhino`, `miners`, `magic_battle`, `parkour_race` | PvP and sumo have round-robin BO3 tournaments and simultaneous one-life FFA variants. Arms Race is a simultaneous free-for-all with weapon progression and respawns. TNT Run, mob counting and ravager/mine dodging are one-life survival games. Miners combines private ore mining with random equipment upgrades, consumable loot and underground PvP. Magic Battle puts six wands and forty-two spells on the imported Lighthouse sky-island map. |
-| **Counter-Strike** | `/cs` | `default`, `deathmatch` | Classic T/CT bomb defusal or a timed free-for-all with respawns and free weapon selection on Dust II. |
+| **Counter-Strike** | `/cs` | `default`, `deathmatch`, `wingman` | Classic bomb defusal, A-side Wingman or a timed free-for-all with respawns and free weapon selection on Dust II. |
 | **The Finals** | `/finals` | — | Two teams open vaults, carry cash boxes and defend or steal cashouts in a disposable arena. The first team to $20,000 wins, or the richer team after ten minutes. |
 
 ### The Finals
@@ -1625,26 +1625,37 @@ source entities, player records and executable world data are excluded.
 - Each round has 15 seconds of frozen preparation and 115 seconds of play.
   Buy at your side's spawn during preparation and the first 20 seconds of play.
   Players have 100 logical HP, no regeneration and no respawns until next round.
+  Fall damage is disabled in both Classic and Deathmatch.
 - T carry one C4 and plant at the imported A/B sites while stationary for 3.2
   seconds. The fuse lasts 40 seconds. CT defuse in 10 seconds, or five with a kit.
   Moving, releasing the button, switching slots or dying interrupts the action.
   Eliminating all T does not end a planted round; CT must still defuse or escape.
+  Nearby players hear positional plant/keypad sounds (36-block radius), the start
+  and completion of a defuse (66 blocks), the plant-finish cue (136 blocks) and
+  ticking (44 blocks). These are maximum ranges with native distance fading,
+  calibrated against A--B and A--CT Spawn landmark distances rather than a
+  one-to-one unit conversion. Starting and cancelling a defuse produces a fake
+  defuse cue; holding use does not replay it. Plant keypad clicks stop on cancel,
+  and ticking stops immediately after defuse or round end. See
+  [Dust II audio calibration](assets/maps/lesraisins-dust2/AUDIO-Dust2.md).
 - Cash starts at $800 and is capped at $16,000. Kill rewards depend on weapon,
   wins pay $3,250 or $3,500 for C4 outcomes, and loss payouts grow from $1,900
   toward $3,400. Winning reduces the loss counter by one. Planting/defusing has
   individual rewards; a planted losing T team gets an extra $600. T who survive
   a timeout receive no loss payout. Team damage is reduced, and teamkills cost
   money and a kill. Assists and round MVPs are recorded.
-- The payout values above are the 5v5 baseline. Earned money (kills, round wins,
-  losses, plant/defuse and the planted-loss bonus) scales by `largerTeam / 5`.
-  The smaller side additionally receives `largerTeam / ownTeam` per player, giving
-  both sides the same team budget for the same base reward. Thus 2v2 pays 40% of
-  baseline; in 2v3, the two-person side gets 90% per person and the three-person
-  side 60%. Pistol-round cash stays $800 on equal sides and receives only the
-  smaller-team compensation ($1,200 vs $800 in 2v3). Shop prices, the $16,000 cap
-  and $300 misconduct penalties stay fixed. Counts are snapshotted from online
-  participants at round start, never from survivors or mid-round disconnects.
-  Practice retains its $16,000 allowance.
+- Equal-sized teams receive the full 5v5 payout **per person**, including in 1v1,
+  2v2, 3v3 and 4v4. Their total team income is naturally lower because fewer
+  players receive the reward: a $3,250 round award totals $6,500 for two players
+  and $16,250 for five. Only the smaller side gets an additional
+  `largerTeam / ownTeam` multiplier per player: in 2v3 the two-person side gets
+  150% and the three-person side gets 100% of the same base reward. This applies
+  to kills, wins, losses, plant/defuse and the planted-loss bonus. Pistol-round
+  cash stays $800 on equal sides and receives the same smaller-team compensation
+  ($1,200 vs $800 in 2v3). Shop prices, the $16,000 cap and $300 misconduct
+  penalties stay fixed. Counts are snapshotted from online participants at round
+  start, never from survivors or mid-round disconnects. Practice retains its
+  $16,000 allowance.
 - Survivors keep guns, remaining armor, kits and unused grenades; gun ammunition
   restocks at round start. Death drops guns with their actual remaining ammo,
   utility, kit and C4. Rejoining never grants a mid-round respawn. A team absent
@@ -1685,9 +1696,18 @@ same equipment price calculation. Sources: Valve's
 Fire timing, accuracy and movement remain Minecraft adaptations; this is not exact
 parity with every current CS2 weapon statistic. The default match format is MR12.
 
-The CS lobby category opens two modes: **Classic** (queue ID `default`, keeping
-existing queue configuration and `/play cs` compatible) and **Deathmatch**
-(`/play cs deathmatch`). Classic keeps its bomb-defusal rules. Deathmatch supports
+The CS lobby category opens three modes: **Classic** (queue ID `default`, keeping
+existing queue configuration and `/play cs` compatible), **Deathmatch**
+(`/play cs deathmatch`) and **Wingman** (`/play cs wingman`). Wingman uses exactly
+Classic's round format, economy, equipment and team limits (up to five per side,
+not restricted to 2v2). Only map access differs: A is the only bombsite; Long and
+Short remain open. The B route closes immediately north of T spawn, the lower
+CT-to-Mid/B exit closes below Short, and tunnels and Mid doors are sealed.
+Visible red glass marks blocked passages, with invisible clipping above it;
+gates cannot be destroyed or penetrated by gunfire. All twenty possible starts
+are inside the playable area and checked for native collision before play.
+See [Wingman map boundaries](assets/maps/lesraisins-dust2/WINGMAN-Dust2.md).
+Deathmatch supports
 2–16 players on Dust II, with a five-second countdown and a five-minute match.
 Every player is an opponent; kills rank first and fewer deaths breaks ties.
 Players respawn after three seconds at a walkable point selected away from living
@@ -1729,12 +1749,13 @@ have scoped accuracy; SSG is cheaper and faster to move with,
 but an armored body hit is survivable. AUG and SG 553 trade mobility for scoped
 accuracy at range. Their scope toggles with left-click, while right-click keeps
 firing. Zoom uses a transient movement-attribute modifier and compensated walk
-speed: approximately 0.555× normal FOV for snipers and 0.57× for scoped rifles,
-with the intended 45% scoped walking speed. Vanilla client FOV Effects must be
+speed: approximately 0.555× normal FOV for AWP, 0.6196× for Scout and 0.578× for
+AUG/SG. Walking follows each weapon's CS2 scoped speed: AWP 100/200, Scout
+230/230, AUG 150/220 and SG 150/210, rather than a universal 45% multiplier. Vanilla client FOV Effects must be
 enabled for visible zoom; their strength scales the result. No spyglass use is
 forced: a vanilla client releases it as soon as the use button is not held, and
-holding a spyglass consumes attack input. Non-usable gun icons prevent that
-native interaction. One click's overlapping interact/attack/swing events are
+holding a spyglass consumes attack input. Scoped gun icons remain non-usable,
+preventing that native interaction. One click's overlapping interact/attack/swing events are
 debounced; reload, slot switch, gun drop, death, menus, leaving and round/match
 cleanup remove both scope state and the temporary modifier. All guns trace up to 256 blocks, covering Dust II; distance
 falloff and spread determine effectiveness instead of a 100-block rifle cutoff.
@@ -1743,7 +1764,20 @@ scale: `rangeFalloff ^ (distance / 10.24)`. A shot at 64 blocks now retains the
 same damage as an original shot at 100 blocks. At 100 blocks, ordinary
 pistols/rifles retain about 82% damage, M4A1-S 55%, most SMGs 26%, UMP-45 6%,
 shotguns 3% and snipers 91%. Point-blank base damage is unaffected.
-Visible trails cover the actual path and stop at cover or the hit target.
+Visible trails are thin, full-bright yellow `BlockDisplay` streaks covering the
+actual hitscan path from half a block ahead of the eye to the hit target, stopping
+at unpenetrated cover (maximum 256 blocks). They are 0.04 blocks thick and last
+three ticks (about 150 ms at 20 TPS); all parts appear immediately, without
+changing hit registration. Only the first pellet of a shotgun blast is drawn.
+Displays are created without spawning world entities; bundled spawn/metadata
+packets go directly to current match viewers in the same world, bypassing the
+old particle delivery radius and server entity tracking range. Client display
+view range is 512 blocks and midpoint frustum culling is disabled for long and
+vertical streaks. Normal terrain depth occlusion still applies: they have no
+glowing outline through walls. Client render settings may still limit visibility.
+At most 128 streaks remain active per match; expiry and round/match cleanup send
+removal packets. The lethal shot retains its normal lifetime during the round-end
+loot period. Packet bindings target the supported Paper 26.2/26.3 runtimes.
 USP-S and M4A1-S are quieter and omit visible bullet trails; M4A1-S trades magazine
 size and fire rate for accuracy. CZ75-Auto fires automatically, but has only one
 reserve magazine, a longer draw time and a $100 kill reward. P90 has 50 rounds
@@ -1791,6 +1825,58 @@ most four grenades, with at most two flashes and one of each other kind.
 | `/cs buy`, `/cs help` | Buy menu / controls |
 | `/cs score` / sneak + right-click with radar | Live roster, alive/dead/disconnected status, K/D/A and MVPs |
 | `!message` | Private chat to current teammates, including dead teammates |
+
+After a classic round ends, survivors have five seconds to move around and
+collect dropped equipment. Q or `/cs drop` frees an occupied gun slot so a
+replacement can be picked up. Survivors keep the collected equipment for the
+next round; freeze time starts at the next spawn. Halftime still resets equipment.
+The round winner also appears for two seconds as a bold centered subtitle:
+green for the winning team's viewers, red for opponents, and gold for neutral
+spectators. It names the winning T/CT faction and follows the halftime side swap.
+
+Semi-automatic pistols require a separate right-click for each shot. Holding RMB
+fires once and stays latched until release, including through a reload. The CZ75
+retains automatic held fire. Native use tracks the real release event without a
+client mod, hand animation, consumption sounds, particles or movement slowdown.
+The normal weapon cadence still limits rapid individual clicks.
+
+Rapid accepted shots also accumulate a separate inaccuracy penalty. The first
+settled shot keeps its existing baseline spread; rapid pistol taps and automatic
+sprays become less accurate. Penalties decay continuously with time, including
+while holstered, so paced shots recover sooner than sustained fire. Switching
+weapons does not instantly reset accuracy. Scoping reduces the penalty without
+removing it; crouching, movement and airborne modifiers still apply. Each weapon
+family has its own accumulation/recovery rates, with slower Deagle recovery and
+Negev's existing sustained-fire stabilization retained. One shotgun trigger pull
+adds one penalty, regardless of pellet count. New rounds reset inaccuracy.
+These rates are tuned for Minecraft rather than exact CS2 numeric conversions.
+
+Held-weapon movement uses the CS2 `m_flMaxSpeed` values relative to knife/C4 at
+250: light pistols and MP9/MAC-10 240, Deagle/UMP/P90/Scout 230, M4s/MAG-7 225,
+MP7/FAMAS/AUG/Nova 220, AK/Galil/XM1014 215, SG/Sawed-Off 210, AWP 200 and Negev
+150. Grenades use 245. Negev slows to half of its held speed while firing.
+These ratios retain the arena's existing base movement scale. Slot switches apply
+the new speed immediately during play and the post-round loot window, without
+unlocking freeze time. See [CS2 movement reference](assets/maps/lesraisins-dust2/MOVEMENT-Dust2.md).
+
+Movement adds a separate speed-dependent spread penalty. Each of the 27 guns has
+its own running penalty: MP9/MAC-10 and Tec-9 are more forgiving while moving,
+Deagle and rifles need steadier positioning, and AWP is strongly penalized.
+Slow movement increases spread less than full-speed movement; scope does not
+remove that penalty. Horizontal travel is measured from accepted movement events,
+including multiple packets per server tick, rather than only knockback velocity.
+Stationary players recover movement accuracy within two ticks; teleporting,
+respawning and round reset clear the movement history. Vertical motion retains
+its separate airborne penalty. Vanilla sprint remains disabled as before; the
+normal full-speed CS movement and slow crouched movement use their actual speeds.
+
+Shots are positional sounds emitted at the shooter's eye/weapon height, with
+native stereo direction and distance fading. Maximum audible ranges are 128 blocks
+for unsuppressed pistols, 144 for SMGs/shotguns, 176 for rifles/machine guns and
+192 for snipers. USP-S and M4A1-S use a short subdued click within 36 blocks.
+Only match viewers in the same world receive the cue. A shotgun emits one shot
+sound per trigger pull, rather than one per pellet; dry fire emits no shot sound.
+These are Minecraft gameplay ranges, not claims of exact CS2 gunshot curves.
 
 Drop your occupied gun slot before walking over a replacement. The radar uses the
 actual imported map: teammates are always shown, enemies only when a living

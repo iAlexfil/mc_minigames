@@ -76,3 +76,4 @@ queues:
   cs:
     default: {enabled: true, minPlayers: 2, maxPlayers: 10}
     deathmatch: {enabled: true, minPlayers: 2, maxPlayers: 16}
+    wingman: {enabled: true, minPlayers: 2, maxPlayers: 10}

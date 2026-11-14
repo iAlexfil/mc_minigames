@@ -359,15 +359,25 @@ public final class ParkourRaceCheck {
             check(
                     course.supplies(0).isEmpty()
                             && chest != null
-                            && from.y() - chest.y() == 28
-                            && chest.y() - to.y() == 28,
-                    "The chest clutch starts empty-handed with its chest halfway down the fall");
+                            && chest.y() == from.y() + 1
+                            && from.y() - to.y() == 56,
+                    "The empty-handed chest clutch offers its bucket at take-off height");
             check(
                     course.blocks().get(chest) == Material.CHEST
                             && Math.abs(chest.x() + .5 - from.centerX()) == 2
                             && chest.z() >= to.z()
                             && chest.z() < to.z() + 7,
                     "The native chest is in reach beside the fall line above the landing island");
+            double edge = from.z() + from.depth();
+            check(
+                    chest.z() - (edge + .3) > 4.5,
+                    "Even a player overhanging the starting lip cannot reach the chest on foot");
+            double dx = chest.x() + .5 - from.centerX();
+            double dy = chest.y() + .5 - (from.y() + 2 + 1.62);
+            double dz = chest.z() + .1 - (edge + 3);
+            check(
+                    dx * dx + dy * dy + dz * dz < 4.5 * 4.5,
+                    "After jumping three blocks forward the chest face is within native reach");
             for (int y = chest.y() + 1; y <= from.y() + 3; y++) {
                 check(
                         course.blocks().get(new ParkourCourse.Pos(chest.x(), y, chest.z()))

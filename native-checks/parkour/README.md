@@ -78,3 +78,23 @@ Disposable Paper copy SHA-256 (both versions, ASP API workaround only):
 ```text
 a396b79923cf2280c4cfd6d20b3a251d510fe1cd0668075519cc7e797bc19adf
 ```
+
+## Take-off chest validation
+
+On 2026-11-14, full 26.2 and 26.3 builds passed all 57 tasks against upstream
+`bccbb7d`, including Parkour geometry/reach regressions and i18n. Native Paper
+26.2 #135 and 26.3 #249 each passed **27 assertions** with the chest at take-off
+height, including native opening under glass, isolated bucket refills and access
+restrictions. Connected-client jump timing was not exercised.
+
+Production JAR SHA-256 (both classifiers):
+
+```text
+563a19c2a9362c5e7f380035125ffebd2bb170e6d4bf3828b06c9d3e4173d516
+```
+
+Disposable Paper copy SHA-256 (both versions, ASP API workaround only):
+
+```text
+ee35b827c274dfac0d97bad6ab631297986a084217b6ef828f083dab993d1568
+```

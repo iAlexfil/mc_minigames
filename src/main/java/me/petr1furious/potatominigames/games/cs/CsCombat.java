@@ -3,6 +3,7 @@ package me.petr1furious.potatominigames.games.cs;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
@@ -13,7 +14,9 @@ final class CsCombat {
     private final CsSession session;
     private final Map<UUID, Long> knifeAt = new HashMap<>(), tagged = new HashMap<>();
     private final Map<UUID, Double> punch = new HashMap<>();
+    private final Map<UUID, CsMovement> motion = new HashMap<>();
     private final CsScope scope = new CsScope();
+    private final CsTracers tracers = new CsTracers();
 
     CsCombat(CsSession session) {
         this.session = session;
@@ -24,12 +27,36 @@ final class CsCombat {
         punch.merge(p.getUniqueId(), armoured ? .15 : 2.0, (a, b) -> Math.min(6, a + b));
     }
 
+    void recordMovement(Player p, Location from, Location to) {
+        if (!Objects.equals(from.getWorld(), to.getWorld())) {
+            resetMovement(p);
+            return;
+        }
+        motion.computeIfAbsent(p.getUniqueId(), id -> new CsMovement())
+                .move(session.now(), to.getX() - from.getX(), to.getZ() - from.getZ());
+    }
+
+    void resetMovement(Player p) {
+        motion.remove(p.getUniqueId());
+    }
+
     void right(Player p) {
-        if (!session.canAct(p)) return;
+        if (!session.canAct(p) || session.shopOpen(p)) return;
         var gun = session.gun(p);
         if (gun == null) return;
+        if (gun.weapon.requiresTriggerRelease()) {
+            if (!gun.pressTrigger()) return;
+            if (!p.hasActiveItem()) p.startUsingItem(EquipmentSlot.HAND);
+        }
         if (gun.weapon.automatic()) gun.heldUntil = session.now() + 6;
         fire(p, gun);
+    }
+
+    void releaseTrigger(Player p) {
+        var actor = session.actor(p);
+        if (actor == null) return;
+        for (CsGun gun : new CsGun[] {actor.primary, actor.secondary})
+            if (gun != null) gun.releaseTrigger();
     }
 
     void left(Player p) {
@@ -51,6 +78,7 @@ final class CsCombat {
         p.clearActiveItem();
         var gun = a.gun(next);
         if (gun != null) gun.deploy(session.now());
+        if (session.canMove(p)) movement(p, gun, next);
     }
 
     void reload(Player p) {
@@ -59,7 +87,8 @@ final class CsCombat {
             gun.reserve = gun.weapon.reserve;
         if (session.canAct(p) && gun != null && gun.reload(session.now())) {
             scope.stop(p);
-            p.clearActiveItem();
+            // A held pistol stays latched through reload until the player releases RMB.
+            if (!gun.weapon.requiresTriggerRelease()) p.clearActiveItem();
             gun.scoped = false;
             p.playSound(p.getLocation(), Sound.BLOCK_IRON_TRAPDOOR_OPEN, .5f, 1.4f);
             session.weaponHud(p);
@@ -67,20 +96,25 @@ final class CsCombat {
     }
 
     void tick() {
+        tracers.tick(session.now());
         for (Player p : session.players()) {
             var a = session.actor(p);
             if (a == null) continue;
             for (CsGun gun : new CsGun[] {a.primary, a.secondary})
                 if (gun != null) gun.tick(session.now());
             CsGun gun = session.gun(p);
-            if (!session.canAct(p) || session.shopOpen(p)) stopScope(p);
+            if (!session.canAct(p) || session.shopOpen(p)) {
+                stopScope(p);
+                releaseTrigger(p);
+                if (gun != null && gun.weapon.requiresTriggerRelease()) p.clearActiveItem();
+            } else if (gun != null && gun.triggerHeld() && !p.hasActiveItem()) gun.releaseTrigger();
             if (session.canAct(p)
                     && !session.shopOpen(p)
                     && gun != null
                     && gun.weapon.automatic()
                     && session.now() < gun.heldUntil) fire(p, gun);
             punch.computeIfPresent(p.getUniqueId(), (id, n) -> n < .02 ? null : n * .85);
-            if (session.canAct(p)) {
+            if (session.canMove(p)) {
                 movement(p, gun);
                 if (p.isSprinting()) p.setSprinting(false);
             }
@@ -88,7 +122,21 @@ final class CsCombat {
     }
 
     private void movement(Player p, CsGun gun) {
-        double speed = .26 * (gun == null ? 1 : gun.weapon.mobility);
+        movement(p, gun, p.getInventory().getHeldItemSlot());
+    }
+
+    private void movement(Player p, CsGun gun, int slot) {
+        var actor = session.actor(p);
+        boolean grenade =
+                slot >= 3
+                        && slot <= 6
+                        && actor != null
+                        && actor.utility.getOrDefault(CsMatch.Utility.values()[slot - 3], 0) > 0;
+        double speed = .26 * (gun != null ? gun.weapon.mobility : grenade ? .98 : 1);
+        if (gun != null
+                && session.now() >= gun.lastShot
+                && session.now() - gun.lastShot <= Math.ceil(gun.weapon.cadence))
+            speed *= gun.weapon.attackMobility();
         if (session.now() < tagged.getOrDefault(p.getUniqueId(), 0L)) speed *= .45;
         if (gun != null && gun.scoped) scope.apply(p, gun.weapon, speed);
         else {
@@ -115,11 +163,10 @@ final class CsCombat {
         session.cancelChannel(p.getUniqueId());
         var w = gun.weapon;
         Location eye = p.getEyeLocation();
-        double spread = w.shotSpread(gun.scoped, gun.burst);
+        double spread = gun.shotSpread();
         if (p.isSneaking()) spread *= .65;
-        if (p.getVelocity().clone().setY(0).lengthSquared() > .01)
-            spread +=
-                    w.category == CsWeapon.Category.SNIPER ? .14 : w == CsWeapon.NEGEV ? .10 : .045;
+        CsMovement movement = motion.get(p.getUniqueId());
+        spread += w.movementSpread(movement == null ? 0 : movement.speed(session.now()));
         if (!p.isOnGround()) spread += .10;
         double recoilPitch = w.recoilPitch(gun.burst, gun.scoped);
         double recoilYaw =
@@ -155,14 +202,18 @@ final class CsCombat {
                                         a.leg && b.leg,
                                         Math.min(a.distance, b.distance)));
         }
-        session.world()
-                .playSound(
-                        p.getLocation(),
-                        w.category == CsWeapon.Category.SNIPER
+        CsAudio.play(
+                session.viewers(),
+                eye,
+                w.silenced()
+                        ? Sound.BLOCK_NOTE_BLOCK_HAT
+                        : w.category == CsWeapon.Category.SNIPER
                                 ? Sound.ENTITY_FIREWORK_ROCKET_BLAST
                                 : Sound.ENTITY_FIREWORK_ROCKET_SHOOT,
-                        w.silenced() ? .30f : .85f,
-                        w.category == CsWeapon.Category.SNIPER
+                w.soundRadius(),
+                w.silenced()
+                        ? .8f
+                        : w.category == CsWeapon.Category.SNIPER
                                 ? .6f
                                 : w.category == CsWeapon.Category.SHOTGUN ? .8f : 1.6f);
         for (Impact hit : hits.values())
@@ -227,6 +278,8 @@ final class CsCombat {
             }
             Block block = hit.getHitBlock();
             if (block == null) return new Shot(null, travelled);
+            if (session.wingman() && session.arena().wingmanBoundary(block))
+                return new Shot(null, travelled);
             String material = block.getType().name();
             boolean glass = material.contains("GLASS");
             if (glass) session.arena().breakGlass(block);
@@ -282,18 +335,7 @@ final class CsCombat {
     }
 
     private void tracer(Location from, Vector direction, double distance) {
-        // Cover the actual path through the entire map with at most 32 particles per shot.
-        double step = Math.max(2, distance / 32);
-        for (double d = .5; d < distance; d += step)
-            session.world()
-                    .spawnParticle(
-                            Particle.CRIT,
-                            from.clone().add(direction.clone().multiply(d)),
-                            1,
-                            0,
-                            0,
-                            0,
-                            0);
+        tracers.draw(from, direction, distance, session.viewers(), session.now());
     }
 
     void knife(Player p, boolean heavy, Player expected) {
@@ -337,10 +379,26 @@ final class CsCombat {
     }
 
     void clear() {
+        clear(true);
+    }
+
+    void roundEnded() {
+        // Let the lethal shot's streak finish its normal lifetime during the loot period.
+        clear(false);
+    }
+
+    private void clear(boolean visuals) {
+        if (visuals) tracers.clear();
         scope.clear();
-        for (Player player : session.players()) stopScope(player);
+        for (Player player : session.players()) {
+            stopScope(player);
+            releaseTrigger(player);
+            var gun = session.gun(player);
+            if (gun != null && gun.weapon.requiresTriggerRelease()) player.clearActiveItem();
+        }
         knifeAt.clear();
         tagged.clear();
         punch.clear();
+        motion.clear();
     }
 }

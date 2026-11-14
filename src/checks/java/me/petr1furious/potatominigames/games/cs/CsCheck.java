@@ -27,6 +27,7 @@ public final class CsCheck {
 
     public static void main(String[] args) throws Exception {
         checks += CsDeathmatchCheck.run();
+        checks += CsWingmanCheck.run();
         hudTranslations();
         killMessages();
         buying();
@@ -34,7 +35,12 @@ public final class CsCheck {
         sizedEconomy();
         grenadeFlight();
         distantBullets();
+        tracerGeometry();
         ammunition();
+        pistolTrigger();
+        firingAccuracy();
+        movementAccuracy();
+        weaponMovementSpeeds();
         reloadHud();
         scopedControls();
         expandedArsenal();
@@ -46,7 +52,38 @@ public final class CsCheck {
         spawnTraversal();
         importedMap();
         smokeGeometry();
+        bombAudioGeometry();
         System.out.println("CsCheck: " + checks + " checks passed");
+    }
+
+    private static void tracerGeometry() {
+        for (Vector direction :
+                List.of(
+                        new Vector(0, 0, 1),
+                        new Vector(0, 0, -1),
+                        new Vector(1, 0, 0),
+                        new Vector(0, 1, 0),
+                        new Vector(0, -1, 0),
+                        new Vector(2, -3, 4).normalize())) {
+            for (double distance : new double[] {.6, 2, 64, 256}) {
+                double length = distance - CsTracers.START;
+                var matrix = CsTracers.transform(direction, length);
+                var first = matrix.transformPosition(new org.joml.Vector3f(.5f, .5f, 0));
+                var last = matrix.transformPosition(new org.joml.Vector3f(.5f, .5f, 1));
+                Vector center = direction.clone().multiply(CsTracers.START + length / 2);
+                Vector start = center.clone().add(new Vector(first.x, first.y, first.z));
+                Vector end = center.clone().add(new Vector(last.x, last.y, last.z));
+                check(
+                        start.distance(direction.clone().multiply(CsTracers.START)) < .0001
+                                && end.distance(direction.clone().multiply(distance)) < .0001,
+                        "display endpoints match the hitscan path, including vertical/reversed"
+                            + " rays");
+                var width = matrix.transformDirection(new org.joml.Vector3f(1, 0, 0));
+                check(
+                        Math.abs(width.length() - CsTracers.WIDTH) < .00001,
+                        "beam thickness stays constant regardless of shot direction and distance");
+            }
+        }
     }
 
     private static void hudTranslations() {
@@ -120,16 +157,17 @@ public final class CsCheck {
                                     locale);
                     String hit =
                             me.petr1furious.potatominigames.i18n.I18n.plain(
-                                    CsItems.tr(head ? "kill.headshot" : "kill.no_headshot"),
+                                    CsItems.tr("kill.headshot"),
                                     locale);
                     check(
                             line.contains("AK-47")
                                     && !line.contains("AWP")
-                                    && line.contains(hit)
+                                    && line.contains(hit) == head
+                                    && line.endsWith(head ? hit : "AK-47")
                                     && line.contains("Killer")
                                     && line.contains("Victim"),
-                            "localized kill feed includes both players, the lethal gun and headshot"
-                                    + " status");
+                            "localized kill feed includes both players and the lethal gun, with a"
+                                    + " headshot suffix only for headshots");
                 }
             }
             for (var cause :
@@ -204,13 +242,13 @@ public final class CsCheck {
                         && ct.armour == 100
                         && ct.helmet,
                 "damaged vest refill retains helmet and never charges for a second helmet");
-        int[] expected = {760, 960, 1160, 1360, 1360};
+        int[] expected = {1900, 2400, 2900, 3400, 3400};
         for (int payout : expected) {
             m.actor(CT).money = 0;
             win(m, 0, m.liveAt + 1);
             check(
                     m.actor(CT).money == payout,
-                    "2v2 loss streak pays 40% of the competitive economy ladder");
+                    "2v2 loss streak pays the full per-player competitive economy ladder");
             m.tick(m.until, RNG);
             m.tick(m.until, RNG);
         }
@@ -235,6 +273,9 @@ public final class CsCheck {
                 match.start(0, RNG);
                 int largest = Math.max(left, right);
                 check(
+                        match.incomeScale(left >= right ? 0 : 1) == 1,
+                        "the full-sized team always receives the full baseline payout per person");
+                check(
                         Math.abs(match.incomeScale(0) * left - match.incomeScale(1) * right)
                                 < .00001,
                         "equal base rewards produce equal team budgets for every 1–5 player"
@@ -249,7 +290,7 @@ public final class CsCheck {
                 var shooter = match.actor(new UUID(1, 0));
                 var victim = match.actor(new UUID(2, 0));
                 int before = shooter.money;
-                double scale = largest / 5.0 * largest / left;
+                double scale = (double) largest / left;
                 match.hurt(victim.id, shooter.id, 10000, false, false, CsWeapon.AK47, false);
                 check(
                         shooter.money - before == Math.round(300 * scale),
@@ -271,9 +312,7 @@ public final class CsCheck {
                     check(
                             Math.abs(
                                             match.incomeScale(1)
-                                                    - Math.max(left, right - 1)
-                                                            / 5.0
-                                                            * Math.max(left, right - 1)
+                                                    - (double) Math.max(left, right - 1)
                                                             / (right - 1))
                                     < .00001,
                             "the next round updates its roster snapshot after a disconnect");
@@ -607,6 +646,170 @@ public final class CsCheck {
                 "loaded shell can interrupt shotgun reload");
     }
 
+    private static void pistolTrigger() {
+        for (var weapon :
+                List.of(
+                        CsWeapon.GLOCK, CsWeapon.USP, CsWeapon.P250, CsWeapon.DUAL_BERETTAS,
+                        CsWeapon.FIVE_SEVEN, CsWeapon.TEC9, CsWeapon.DEAGLE)) {
+            check(weapon.requiresTriggerRelease(), "semi-automatic pistols require release");
+            CsGun gun = new CsGun(weapon);
+            for (long now = 0; now < 100; now += 4) if (gun.pressTrigger()) gun.fire(now);
+            check(
+                    gun.magazine == weapon.magazine - 1,
+                    "repeated native use packets during one hold spend only one pistol round");
+            gun.releaseTrigger();
+            check(
+                    gun.pressTrigger() && gun.fire(100),
+                    "release followed by a new press permits a second shot");
+            check(gun.reload(101), "a partly empty pistol can reload while its trigger is held");
+            gun.tick(1000);
+            check(
+                    !gun.pressTrigger() && gun.magazine == weapon.magazine,
+                    "completing a reload cannot turn a held pistol trigger into automatic fire");
+            gun.releaseTrigger();
+            check(gun.pressTrigger() && gun.fire(1001), "a fresh press fires after reload");
+            gun.switchAway();
+            check(!gun.triggerHeld(), "switching or dropping releases the old trigger state");
+            gun.pressTrigger();
+            gun.restock();
+            check(!gun.triggerHeld(), "a new round starts with a released trigger");
+        }
+        check(
+                CsWeapon.CZ75.automatic() && !CsWeapon.CZ75.requiresTriggerRelease(),
+                "the automatic CZ75 retains held fire");
+    }
+
+    private static void firingAccuracy() {
+        for (var weapon :
+                List.of(
+                        CsWeapon.GLOCK, CsWeapon.DEAGLE, CsWeapon.CZ75, CsWeapon.MP9,
+                        CsWeapon.AK47, CsWeapon.M4A4, CsWeapon.AUG, CsWeapon.SG553)) {
+            CsGun fast = new CsGun(weapon);
+            fast.scoped = weapon.scope();
+            check(fast.fire(0), "a settled weapon can fire its first accurate shot");
+            double first = fast.shotSpread();
+            long cadence = (long) Math.ceil(weapon.cadence);
+            for (int shot = 1; shot < 6; shot++)
+                check(fast.fire(shot * cadence), "rapid accepted shots follow weapon cadence");
+            check(
+                    fast.shotSpread() > first,
+                    "rapid taps and automatic fire accumulate inaccuracy, including while scoped");
+            check(fast.fire(5 * cadence + 200), "a paused weapon can fire again");
+            check(
+                    Math.abs(fast.shotSpread() - first) < 1e-10,
+                    "pausing restores the original first-shot spread");
+            CsGun slow = new CsGun(weapon);
+            slow.scoped = weapon.scope();
+            for (int shot = 0; shot < 4; shot++) {
+                check(slow.fire(shot * 40L), "paced single shots are accepted");
+                check(
+                        Math.abs(slow.shotSpread() - first) < 1e-10,
+                        "paced shots do not accumulate the rapid-fire penalty");
+            }
+        }
+        CsGun clean = new CsGun(CsWeapon.GLOCK), repeated = new CsGun(CsWeapon.GLOCK);
+        clean.fire(0);
+        repeated.fire(0);
+        check(!repeated.fire(1) && !repeated.fire(2), "too-early clicks remain blocked");
+        clean.fire(3);
+        repeated.fire(3);
+        check(
+                Math.abs(clean.shotSpread() - repeated.shotSpread()) < 1e-10,
+                "rejected trigger attempts do not add an accuracy penalty");
+        clean.switchAway();
+        clean.fire(6);
+        repeated.fire(6);
+        check(
+                Math.abs(clean.shotSpread() - repeated.shotSpread()) < 1e-10,
+                "a quick weapon switch cannot instantly clear accumulated inaccuracy");
+        clean.restock();
+        clean.fire(0);
+        check(
+                Math.abs(clean.shotSpread() - CsWeapon.GLOCK.shotSpread(false, 1)) < 1e-10,
+                "new-round restocking resets accumulated inaccuracy");
+    }
+
+    private static void movementAccuracy() {
+        for (CsWeapon weapon : CsWeapon.values()) {
+            double runSpeed = .28 * weapon.mobility;
+            double slow = weapon.movementSpread(runSpeed * .3);
+            double running = weapon.movementSpread(runSpeed);
+            check(
+                    weapon.movementSpread(0) == 0 && slow > 0 && running > slow,
+                    "every weapon distinguishes standing, slow movement and full-speed running");
+            check(
+                    weapon.movementSpread(runSpeed * 2) == running,
+                    "knockback or excess speed cannot produce an unbounded movement penalty");
+        }
+        check(
+                CsWeapon.MP9.movementSpread(.2) < CsWeapon.AK47.movementSpread(.2)
+                        && CsWeapon.TEC9.movementSpread(.2) < CsWeapon.DEAGLE.movementSpread(.2)
+                        && CsWeapon.SSG08.movementSpread(.2) < CsWeapon.AWP.movementSpread(.2),
+                "moving-fire roles differ between individual weapons, not just categories");
+        CsMovement motion = new CsMovement();
+        for (int packet = 0; packet < 4; packet++) motion.move(10, .04, 0);
+        check(
+                Math.abs(motion.speed(10) - .16) < 1e-10,
+                "several short movement packets count as the full tick's horizontal travel");
+        motion.move(11, .01, 0);
+        check(
+                Math.abs(motion.speed(11) - .16) < 1e-10,
+                "a partial new tick does not instantly hide the previous movement speed");
+        check(
+                Math.abs(motion.speed(12) - .01) < 1e-10 && motion.speed(13) == 0,
+                "movement accuracy recovers promptly after the player stops");
+        motion.move(30, .03, .04);
+        check(
+                Math.abs(motion.speed(30) - .05) < 1e-10,
+                "a new movement sequence ignores stale travel and measures diagonal speed");
+        CsMovement vertical = new CsMovement();
+        vertical.move(10, 0, 0);
+        check(vertical.speed(10) == 0, "vertical-only movement is not horizontal running");
+    }
+
+    private static void weaponMovementSpeeds() {
+        Map<Integer, List<CsWeapon>> speeds =
+                Map.of(
+                        240,
+                                List.of(
+                                        CsWeapon.GLOCK,
+                                        CsWeapon.USP,
+                                        CsWeapon.P250,
+                                        CsWeapon.DUAL_BERETTAS,
+                                        CsWeapon.FIVE_SEVEN,
+                                        CsWeapon.TEC9,
+                                        CsWeapon.CZ75,
+                                        CsWeapon.MAC10,
+                                        CsWeapon.MP9),
+                        230, List.of(CsWeapon.DEAGLE, CsWeapon.UMP45, CsWeapon.P90, CsWeapon.SSG08),
+                        225, List.of(CsWeapon.M4A1S, CsWeapon.M4A4, CsWeapon.MAG7),
+                        220, List.of(CsWeapon.MP7, CsWeapon.FAMAS, CsWeapon.AUG, CsWeapon.NOVA),
+                        215, List.of(CsWeapon.AK47, CsWeapon.GALIL, CsWeapon.XM1014),
+                        210, List.of(CsWeapon.SG553, CsWeapon.SAWED_OFF),
+                        200, List.of(CsWeapon.AWP),
+                        150, List.of(CsWeapon.NEGEV));
+        Set<CsWeapon> checked = EnumSet.noneOf(CsWeapon.class);
+        speeds.forEach((speed, weapons) -> {
+            for (CsWeapon weapon : weapons) {
+                checked.add(weapon);
+                check(
+                        weapon.maxSpeed == speed
+                                && Math.abs(weapon.mobility - speed / 250.0) < 1e-10,
+                        "held-weapon speed follows the CS2 table relative to a 250-speed knife");
+            }
+        });
+        check(checked.size() == CsWeapon.values().length, "the speed table covers every gun");
+        check(
+                CsWeapon.AWP.scopedSpeed() == 100
+                        && CsWeapon.SSG08.scopedSpeed() == 230
+                        && CsWeapon.AUG.scopedSpeed() == 150
+                        && CsWeapon.SG553.scopedSpeed() == 150,
+                "scoped speeds distinguish AWP, Scout and the scoped automatic rifles");
+        check(
+                CsWeapon.NEGEV.attackMobility() == .5 && CsWeapon.AK47.attackMobility() == 1,
+                "Negev has its extra firing slowdown without slowing all automatic weapons");
+    }
+
     private static void reloadHud() {
         me.petr1furious.potatominigames.i18n.I18n.register();
         try {
@@ -705,14 +908,20 @@ public final class CsCheck {
                 check(
                         compensated > 0
                                 && compensated <= 1
-                                && Math.abs(effective - normal * .45) < .000001,
+                                && Math.abs(effective - normal * weapon.scopedMobility()) < .000001,
                         "FOV compensation retains intended scoped speed including hit tagging");
             }
             double fov = (CsScope.speedFactor(weapon) + 1) / 2;
+            double expectedFov =
+                    switch (weapon) {
+                        case AWP -> .555;
+                        case SSG08 -> .6196;
+                        case AUG, SG553 -> .578;
+                        default -> throw new AssertionError("Unexpected scoped weapon");
+                    };
             check(
-                    Math.abs(fov - (weapon.category == CsWeapon.Category.SNIPER ? .555 : .57))
-                            < .000001,
-                    "vanilla attribute-to-ability ratio produces stronger zoom for sniper rifles");
+                    Math.abs(fov - expectedFov) < .000001,
+                    "scope preserves zoom while allowing each weapon's actual scoped speed");
         }
     }
 
@@ -802,10 +1011,10 @@ public final class CsCheck {
                 "Scout body hit cannot replace AWP one-shot");
         m = live();
         m.hurt(CT, T, 500, false, false, CsWeapon.CZ75, false);
-        check(m.actor(T).money == 840, "2v2 automatic pistol kill pays 40% of $100");
+        check(m.actor(T).money == 900, "2v2 automatic pistol kill pays the full $100");
         m = live();
         m.hurt(CT, T, 500, false, false, CsWeapon.P90, false);
-        check(m.actor(T).money == 920, "P90 receives 40% of the normal $300 kill reward in 2v2");
+        check(m.actor(T).money == 1100, "P90 receives the normal $300 kill reward in 2v2");
         CsGun cz = new CsGun(CsWeapon.CZ75);
         cz.deploy(0);
         check(
@@ -876,8 +1085,8 @@ public final class CsCheck {
         ct.helmet = true;
         var hit = m.hurt(CT, T, 144, true, false, CsWeapon.AK47, false);
         check(
-                hit.killed() && m.actor(T).kills == 1 && m.actor(T).money == 920,
-                "AK headshot kills through helmet and rewards once at the 2v2 scale");
+                hit.killed() && m.actor(T).kills == 1 && m.actor(T).money == 1100,
+                "AK headshot kills through helmet and rewards the full $300 once in 2v2");
         check(
                 m.hurt(CT, T, 144, true, false, CsWeapon.AK47, false).health() == 0
                         && ct.deaths == 1,
@@ -905,7 +1114,7 @@ public final class CsCheck {
         m.hurt(CT, T, 45, false, true, CsWeapon.GLOCK, false);
         m.hurt(CT, T2, 100, false, true, CsWeapon.MP9, false);
         check(
-                m.actor(T).assists == 1 && m.actor(T2).money == 1040,
+                m.actor(T).assists == 1 && m.actor(T2).money == 1400,
                 "40-damage assist and SMG kill bonus");
         m = live();
         m.hurt(T2, T, 100, false, true, CsWeapon.AK47, false);
@@ -916,7 +1125,7 @@ public final class CsCheck {
                 "teamkill penalizes kills and money");
         m = live();
         m.hurt(CT, T, 180, false, false, null, false);
-        check(m.actor(T).money == 1400, "2v2 knife reward is 40% of $1500");
+        check(m.actor(T).money == 2300, "2v2 knife reward is the full $1500");
         m = live();
         m.suicide(T);
         m.hurt(CT, T, 500, false, false, null, true);
@@ -937,7 +1146,7 @@ public final class CsCheck {
                 m.plant(T, 1, 5) && m.carrier == null && m.detonateAt == 25,
                 "plant consumes carrier and starts full fuse");
         check(!m.plant(T, 0, 6), "cannot plant twice");
-        check(m.actor(T).money == 920, "plant bonus credited once at the 2v2 scale");
+        check(m.actor(T).money == 1100, "the full $300 plant bonus is credited once in 2v2");
         m.hurt(T, CT, 1000, false, false, CsWeapon.AWP, false);
         m.hurt(T2, CT, 1000, false, false, CsWeapon.AWP, false);
         m.tick(6, RNG);
@@ -950,7 +1159,7 @@ public final class CsCheck {
                         && m.score[1] == 1
                         && m.actor(CT).mvps == 1,
                 "defuse wins round and awards MVP");
-        check(m.actor(T).money == 1920, "2v2 losing T receive scaled loss and $600 plant bonuses");
+        check(m.actor(T).money == 3600, "2v2 losing T receive full loss and $600 plant bonuses");
         int score = m.score[1];
         check(!m.defuse(CT2, 24) && m.score[1] == score, "defuse scores once");
         m = live();
@@ -985,13 +1194,21 @@ public final class CsCheck {
         survivor.armour = 42;
         survivor.health = 20;
         win(m, 0, 3);
-        check(m.score[0] == 1 && m.actor(CT).money == 1560, "2v2 first loss pays 40% of $1900");
+        check(m.score[0] == 1 && m.actor(CT).money == 2700, "2v2 first loss pays the full $1900");
         check(
                 m.losses[0] == 0 && m.losses[1] == 2,
                 "loss counter decreases on win and increases on loss");
+        check(
+                m.phase == CsMatch.Phase.ROUND_END && m.until == 103,
+                "round-end loot window lasts five seconds after the round result");
+        m.tick(102, RNG);
+        check(
+                m.phase == CsMatch.Phase.ROUND_END && m.number == 1 && m.score[0] == 1,
+                "the result stays fixed and round reset waits for the entire loot window");
         m.tick(103, RNG);
         check(
                 m.number == 2
+                        && m.phase == CsMatch.Phase.FREEZE
                         && survivor.health == 100
                         && survivor.primary.magazine == 30
                         && survivor.armour == 42,
@@ -1003,7 +1220,7 @@ public final class CsCheck {
                 "dead player receives default pistol only");
         m.tick(105, RNG);
         win(m, 0, 106);
-        check(m.actor(CT).money == 2520, "2v2 consecutive second loss pays 40% of $2400");
+        check(m.actor(CT).money == 5100, "2v2 consecutive second loss pays the full $2400");
         m = live(1);
         m.actor(T).primary = new CsGun(CsWeapon.AK47);
         win(m, 0, 3);
@@ -1155,7 +1372,17 @@ public final class CsCheck {
                 int x = (int) Math.floor(point.x()),
                         y = (int) point.y(),
                         z = (int) Math.floor(point.z());
-                check(y == 82, "classic starts on the actual street, not the hollow foundation");
+                check(
+                        y == (side == 0 ? 82 : 75),
+                        "T starts on the street and CT in the intended underpass below Short");
+                if (side == 1) {
+                    check(
+                            blocks.containsKey(new CsArena.Pos(x, 80, z)),
+                            "the CT spawn has the original underpass roof above it");
+                    check(
+                            !CsArena.buyPosition(side, point.x(), 82, point.z()),
+                            "Short above CT spawn is outside the CT buy zone");
+                }
                 check(
                         !blocks.containsKey(new CsArena.Pos(x, y, z))
                                 && !blocks.containsKey(new CsArena.Pos(x, y + 1, z)),
@@ -1183,7 +1410,9 @@ public final class CsCheck {
             int x = (int) Math.floor(point.x()),
                     y = (int) point.y(),
                     z = (int) Math.floor(point.z());
-            check(y >= 79, "deathmatch excludes the lower foundation levels");
+            check(
+                    y >= 79 || CsArena.spawnPoints(1).contains(point),
+                    "only curated CT underpass starts may bypass the foundation-height filter");
             if (!teamSpawns.contains(point))
                 check(
                         blocks.keySet().stream()
@@ -1211,6 +1440,34 @@ public final class CsCheck {
         try (var in = CsCheck.class.getResourceAsStream("/maps/cs/radar.png")) {
             var image = ImageIO.read(Objects.requireNonNull(in));
             check(image.getWidth() == 128 && image.getHeight() == 128, "native map radar size");
+        }
+    }
+
+    private static void bombAudioGeometry() {
+        Location a = new Location(null, 104, 82.1, 89);
+        Location b = new Location(null, 114, 79.1, 7);
+        Location ctSpawn = new Location(null, 95.5, 76.62, 63.5);
+        check(
+                CsBombAudio.audible(a, ctSpawn, CsBombAudio.Cue.PLANT_START)
+                        && CsBombAudio.audible(a, ctSpawn, CsBombAudio.Cue.DEFUSE_START),
+                "A plant and fake-defuse starts can be heard from the covered CT spawn");
+        check(
+                !CsBombAudio.audible(b, ctSpawn, CsBombAudio.Cue.PLANT_KEYS)
+                        && CsBombAudio.audible(b, ctSpawn, CsBombAudio.Cue.DEFUSE_START),
+                "the CT rotation is outside B keypad range but inside defuse range");
+        check(
+                !CsBombAudio.audible(a, b, CsBombAudio.Cue.DEFUSE_START)
+                        && !CsBombAudio.audible(a, b, CsBombAudio.Cue.BEEP)
+                        && CsBombAudio.audible(a, b, CsBombAudio.Cue.PLANTED),
+                "the other bombsite cannot hear taps or ticking, only the longer plant-finish cue");
+        for (var cue : CsBombAudio.Cue.values()) {
+            check(
+                    CsBombAudio.audible(a, a.clone().add(cue.radius - .01, 0, 0), cue)
+                            && !CsBombAudio.audible(a, a.clone().add(cue.radius + .01, 0, 0), cue),
+                    "each cue has an explicit bounded audible range");
+            check(
+                    !CsBombAudio.audible(a, a.clone().add(0, cue.radius + 1, 0), cue),
+                    "height counts toward the audible range");
         }
     }
 

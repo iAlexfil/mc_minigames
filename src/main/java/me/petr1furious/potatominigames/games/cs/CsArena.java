@@ -8,7 +8,7 @@ import java.io.*;
 import java.util.*;
 import java.util.zip.GZIPInputStream;
 
-/** LesRaisins Dust II imported verbatim; only invisible outer clipping is added. */
+/** LesRaisins Dust II imported verbatim, with outer clipping and optional Wingman gates. */
 final class CsArena {
     record Pos(int x, int y, int z) {}
 
@@ -79,15 +79,16 @@ final class CsArena {
                             new Spawn(-1.5, 82, 36.5, -90),
                             new Spawn(-.5, 82, 37.5, -90),
                             new Spawn(1.5, 82, 38.5, -90)),
+                    // The real CT start is the covered underpass; Y=82 is Short above it.
                     List.of(
-                            new Spawn(93.5, 82, 66.5, 180),
-                            new Spawn(95.5, 82, 66.5, 180),
-                            new Spawn(97.5, 82, 63.5, 180),
-                            new Spawn(95.5, 82, 63.5, 180),
-                            new Spawn(93.5, 82, 63.5, 180)));
+                            new Spawn(93.5, 75, 66.5, 180),
+                            new Spawn(95.5, 75, 66.5, 180),
+                            new Spawn(97.5, 75, 63.5, 180),
+                            new Spawn(95.5, 75, 61.5, 180),
+                            new Spawn(93.5, 75, 60.5, 180)));
     private static final org.bukkit.util.BoundingBox[] BUY_ZONES = {
         new org.bukkit.util.BoundingBox(-3, 81, 19, 4, 85, 40),
-        new org.bukkit.util.BoundingBox(91, 81, 57, 100, 85, 71)
+        new org.bukkit.util.BoundingBox(91, 74, 57, 100, 79, 71)
     };
     private final List<List<Spawn>> spawnOrder = new ArrayList<>();
 
@@ -108,10 +109,27 @@ final class CsArena {
     private final List<BlockData> states;
     private final Map<Pos, BlockData> broken = new LinkedHashMap<>();
     private final List<Pos> clip = new ArrayList<>();
+    private final Set<Pos> wingmanBorders;
+    private final List<Pos> gates;
+    private final boolean wingman;
     private int cursor;
+    private boolean spawnsValidated;
 
     CsArena(World world) {
+        this(world, false);
+    }
+
+    CsArena(World world, boolean wingman) {
         this.world = world;
+        this.wingman = wingman;
+        wingmanBorders = wingman ? WingmanBorders.DATA : Set.of();
+        gates = List.copyOf(wingmanBorders);
+        if (wingman) {
+            for (var side : SPAWNS)
+                for (var point : side)
+                    if (!CsWingman.contains(point.x(), point.y(), point.z()))
+                        throw new IllegalStateException("Team spawn outside Wingman area");
+        }
         for (var points : SPAWNS) spawnOrder.add(new ArrayList<>(points));
         states = source.palette.stream().map(Bukkit::createBlockData).toList();
         for (int y = 72; y <= 128; y++) {
@@ -126,23 +144,40 @@ final class CsArena {
         }
     }
 
+    private static final class WingmanBorders {
+        static final Set<Pos> DATA = CsWingman.borders();
+    }
+
     boolean buildSlice(int budget) {
-        int total = source.cells.size() + clip.size();
+        int total = source.cells.size() + clip.size() + gates.size();
         for (int n = 0; n < budget && cursor < total; n++, cursor++) {
             if (cursor < source.cells.size()) {
                 var cell = source.cells.get(cursor);
                 var p = cell.pos;
                 world.getBlockAt(p.x, p.y, p.z).setBlockData(states.get(cell.state), false);
-            } else {
+            } else if (cursor < source.cells.size() + clip.size()) {
                 var p = clip.get(cursor - source.cells.size());
                 world.getBlockAt(p.x, p.y, p.z).setType(Material.BARRIER, false);
+            } else {
+                var p = gates.get(cursor - source.cells.size() - clip.size());
+                Block block = world.getBlockAt(p.x, p.y, p.z);
+                // Keep solid architecture, but seal air and passable decorations (signs/vines).
+                if (block.isPassable())
+                    block.setType(p.y <= 85 ? Material.RED_STAINED_GLASS : Material.BARRIER, false);
             }
+        }
+        if (cursor == total && wingman && !spawnsValidated) {
+            for (var side : SPAWNS)
+                for (var point : side)
+                    if (spawnLocation(point) == null)
+                        throw new IllegalStateException("Obstructed imported Wingman spawn");
+            spawnsValidated = true;
         }
         return cursor == total;
     }
 
     float progress() {
-        return (float) cursor / (source.cells.size() + clip.size());
+        return (float) cursor / (source.cells.size() + clip.size() + gates.size());
     }
 
     Location spawn(int side, int index) {
@@ -255,6 +290,8 @@ final class CsArena {
                     && Math.floorMod(p.x(), 6) == 0
                     && Math.floorMod(p.z(), 6) == 0)
                 result.add(new Spawn(p.x() + .5, p.y(), p.z() + .5, 0));
+        // Curated team starts also include the legitimate covered CT underpass.
+        // This does not admit arbitrary foundation cavities into distributed sampling.
         for (var side : SPAWNS)
             for (var p : side)
                 if (result.stream().noneMatch(other -> other.x() == p.x() && other.z() == p.z()))
@@ -274,6 +311,7 @@ final class CsArena {
     }
 
     private Location spawnLocation(Spawn point) {
+        if (wingman && !CsWingman.contains(point.x(), point.y(), point.z())) return null;
         Location at = new Location(world, point.x(), point.y(), point.z(), point.yaw(), 0);
         if (!at.getBlock().isPassable()
                 || !at.clone().add(0, 1, 0).getBlock().isPassable()
@@ -320,7 +358,24 @@ final class CsArena {
                 && at.getZ() > -34.7
                 && at.getZ() < 120
                 && at.getY() > 72
-                && at.getY() < 128;
+                && at.getY() < 128
+                && !outsideWingman(at);
+    }
+
+    boolean outsideWingman(Location at) {
+        // Preserve Classic void/out-of-world handling rather than creating a safety floor.
+        return wingman
+                && at != null
+                && world.equals(at.getWorld())
+                && at.getY() > 72
+                && at.getY() < 128
+                && !CsWingman.contains(at.getX(), at.getY(), at.getZ());
+    }
+
+    boolean wingmanBoundary(Block block) {
+        return wingman
+                && world.equals(block.getWorld())
+                && wingmanBorders.contains(new Pos(block.getX(), block.getY(), block.getZ()));
     }
 
     boolean buyZone(Location at, int side) {
@@ -337,7 +392,8 @@ final class CsArena {
                 && at.getZ() <= 96
                 && at.getY() >= 81
                 && at.getY() <= 88) return 0;
-        if (at.getX() >= 107
+        if (!wingman
+                && at.getX() >= 107
                 && at.getX() <= 122
                 && at.getZ() >= 0
                 && at.getZ() <= 14
@@ -348,7 +404,8 @@ final class CsArena {
 
     void breakGlass(Block block) {
         String name = block.getType().name();
-        if (!inside(block.getLocation())
+        if (wingmanBoundary(block)
+                || !inside(block.getLocation())
                 || !(name.contains("GLASS") || name.contains("FLOWER_POT"))) return;
         var p = new Pos(block.getX(), block.getY(), block.getZ());
         broken.putIfAbsent(p, block.getBlockData().clone());

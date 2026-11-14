@@ -20,10 +20,10 @@ final class CsDeathmatchCheck {
     static int run() {
         CsGame game = new CsGame((CsConfig) null);
         check(
-                game.modes().equals(List.of("default", "deathmatch"))
+                game.modes().equals(List.of("default", "deathmatch", "wingman"))
                         && game.showModes()
                         && game.defaultMode().equals("default"),
-                "CS category exposes classic and deathmatch while retaining its default queue ID");
+                "CS exposes all three modes while retaining its default queue ID");
         check(
                 game.maxPlayers("deathmatch") == 16
                         && game.teamColors("deathmatch").isEmpty()
@@ -102,7 +102,7 @@ final class CsDeathmatchCheck {
                         && b.primary == old
                         && b.primary.magazine == 7,
                 "combat selection saves a loadout without granting ammunition or swapping the"
-                    + " active gun");
+                        + " active gun");
         match.suicide(b.id);
         match.respawnDeathmatch(b.id);
         dm.equip(b, 400);
@@ -140,6 +140,9 @@ final class CsDeathmatchCheck {
                         List.of(
                                 "mode.default",
                                 "mode.deathmatch",
+                                "mode.wingman",
+                                "wingman.description",
+                                "wingman.rules",
                                 "dm.rules",
                                 "dm.controls",
                                 "dm.weapons"))

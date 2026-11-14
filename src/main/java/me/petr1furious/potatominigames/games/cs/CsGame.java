@@ -43,22 +43,31 @@ public final class CsGame implements Minigame {
 
     @Override
     public List<String> modes() {
-        return List.of("default", "deathmatch");
+        return List.of("default", "deathmatch", "wingman");
     }
 
     @Override
     public Material icon(String mode) {
-        return mode.equals("deathmatch") ? Material.DIAMOND_SWORD : icon();
+        return switch (mode) {
+            case "deathmatch" -> Material.DIAMOND_SWORD;
+            case "wingman" -> Material.IRON_BOOTS;
+            default -> icon();
+        };
     }
 
     @Override
     public Component modeTitle(String mode) {
-        return I18n.tr(mode.equals("deathmatch") ? "cs.mode.deathmatch" : "cs.mode.default");
+        return I18n.tr("cs.mode." + (modes().contains(mode) ? mode : "default"));
     }
 
     @Override
     public Component description(String mode) {
-        return I18n.tr(mode.equals("deathmatch") ? "cs.dm.description" : "cs.description");
+        return I18n.tr(
+                switch (mode) {
+                    case "deathmatch" -> "cs.dm.description";
+                    case "wingman" -> "cs.wingman.description";
+                    default -> "cs.description";
+                });
     }
 
     @Override
@@ -83,7 +92,8 @@ public final class CsGame implements Minigame {
 
     @Override
     public GameSession createSession(SessionServices services, String mode) {
-        return new CsSession(services, config, this, mode.equals("deathmatch"));
+        return new CsSession(
+                services, config, this, mode.equals("deathmatch"), mode.equals("wingman"));
     }
 
     void started(CsSession session, Collection<UUID> ids) {

@@ -19,6 +19,148 @@ final class CsVisualSmoke {
         floor(loader, world);
         armour(loader);
         nameTags(loader);
+        pistolItems(loader);
+        tracers(loader, world);
+    }
+
+    private static void pistolItems(ClassLoader loader) throws Exception {
+        Class<?> weapons = Class.forName(PKG + "CsWeapon", true, loader);
+        Class<?> gunType = Class.forName(PKG + "CsGun", true, loader);
+        var constructor = gunType.getDeclaredConstructor(weapons);
+        Method semiauto = weapons.getDeclaredMethod("requiresTriggerRelease");
+        Method item =
+                Class.forName(PKG + "CsItems", true, loader)
+                        .getDeclaredMethod("gun", gunType, Player.class);
+        constructor.setAccessible(true);
+        semiauto.setAccessible(true);
+        item.setAccessible(true);
+        for (Object weapon : weapons.getEnumConstants()) {
+            ItemStack shown = (ItemStack) item.invoke(null, constructor.newInstance(weapon), null);
+            var use = shown.getData(DataComponentTypes.CONSUMABLE);
+            boolean needsRelease = (boolean) semiauto.invoke(weapon);
+            require(
+                    (use != null) == needsRelease,
+                    "only semi-automatic pistols have a native button-release use state");
+            if (needsRelease) {
+                var effects = shown.getData(DataComponentTypes.USE_EFFECTS);
+                require(
+                        use.consumeSeconds() == 3600
+                                && use.animation()
+                                        == io.papermc.paper.datacomponent.item.consumable
+                                                .ItemUseAnimation.NONE
+                                && !use.hasConsumeParticles()
+                                && use.sound().asString().equals("minecraft:intentionally_empty")
+                                && effects != null
+                                && effects.canSprint()
+                                && effects.speedMultiplier() == 1
+                                && !effects.interactVibrations(),
+                        "native pistol components provide silent use without movement penalties");
+            }
+        }
+    }
+
+    private static void tracers(ClassLoader loader, World world) throws Exception {
+        Class<?> type = Class.forName(PKG + "CsTracers", true, loader);
+        List<Object> packets = new ArrayList<>();
+        var constructor = type.getDeclaredConstructor(java.util.function.BiConsumer.class);
+        constructor.setAccessible(true);
+        Object streaks =
+                constructor.newInstance(
+                        (java.util.function.BiConsumer<Player, Object>)
+                                (player, packet) -> packets.add(packet));
+        Method draw =
+                type.getDeclaredMethod(
+                        "draw",
+                        Location.class,
+                        org.bukkit.util.Vector.class,
+                        double.class,
+                        Collection.class,
+                        long.class);
+        Method tick = type.getDeclaredMethod("tick", long.class);
+        Method clear = type.getDeclaredMethod("clear");
+        draw.setAccessible(true);
+        tick.setAccessible(true);
+        clear.setAccessible(true);
+        Player client = viewer(world, new HashMap<>());
+        Location from = new Location(world, 13.25, 100.75, 42.125, 90, -30);
+        int entities = world.getEntities().size();
+        try {
+            draw.invoke(
+                    streaks, from, new org.bukkit.util.Vector(0, 0, 1), 256d, List.of(client), 10L);
+            require(packets.size() == 1, "one bundled display spawn/metadata message per shot");
+            Object bundle = packets.getFirst();
+            Iterable<?> children =
+                    (Iterable<?>) bundle.getClass().getMethod("subPackets").invoke(bundle);
+            List<Object> parts = new ArrayList<>();
+            children.forEach(parts::add);
+            require(
+                    parts.size() == 2
+                            && parts.get(0)
+                                    .getClass()
+                                    .getSimpleName()
+                                    .equals("ClientboundAddEntityPacket")
+                            && parts.get(1)
+                                    .getClass()
+                                    .getSimpleName()
+                                    .equals("ClientboundSetEntityDataPacket"),
+                    "spawn and actual native display metadata arrive atomically");
+            Object spawn = parts.get(0);
+            UUID id = (UUID) spawn.getClass().getMethod("getUUID").invoke(spawn);
+            require(
+                    world.getEntity(id) == null && world.getEntities().size() == entities,
+                    "display is never spawned, tracked or ticked by the server world");
+            double z = (double) spawn.getClass().getMethod("getZ").invoke(spawn);
+            require(
+                    Math.abs(z - (from.getZ() + 128.25)) < .000001,
+                    "long-ray spawn preserves fractional coordinates at the exact midpoint");
+            require(
+                    (float) spawn.getClass().getMethod("getYRot").invoke(spawn) == 0
+                            && (float) spawn.getClass().getMethod("getXRot").invoke(spawn) == 0,
+                    "player aim angles are not applied twice on top of the display transform");
+            List<?> metadata =
+                    (List<?>) parts.get(1).getClass().getMethod("packedItems").invoke(parts.get(1));
+            require(
+                    !metadata.isEmpty(),
+                    "display block, brightness and transformation have native metadata");
+            tick.invoke(streaks, 12L);
+            require(packets.size() == 1, "a beam stays visible for three ticks");
+            tick.invoke(streaks, 13L);
+            require(
+                    packets.size() == 2
+                            && packets.getLast()
+                                    .getClass()
+                                    .getSimpleName()
+                                    .equals("ClientboundRemoveEntitiesPacket"),
+                    "the beam is removed at its deadline without a scheduled task per shot");
+            packets.clear();
+            draw.invoke(
+                    streaks, from, new org.bukkit.util.Vector(0, 0, 1), .2d, List.of(client), 20L);
+            draw.invoke(streaks, from, new org.bukkit.util.Vector(), 256d, List.of(client), 20L);
+            draw.invoke(streaks, from, new org.bukkit.util.Vector(0, 0, 1), 256d, List.of(), 20L);
+            require(
+                    packets.isEmpty(),
+                    "empty, invalid and shorter-than-muzzle rays create no display");
+            for (int i = 0; i < 129; i++)
+                draw.invoke(
+                        streaks,
+                        from,
+                        new org.bukkit.util.Vector(0, -1, 0),
+                        50d,
+                        List.of(client),
+                        20L);
+            require(
+                    packets.size() == 130,
+                    "excess automatic fire evicts the oldest beam at the 128 cap");
+            clear.invoke(streaks);
+            require(packets.size() == 258, "match cleanup removes every remaining beam");
+            tick.invoke(streaks, 30L);
+            clear.invoke(streaks);
+            require(
+                    packets.size() == 258 && world.getEntities().size() == entities,
+                    "expiration and repeated cleanup leave no packets or world entities behind");
+        } finally {
+            clear.invoke(streaks);
+        }
     }
 
     private static void nameTags(ClassLoader loader) throws Exception {

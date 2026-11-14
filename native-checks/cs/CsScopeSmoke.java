@@ -17,12 +17,17 @@ final class CsScopeSmoke {
                 world.spawn(
                         world.getSpawnLocation().add(0, 5, 0),
                         Zombie.class,
+                        false,
                         zombie -> {
+                            zombie.setBaby(false);
                             zombie.setAI(false);
                             zombie.setSilent(true);
                         });
         try {
             var attribute = body.getAttribute(Attribute.MOVEMENT_SPEED);
+            require(
+                    attribute.getModifiers().isEmpty(),
+                    "player-like fixture starts without random zombie/baby movement modifiers");
             float[] walking = {.2f};
             UUID id = UUID.randomUUID();
             Player player =
@@ -35,6 +40,11 @@ final class CsScopeSmoke {
                                                 case "getUniqueId" -> id;
                                                 case "getWalkSpeed" -> walking[0];
                                                 case "setWalkSpeed" -> {
+                                                    require(
+                                                            (float) args[0] > 0
+                                                                    && (float) args[0] <= 1,
+                                                            "compensation stays inside native"
+                                                                    + " walk-speed limits");
                                                     walking[0] = (float) args[0];
                                                     attribute.setBaseValue(walking[0] / 2);
                                                     yield null;
@@ -64,17 +74,29 @@ final class CsScopeSmoke {
             for (Object weapon : weaponType.getEnumConstants()) {
                 String name = weapon.toString();
                 if (!java.util.Set.of("AWP", "SSG08", "AUG", "SG553").contains(name)) continue;
-                boolean sniper = name.equals("AWP") || name.equals("SSG08");
+                double expectedFov =
+                        switch (name) {
+                            case "AWP" -> .555;
+                            case "SSG08" -> .6196;
+                            default -> .578;
+                        };
+                double scopedRatio =
+                        switch (name) {
+                            case "AWP" -> .5;
+                            case "SSG08" -> 1;
+                            case "AUG" -> 150.0 / 220;
+                            default -> 150.0 / 210;
+                        };
                 attribute.setBaseValue(.1);
                 walking[0] = .2f;
                 int before = attribute.getModifiers().size();
                 apply.invoke(scope, player, weapon, .2);
                 double ratio = attribute.getValue() / (walking[0] / 2);
                 require(
-                        Math.abs((ratio + 1) / 2 - (sniper ? .555 : .57)) < .000001,
+                        Math.abs((ratio + 1) / 2 - expectedFov) < .000001,
                         "native FOV ratio for " + name);
                 require(
-                        Math.abs(attribute.getValue() - .045) < .000001,
+                        Math.abs(attribute.getValue() - .1 * scopedRatio) < .000001,
                         "compensated real walking speed for " + name);
                 apply.invoke(scope, player, weapon, .2);
                 require(

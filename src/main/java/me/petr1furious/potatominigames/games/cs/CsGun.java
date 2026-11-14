@@ -7,6 +7,9 @@ final class CsGun {
     double nextShot;
     long reloadAt = -1, lastShot = -1000, heldUntil = -1, deployUntil;
     private long scopeClickAt = -1000;
+    private boolean triggerHeld;
+    private double accuracyHeat, shotHeat;
+    private long accuracyAt = -1;
     boolean scoped;
 
     CsGun(CsWeapon weapon) {
@@ -24,9 +27,33 @@ final class CsGun {
         nextShot = 0;
         deployUntil = 0;
         scopeClickAt = -1000;
+        accuracyHeat = shotHeat = 0;
+        accuracyAt = -1;
+        releaseTrigger();
+    }
+
+    boolean pressTrigger() {
+        if (triggerHeld) return false;
+        triggerHeld = true;
+        return true;
+    }
+
+    void releaseTrigger() {
+        triggerHeld = false;
+    }
+
+    boolean triggerHeld() {
+        return triggerHeld;
     }
 
     void tick(long now) {
+        if (accuracyAt >= 0 && now > accuracyAt)
+            accuracyHeat =
+                    Math.max(
+                            0,
+                            accuracyHeat
+                                    - (double) (now - accuracyAt) / weapon.accuracyRecoveryTicks());
+        accuracyAt = now;
         if (reloadAt < 0 || now < reloadAt) return;
         if (weapon.shellReload()) {
             while (reloadAt >= 0 && now >= reloadAt) {
@@ -52,11 +79,22 @@ final class CsGun {
             burst = 0;
             nextShot = now;
         }
+        // The current bullet uses the penalty left by previous shots. A successful
+        // shot adds heat for the next one; blocked clicks and dry fire add nothing.
+        shotHeat = accuracyHeat;
+        accuracyHeat = Math.min(6, accuracyHeat + 1);
         magazine--;
         burst++;
         lastShot = now;
         nextShot = Math.max(now - 1, nextShot) + weapon.cadence;
         return true;
+    }
+
+    double shotSpread() {
+        double penalty = shotHeat * weapon.firingSpreadStep();
+        if (scoped && weapon.scope())
+            penalty *= weapon.category == CsWeapon.Category.SNIPER ? .35 : .5;
+        return weapon.shotSpread(scoped, burst) + penalty;
     }
 
     boolean reload(long now) {
@@ -89,6 +127,7 @@ final class CsGun {
     }
 
     void switchAway() {
+        releaseTrigger();
         reloadAt = -1;
         heldUntil = -1;
         scoped = false;

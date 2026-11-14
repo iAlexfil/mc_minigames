@@ -18,15 +18,15 @@ final class CsScope {
     private final Map<UUID, View> views = new HashMap<>();
 
     static double speedFactor(CsWeapon weapon) {
-        // Vanilla FOV is (factor + 1) / 2 at full FOV Effects. Keep enough headroom
-        // for SSG 08's compensated walk speed to remain within Bukkit's maximum of 1.
-        return weapon.category == CsWeapon.Category.SNIPER ? .11 : .14;
+        // FOV is (factor + 1) / 2. Faster scoped weapons need a higher factor so
+        // compensation fits Bukkit's maximum walk speed of 1 without slowing them down.
+        double zoomFactor = weapon.category == CsWeapon.Category.SNIPER ? .11 : .14;
+        return Math.max(zoomFactor, .26 * weapon.scopedSpeed() / 250.0);
     }
 
     static float walkSpeed(double normalSpeed, CsWeapon weapon) {
-        // The attribute multiplier narrows FOV. Compensate its real movement penalty so
-        // scoped walking still equals 45% of the gun's usual speed, including hit tagging.
-        return (float) (normalSpeed * .45 / speedFactor(weapon));
+        // Preserve the weapon's real scoped/unscoped speed ratio, including hit tagging.
+        return (float) (normalSpeed * weapon.scopedMobility() / speedFactor(weapon));
     }
 
     void apply(Player player, CsWeapon weapon, double normalSpeed) {
